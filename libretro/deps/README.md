@@ -10,11 +10,8 @@ same `.zip` and `.7z` files RetroArch does for player 1.
 
 The files are unchanged. Zip support uses the system's zlib.
 
-# Achievements for the standalone frontend
+# MD5 for the standalone frontend's achievements
 
-- `rcheevos/`: RetroAchievements' library, v12.3.0 as RetroArch carries it in `deps/rcheevos` at the
-  same commit, including RetroArch's `src/rhash/md5.h`, which uses libretro-common's MD5. MIT license.
-- `libretro-common/utils/md5.c`, `include/lrc_hash.h` and `include/compat/msvc.h`: that MD5, from the
-  same commit. Public domain and MIT.
-
-These files are unchanged too.
+- `libretro-common/utils/md5.c`, `include/lrc_hash.h` and `include/compat/msvc.h`: the MD5 that
+  rcheevos (in Armulators' `deps/`) takes from libretro-common, from the same commit. Public domain
+  and MIT. Unchanged.

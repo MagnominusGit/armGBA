@@ -154,13 +154,18 @@ then named `armgba_libretro_android.so`:
 
 ### Standalone
 
-`armgba`, armGBA's own frontend (`frontend/`), runs a game in a window with SDL2, without RetroArch:
+`armgba`, armGBA's own frontend, runs a game in a window with SDL2, without RetroArch. The frontend
+is Armulators' app (the `armulators` submodule), which armN64 shares; armGBA gives it its names and
+systems (`app.cmake`) and the Game Boy screens' LCD effects and netplay rules (`app/`):
 
+    git submodule update --init
     cmake -S . -B build -G Ninja -DARMGBA_SDL=ON
     ninja -C build armgba-sdl
 
-`appimage/build.sh`, then `appimage/package.sh`, make AppImages for x86-64 and 64-bit ARM in a
-Debian 11 container (Docker), with SDL2 built in; they need only glibc 2.29 or later.
+`armulators/package/appimage/build.sh`, then `package.sh` beside it, make AppImages for x86-64 and
+64-bit ARM in a Debian 11 container (Docker), with SDL2 built in; they need only glibc 2.29 or
+later. `armulators/package/android/build.sh` makes the Android APK. Both put them in `build-appimage/`
+and `build-android/`.
 
 Run `armgba game.gba` (or a `.gb`, `.gbc`, `.zip` or `.7z`), or drop a game on the window. Esc, a
 controller's Hotkey + X or a right-click opens the menu, which the keyboard, a controller or the
@@ -523,11 +528,11 @@ Code taken from other projects, each under its own license (see License):
   Boy Color and Game Boy Advance color correction curves. A SameBoy-based build is also the
   reference the Game Boy side is tested against.
 - **libretro** (MIT): `libretro/libretro.h`.
-- **RetroArch** (MIT, public domain): libretro-common, the LZMA SDK and rcheevos as RetroArch
-  carries them, in `libretro/deps/` (see its README).
-- **stb_truetype** (Sean Barrett, public domain or MIT): the frontend's text.
+- **RetroArch** (MIT, public domain): libretro-common and the LZMA SDK as RetroArch carries them, in
+  `libretro/deps/` (see its README), and rcheevos, in Armulators' `deps/`.
+- **stb_truetype** (Sean Barrett, public domain or MIT): the frontend's text, in Armulators' `app/`.
 - **Inter** (The Inter Project Authors) and **Chakra Petch** (The Chakra Petch Project Authors),
-  OFL-1.1: the frontend's fonts.
+  OFL-1.1: the frontend's fonts, in Armulators' `app/fonts/`.
 
 Read for how the hardware behaves, without code taken:
 
@@ -562,7 +567,6 @@ Gambatte. Each part keeps its own notice:
 | `gambatte/libgambatte/src/mem/snes_spc/` | GNU LGPL |
 | `libretro/libretro.h` | MIT |
 | `libretro/deps/` | MIT and public domain, as each file states |
-| `frontend/`, `appimage/`, `shaders/`, `bios/`, `gbboot/` | Mozilla Public License 2.0 |
-| `frontend/stb_truetype.h` | public domain or MIT |
-| `frontend/fonts/` | SIL Open Font License 1.1 (`LICENSES/OFL-1.1.txt`) |
+| `app/`, `app.cmake`, `shaders/`, `bios/`, `gbboot/` | Mozilla Public License 2.0 |
+| `armulators/` | its own notices: Mozilla Public License 2.0, with the fonts under the SIL Open Font License 1.1 and its `deps/` MIT and public domain |
 | The Game Boy palettes (other than Grayscale) and color curves in `libretro/gb-gambatte.cpp` | MIT, from SameBoy (Lior Halphon) |
