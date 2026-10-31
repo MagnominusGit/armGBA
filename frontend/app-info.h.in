@@ -1,0 +1,16 @@
+/* Copyright (c) 2026 Magnominus
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+// The app's names, from app.cmake.
+
+#pragma once
+
+#define APP_ID "@APP_ID@"
+#define APP_NAME "@APP_NAME@"
+#define APP_WORDMARK "@APP_WORDMARK@"
+// The Java classes' path for JNI, from the package.
+#define APP_JAVA_PATH "@APP_JAVA_PATH@"
+#define APP_JAVA_CLASS "@APP_JAVA_CLASS@"

@@ -182,7 +182,7 @@ void osd(const char* format, ...) {
 	vsnprintf(messages[0].text, sizeof(messages[0].text), format, args);
 	va_end(args);
 	messages[0].until = settings.showMessages ? SDL_GetTicks() + MESSAGE_MS : 0;
-	fprintf(stderr, "armgba: %s\n", messages[0].text);
+	fprintf(stderr, APP_ID ": %s\n", messages[0].text);
 }
 
 static Uint32 resyncUntil;
@@ -231,7 +231,7 @@ static void drawSyncArrow(int x, int y, float r, SDL_Color color) {
 
 void osdResync(void) {
 	resyncUntil = settings.showMessages ? SDL_GetTicks() + 1500 : 0;
-	fprintf(stderr, "armgba: Netplay: out of step, taking the host's state\n");
+	fprintf(stderr, APP_ID ": Netplay: out of step, taking the host's state\n");
 }
 
 // Shapes: rounded rectangles are a circle's quarters at the corners and plain rectangles between.
@@ -1271,7 +1271,7 @@ static int drawPanel(SDL_Rect panel, int u, const char* where) {
 	textDraw(FACE_STRONG, arrow, backRect.x + (size - aw) / 2, backRect.y + (size - arrow) / 2 - arrow / 10, white, "\xE2\x80\xB9");
 	left = backRect.x + size + u / 2;
 #endif
-	int const brand = left - panel.x - inset + textDraw(FACE_TITLE, titleSize, left, panel.y + (titleRow - titleSize) / 2, accent, "ARMGBA");
+	int const brand = left - panel.x - inset + textDraw(FACE_TITLE, titleSize, left, panel.y + (titleRow - titleSize) / 2, accent, APP_WORDMARK);
 	char fitted[512];
 	textFit(FACE_BODY, whereSize, where, panel.w - 2 * inset - brand - u, true, fitted, sizeof(fitted));
 	int const ww = textWidth(FACE_BODY, whereSize, fitted);
@@ -1624,7 +1624,7 @@ static void drawMenu(int width, int height, int u) {
 	for (int i = 0; i < TABS; ++i) {
 		tabsW += textWidth(FACE_STRONG, u, tabNames[i]) + (i ? u * 3 / 2 : 0);
 	}
-	int brandW = textWidth(FACE_TITLE, u * 8 / 5, "ARMGBA") + u * 2;
+	int brandW = textWidth(FACE_TITLE, u * 8 / 5, APP_WORDMARK) + u * 2;
 #ifdef __ANDROID__
 	brandW += u * 7 / 4 + u / 2;
 #endif

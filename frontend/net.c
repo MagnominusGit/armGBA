@@ -606,7 +606,7 @@ static void takeState(const uint8_t* p, size_t size) {
 	}
 	void* state = roll.states[frame % STATES];
 	if (uncompress(state, &length, p + header, size - header) != Z_OK || !retro_unserialize(state, roll.stateSize)) {
-		osd("Netplay: the host's state didn't load; its armGBA may be another build");
+		osd("Netplay: the host's state didn't load; its " APP_NAME " may be another build");
 		netStop();
 		return;
 	}
@@ -999,7 +999,7 @@ void netStop(void) {
 		app.hostsGame = true;
 		if (!app.closing) {
 			libretroPlayOn();
-			osd("Netplay: the session ended; saves now go to armGBA/Remote");
+			osd("Netplay: the session ended; saves now go to " APP_NAME "/Remote");
 		}
 	}
 	for (int i = 0; i < PEERS; ++i) {
@@ -1172,7 +1172,7 @@ static void hostHello(struct Connection* c, const uint8_t* p, size_t size) {
 	struct retro_system_info info;
 	retro_get_system_info(&info);
 	if (size < 97 || p[0] != VERSION || strncmp((const char*) p + 33, info.library_version, 63)) {
-		refuse(c, "The host runs another version of armGBA");
+		refuse(c, "The host runs another version of " APP_NAME);
 		return;
 	}
 	// Separate, each device plays its own game.
@@ -1430,10 +1430,10 @@ static void clientWelcome(const uint8_t* p, size_t size) {
 			bool const other = own != 0;
 			cantJoin(other ? CANT_OTHER_FIRMWARE : CANT_FIRMWARE, NULL);
 			if (other) {
-				osd("Netplay: the host's Nintendo %s isn't the same file as yours. Both can switch to armGBA's in Core > System",
+				osd("Netplay: the host's Nintendo %s isn't the same file as yours. Both can switch to " APP_NAME "'s in Core > System",
 				    firmware);
 			} else {
-				osd("Netplay: the host plays with Nintendo's %s, which you don't have. The host can switch to armGBA's in Core > System",
+				osd("Netplay: the host plays with Nintendo's %s, which you don't have. The host can switch to " APP_NAME "'s in Core > System",
 				    firmware);
 			}
 			netStop();
@@ -1538,10 +1538,10 @@ static void handle(struct Connection* c, int type, const uint8_t* p, size_t size
 			libretroFirmwareCrc(&firmware);
 			c->turnedAway = true;
 			if (p[0] == CANT_OTHER_FIRMWARE) {
-				osd("Netplay: %s can't join: their Nintendo %s isn't the same as yours. Both can switch to armGBA's in Core > System",
+				osd("Netplay: %s can't join: their Nintendo %s isn't the same as yours. Both can switch to " APP_NAME "'s in Core > System",
 				    c->nickname, firmware);
 			} else if (p[0] == CANT_FIRMWARE) {
-				osd("Netplay: %s can't join without your Nintendo %s. To play together, switch to armGBA's in Core > System", c->nickname,
+				osd("Netplay: %s can't join without your Nintendo %s. To play together, switch to " APP_NAME "'s in Core > System", c->nickname,
 				    firmware);
 			} else if (p[0] == CANT_NO_CARTRIDGE) {
 				osd("Netplay: %s can't join with their cartridge removed: Together and Off need the game on every device", c->nickname);
@@ -1771,7 +1771,7 @@ void netFrame(void) {
 // Finding hosts on the local network: a device looking broadcasts a probe to the netplay port each
 // second, and hosts answer with who they are and what they're hosting.
 
-static const char probeTag[8] = "armGBA?", answerTag[8] = "armGBA!";
+static const char probeTag[8] = APP_NAME "?", answerTag[8] = APP_NAME "!";
 
 enum {
 	// The tag, version, how, players, most players, port, nickname, game and Shared Controls.
@@ -1788,7 +1788,7 @@ static Uint32 probedAt, scannedAt;
 static void hearBroadcasts(bool on) {
 #ifdef __ANDROID__
 	JNIEnv* const env = SDL_AndroidGetJNIEnv();
-	jclass const armgba = env ? (*env)->FindClass(env, "org/armgba/app/Armgba") : NULL;
+	jclass const armgba = env ? (*env)->FindClass(env, APP_JAVA_PATH "/" APP_JAVA_CLASS) : NULL;
 	jmethodID const hear = armgba ? (*env)->GetStaticMethodID(env, armgba, "hearBroadcasts", "(Z)V") : NULL;
 	if (hear) {
 		(*env)->CallStaticVoidMethod(env, armgba, hear, (jboolean) on);

@@ -145,6 +145,9 @@ if(ARMGBA_SDL)
 	add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fonts.inc
 		COMMAND ${CMAKE_COMMAND} -DFONTS=${FONT_LIST} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/fonts.inc -P ${CMAKE_CURRENT_SOURCE_DIR}/frontend/fonts/embed.cmake
 		DEPENDS ${FONTS} frontend/fonts/embed.cmake VERBATIM)
+	include(app.cmake)
+	string(REPLACE "." "/" APP_JAVA_PATH ${APP_JAVA_PACKAGE})
+	configure_file(frontend/app-info.h.in ${CMAKE_CURRENT_BINARY_DIR}/app-info.h @ONLY)
 	file(GLOB FRONTEND_SOURCES frontend/*.c)
 	# On Android it is libmain.so, which SDL's activity loads and starts (android/).
 	if(ANDROID)

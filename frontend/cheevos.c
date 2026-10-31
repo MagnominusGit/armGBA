@@ -177,7 +177,7 @@ static bool curlLoad(void) {
 		return true;
 	}
 	JNIEnv* const env = SDL_AndroidGetJNIEnv();
-	jclass const found = env ? (*env)->FindClass(env, "org/armgba/app/Http") : NULL;
+	jclass const found = env ? (*env)->FindClass(env, APP_JAVA_PATH "/Http") : NULL;
 	if (!found) {
 		if (env && (*env)->ExceptionCheck(env)) {
 			(*env)->ExceptionClear(env);
@@ -447,7 +447,7 @@ void cheevosInit(void) {
 	rc_client_get_user_agent_clause(client, clause, sizeof(clause));
 	struct retro_system_info info;
 	retro_get_system_info(&info);
-	snprintf(userAgent, sizeof(userAgent), "armGBA/%s %s", info.library_version, clause);
+	snprintf(userAgent, sizeof(userAgent), APP_NAME "/%s %s", info.library_version, clause);
 	rc_client_set_event_handler(client, event);
 	rc_client_set_hardcore_enabled(client, settings.hardcore);
 	if (settings.cheevosUser[0] && settings.cheevosToken[0]) {

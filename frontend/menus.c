@@ -493,7 +493,7 @@ static void openBrowser(int argument, int delta) {
 // Then General, with the recent games.
 void uiCloseGame(void) {
 	unloadGame();
-	SDL_SetWindowTitle(app.window, "armGBA");
+	SDL_SetWindowTitle(app.window, APP_NAME);
 	uiOpenMenu();
 	recentCount = recentList(recentGames, RECENT_MAX);
 	showTab(TAB_GENERAL, 0);
@@ -1081,7 +1081,7 @@ static const char* hotkeyHelp(int action, bool controller) {
 	case ACT_REWIND:
 		return "Goes back in time while held.";
 	case ACT_QUIT:
-		return "Quits armGBA on a second press, writing the game's save first.";
+		return "Quits " APP_NAME " on a second press, writing the game's save first.";
 	case ACT_FPS:
 		return "Shows or hides the frame rate.";
 	default:
@@ -1251,12 +1251,12 @@ static const struct {
 	{ "Game Boy", settings.consoleFolders[0], NULL, "A folder in the Games folder named gb or Game Boy.", "Listed first in Load Game." },
 	{ "Game Boy Color", settings.consoleFolders[1], NULL, "A folder in the Games folder named gbc or Game Boy Color.", "Listed first in Load Game." },
 	{ "Game Boy Advance", settings.consoleFolders[2], NULL, "A folder in the Games folder named gba or Game Boy Advance.", "Listed first in Load Game." },
-	{ "BIOS", settings.biosFolder, ownSystemDirectory, "ROCKNIX's roms/bios on ROCKNIX, armGBA's own folder elsewhere.", "Read as each game loads." },
-	{ "Saves", settings.saveFolder, ownSaveDirectory, "Beside each game on ROCKNIX, armGBA's own folder elsewhere.",
+	{ "BIOS", settings.biosFolder, ownSystemDirectory, "ROCKNIX's roms/bios on ROCKNIX, " APP_NAME "'s own folder elsewhere.", "Read as each game loads." },
+	{ "Saves", settings.saveFolder, ownSaveDirectory, "Beside each game on ROCKNIX, " APP_NAME "'s own folder elsewhere.",
 	  "Games' saves. Applies when a game loads." },
-	{ "States", settings.stateFolder, ownStateDirectory, "ROCKNIX's roms/savestates on ROCKNIX, armGBA's own folder elsewhere.",
+	{ "States", settings.stateFolder, ownStateDirectory, "ROCKNIX's roms/savestates on ROCKNIX, " APP_NAME "'s own folder elsewhere.",
 	  "Save states. Applies when a game loads." },
-	{ "Screenshots", settings.shotFolder, ownShotDirectory, "ROCKNIX's roms/screenshots on ROCKNIX, armGBA's own folder elsewhere.", "Screenshots and recordings." },
+	{ "Screenshots", settings.shotFolder, ownShotDirectory, "ROCKNIX's roms/screenshots on ROCKNIX, " APP_NAME "'s own folder elsewhere.", "Screenshots and recordings." },
 };
 static int folderShown;
 
@@ -1282,7 +1282,7 @@ static const char* folderPath(int which) {
 
 static bool folderTypedIn(int which) {
 	const char* const setting = folders[which].setting;
-	return setting[0] && strcmp(setting, "armgba") && strcmp(setting, "beside");
+	return setting[0] && strcmp(setting, APP_ID) && strcmp(setting, "beside");
 }
 
 static void folderTyped(const char* text) {
@@ -1299,7 +1299,7 @@ static bool pickerOpen;
 static int pickerFolder;
 
 static jclass armgbaClass(JNIEnv* env) {
-	jclass const found = (*env)->FindClass(env, "org/armgba/app/Armgba");
+	jclass const found = (*env)->FindClass(env, APP_JAVA_PATH "/" APP_JAVA_CLASS);
 	if (!found && (*env)->ExceptionCheck(env)) {
 		(*env)->ExceptionClear(env);
 	}
@@ -1372,7 +1372,7 @@ static void folderPick(int kind, int delta) {
 		openEntry(folderTitle, "The folder's full path.", path ? path : folders[folderShown].own, false, folderTyped);
 		return;
 	}
-	const char* const kinds[6] = { "", "armgba", "", "", "", "beside" };
+	const char* const kinds[6] = { "", APP_ID, "", "", "", "beside" };
 	snprintf(folders[folderShown].setting, PATH_SIZE, "%s", kinds[kind]);
 	chooseFolders();
 	settingsWrite();
@@ -1386,8 +1386,8 @@ static void folderMenu(void) {
 	addChoice("Auto", !setting[0] ? "In Use" : "", folderPick, 0);
 	helpFor(folders[which].autoHelp);
 	if (folders[which].own) {
-		addChoice("armGBA's", !strcmp(setting, "armgba") ? "In Use" : "", folderPick, 1);
-		snprintf(help[1], sizeof(help[1]), "armGBA's own: %s", folders[which].own);
+		addChoice(APP_NAME "'s", !strcmp(setting, APP_ID) ? "In Use" : "", folderPick, 1);
+		snprintf(help[1], sizeof(help[1]), APP_NAME "'s own: %s", folders[which].own);
 		helpFor(help[1]);
 	}
 	if (which == FOLDER_SAVES) {
@@ -1420,8 +1420,8 @@ static void addFolder(int which) {
 	snprintf(label, sizeof(label), "%s...", folders[which].label);
 	if (folderTypedIn(which)) {
 		snprintf(value, sizeof(value), "%s", folderName(setting));
-	} else if (!strcmp(setting, "armgba")) {
-		snprintf(value, sizeof(value), "armGBA's");
+	} else if (!strcmp(setting, APP_ID)) {
+		snprintf(value, sizeof(value), APP_NAME "'s");
 	} else if (!strcmp(setting, "beside")) {
 		snprintf(value, sizeof(value), "In Game Folder");
 	} else {
@@ -1687,7 +1687,7 @@ static void netplayMenu(void) {
 			helpFor("Puts your save in your console, which restarts.");
 		}
 		addItem("Disconnect", netAction, 4);
-		helpFor(netInHostsGame() ? "Leaves netplay; the host's game carries on, saved only in armGBA/Remote."
+		helpFor(netInHostsGame() ? "Leaves netplay; the host's game carries on, saved only in " APP_NAME "/Remote."
 		                         : "Leaves netplay; the game carries on here.");
 		if (app.noCartridge) {
 			addSaveManager();
@@ -1869,7 +1869,7 @@ static void generalTab(void) {
 	helpFor("Puts every setting back; your login, name, folders and recent games stay.");
 	addItem("Quit", misc, 2);
 	items[itemCount - 1].confirm = app.loaded;
-	helpFor("Closes armGBA; the game's save is written first.");
+	helpFor("Closes " APP_NAME "; the game's save is written first.");
 }
 
 // Game: the game loaded, its states and cheats, and closing it.

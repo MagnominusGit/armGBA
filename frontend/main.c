@@ -90,9 +90,9 @@ static void makeDirectories(const char* path) {
 static void dataDirectory(char* out, const char* xdg, const char* fallback, const char* leaf) {
 	const char* base = getenv(xdg);
 	if (base && *base) {
-		snprintf(out, PATH_SIZE, "%s/armgba%s", base, leaf);
+		snprintf(out, PATH_SIZE, "%s/" APP_ID "%s", base, leaf);
 	} else {
-		snprintf(out, PATH_SIZE, "%s/%s/armgba%s", getenv("HOME") ? getenv("HOME") : ".", fallback, leaf);
+		snprintf(out, PATH_SIZE, "%s/%s/" APP_ID "%s", getenv("HOME") ? getenv("HOME") : ".", fallback, leaf);
 	}
 	makeDirectories(out);
 }
@@ -108,11 +108,11 @@ static bool onRocknix(void) {
 	return isFolder("/storage/roms");
 }
 
-// One of the Folders: Auto (setting ""), ROCKNIX's on ROCKNIX and armGBA's own elsewhere; armGBA's
-// own ("armgba"); or the folder typed in. Made if it's written to and isn't there.
+// One of the Folders: Auto (setting ""), ROCKNIX's on ROCKNIX and the app's own elsewhere; the app's
+// own (APP_ID); or the folder typed in. Made if it's written to and isn't there.
 static void chooseFolder(char out[PATH_SIZE], const char* setting, const char* own, const char* rocknix, bool written) {
 	bool const automatic = !setting[0];
-	snprintf(out, PATH_SIZE, "%s", automatic && rocknix && onRocknix() ? rocknix : automatic || !strcmp(setting, "armgba") ? own : setting);
+	snprintf(out, PATH_SIZE, "%s", automatic && rocknix && onRocknix() ? rocknix : automatic || !strcmp(setting, APP_ID) ? own : setting);
 	if (written) {
 		makeDirectories(out);
 	}
@@ -226,7 +226,7 @@ static bool savesBesideGames(void) {
 // save folder and a typed one, and the game folders, first when saves are kept in each game's folder.
 static void tellSaveFolders(void) {
 	const char* const chosen = settings.saveFolder;
-	bool const typed = chosen[0] && strcmp(chosen, "armgba") && strcmp(chosen, "beside");
+	bool const typed = chosen[0] && strcmp(chosen, APP_ID) && strcmp(chosen, "beside");
 	const char* saves[2];
 	const char* games[1 + CONSOLES];
 	int saveCount = 0, gameCount = 0;
@@ -988,7 +988,7 @@ bool loadNoCartridge(void) {
 	app.paused = false;
 	netGameStarted();
 	rewindReset();
-	SDL_SetWindowTitle(app.window, "armGBA - No Cartridge");
+	SDL_SetWindowTitle(app.window, APP_NAME " - No Cartridge");
 	return true;
 }
 
@@ -1067,7 +1067,7 @@ bool loadGame(const char* path) {
 	}
 	recentAdd(path);
 	char title[NAME_SIZE + 16];
-	snprintf(title, sizeof(title), "armGBA - %s", app.gameName);
+	snprintf(title, sizeof(title), APP_NAME " - %s", app.gameName);
 	SDL_SetWindowTitle(app.window, title);
 	return true;
 }
@@ -1777,9 +1777,9 @@ int main(int argc, char** argv) {
 		} else if (!strcmp(argv[i], "--controllers")) {
 			listControllers = true;
 		} else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
-			printf("usage: armgba [--fullscreen] [--scale N] [--host | --host-off | --host-together | --host-separate | --connect ADDRESS] [--no-cartridge] [--port N] [--controllers] [game]\n\n"
+			printf("usage: " APP_ID " [--fullscreen] [--scale N] [--host | --host-off | --host-together | --host-separate | --connect ADDRESS] [--no-cartridge] [--port N] [--controllers] [game]\n\n"
 			       "Esc, the controller's Guide button or a right-click opens the menu, where everything else is.\n"
-			       "Settings: ~/.config/armgba; saves, states, screenshots and cheats: ~/.local/share/armgba.\n");
+			       "Settings: ~/.config/" APP_ID "; saves, states, screenshots and cheats: ~/.local/share/" APP_ID ".\n");
 			return 0;
 		} else {
 			game = argv[i];
@@ -1792,7 +1792,7 @@ int main(int argc, char** argv) {
 	// Nintendo controllers by place too, as RetroArch has them.
 	SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, "0");
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
-		fprintf(stderr, "armgba: %s\n", SDL_GetError());
+		fprintf(stderr, APP_ID ": %s\n", SDL_GetError());
 		return 1;
 	}
 	osdClear();
@@ -1814,15 +1814,15 @@ int main(int argc, char** argv) {
 		}
 		return 0;
 	}
-	app.window = SDL_CreateWindow("armGBA", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 240 * settings.scale, 160 * settings.scale,
+	app.window = SDL_CreateWindow(APP_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 240 * settings.scale, 160 * settings.scale,
 	                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (settings.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
 	if (!app.window) {
-		fprintf(stderr, "armgba: %s\n", SDL_GetError());
+		fprintf(stderr, APP_ID ": %s\n", SDL_GetError());
 		return 1;
 	}
 	recreateRenderer();
 	if (!app.renderer || !uiInit()) {
-		fprintf(stderr, "armgba: %s\n", SDL_GetError());
+		fprintf(stderr, APP_ID ": %s\n", SDL_GetError());
 		return 1;
 	}
 
@@ -1840,7 +1840,7 @@ int main(int argc, char** argv) {
 	if (audio) {
 		SDL_PauseAudioDevice(audio, 0);
 	} else {
-		fprintf(stderr, "armgba: no sound: %s\n", SDL_GetError());
+		fprintf(stderr, APP_ID ": no sound: %s\n", SDL_GetError());
 	}
 	bytesPerFrame = (unsigned) (AUDIO_RATE / FRAME_RATE) * 4;
 

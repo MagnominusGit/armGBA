@@ -273,7 +273,7 @@ void settingsWrite(void) {
 	// It holds the RetroAchievements token: for this user's eyes only.
 	fchmod(fileno(f), 0600);
 	const char* const no[2] = { "false", "true" };
-	fprintf(f, "# armgba's own settings; the menu changes them. Keys and buttons are SDL's numbers.\n");
+	fprintf(f, "# " APP_ID "'s own settings; the menu changes them. Keys and buttons are SDL's numbers.\n");
 	fprintf(f, "scale = %d\nfullscreen = %s\ninteger_scale = %s\nstretch = %s\nvsync = %s\nfilter = %d\nshow_fps = %s\n", settings.scale,
 	        no[settings.fullscreen], no[settings.integerScale], no[settings.stretch], no[settings.vsync], settings.filter, no[settings.showFps]);
 	fprintf(f, "lcd_rendering = %s\ngpu_lcd_grid = %s\nlcd_shadow = %d\n", settings.lcdOnGpu ? "gpu" : "cpu", no[settings.gpuGrid],
@@ -332,7 +332,7 @@ static void takeSaved(const char* key, const char* value) {
 // armgba.cfg's values, read before the core starts.
 void optionsReadSaved(void) {
 	char path[FILE_SIZE];
-	snprintf(path, sizeof(path), "%s/armgba.cfg", configDirectory);
+	snprintf(path, sizeof(path), "%s/" APP_ID ".cfg", configDirectory);
 	readLines(path, takeSaved);
 }
 
@@ -342,12 +342,12 @@ void optionsWrite(void) {
 		return;
 	}
 	char path[FILE_SIZE];
-	snprintf(path, sizeof(path), "%s/armgba.cfg", configDirectory);
+	snprintf(path, sizeof(path), "%s/" APP_ID ".cfg", configDirectory);
 	FILE* f = fopen(path, "w");
 	if (!f) {
 		return;
 	}
-	fprintf(f, "# armGBA's options: the menu's Core tab changes them, or edit each line's value, one of those\n# listed above it.\n\n");
+	fprintf(f, "# " APP_NAME "'s options: the menu's Core tab changes them, or edit each line's value, one of those\n# listed above it.\n\n");
 	for (int i = 0; i < optionCount; ++i) {
 		struct Option* o = &options[i];
 		fprintf(f, "# %s:", o->description ? o->description : o->key);

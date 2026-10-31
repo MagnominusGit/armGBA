@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "app-info.h"
 #include "libretro.h"
 
 #include <SDL.h>
@@ -114,7 +115,7 @@ struct Settings {
 	// by name, or a folder chosen.
 	char gamesFolder[PATH_SIZE];
 	char consoleFolders[CONSOLES][PATH_SIZE];
-	// The Folders: "" for Auto (ROCKNIX's on ROCKNIX, armGBA's elsewhere), "armgba" for armGBA's, for
+	// The Folders: "" for Auto (ROCKNIX's on ROCKNIX, the app's elsewhere), APP_ID for the app's, for
 	// saves "beside" for each game's folder, or a folder typed in.
 	char biosFolder[PATH_SIZE];
 	char saveFolder[PATH_SIZE];
