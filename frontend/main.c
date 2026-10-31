@@ -9,8 +9,7 @@
 // from the menu.
 
 #include "frontend.h"
-#include "gb.h"
-#include "lcd.h"
+#include "app-hooks.h"
 #include "link.h"
 #include "games.h"
 #include "patch.h"
@@ -51,22 +50,6 @@ static unsigned bytesPerFrame;
 // A frame's sound, gathered as the core gives it, then sent on at the frame's end.
 static int16_t frameSound[2 * 4096];
 static size_t frameSoundCount;
-static SDL_Texture* overlay;
-// For pixels whose own gaps differ (lcd.h's libretroLcdKeep): the overlay's alphas as grays and the
-// rest of each pixel's, to multiply by, a picture of each pixel's gap color, and where its gaps are
-// made at the size shown.
-static SDL_Texture *gapMask, *insideMask, *gapLayer, *gapsPicture;
-static int overlayWidth, overlayHeight, overlayShownWidth, overlayShownHeight, overlayLcd = -1;
-// The overlay's shares of gap, for keeping a Game Boy screen's brightness under it; whether the game's
-// texture holds the picture darkened through its tables, from which solve, and whether a newer
-// picture waits.
-static struct LibretroLcdKeep overlayKeep;
-static bool gameKept, gameKeptStale;
-static unsigned gameKeptSolved;
-static uint8_t *keptPicture, *keptGaps;
-static size_t keptSize;
-static SDL_Texture* shadow;
-static bool shadowStale;
 static uint16_t rumbleStrength[PORTS][2];
 static bool coreFastForward;
 // A save's memory as last written, to write it only when it changes.
@@ -323,9 +306,8 @@ static bool environment(unsigned command, void* data) {
 		struct retro_variable* variable = data;
 		struct Option* option = optionFind(variable->key);
 		variable->value = option ? option->value : NULL;
-		// With LCD Rendering on the GPU, the core's grid is off whatever size it's set to.
-		if (option && settings.lcdOnGpu && !strcmp(variable->key, "armgba_lcd_grid")) {
-			variable->value = "disabled";
+		if (option && appHooks.optionRead && appHooks.optionRead(option)) {
+			variable->value = appHooks.optionRead(option);
 		}
 		return option != NULL;
 	}
@@ -410,18 +392,15 @@ static bool environment(unsigned command, void* data) {
 	}
 }
 
-// Whether the game's texture was made for Smooth.
-static bool gameSmooth;
-
 // SDL 2.0.14 can't change the scaling of a texture the renderer converts (RGB565 under OpenGL), so
 // the game's texture is made again when it changes.
 static void makeGameTexture(unsigned width, unsigned height) {
 	if (app.game) {
 		SDL_DestroyTexture(app.game);
 	}
-	gameSmooth = settings.filter == FILTER_SMOOTH;
+	app.gameSmooth = settings.filter == FILTER_SMOOTH;
 	Uint32 const format = app.format == RETRO_PIXEL_FORMAT_XRGB8888 ? SDL_PIXELFORMAT_ARGB8888 : SDL_PIXELFORMAT_RGB565;
-	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, gameSmooth ? "linear" : "nearest");
+	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, app.gameSmooth ? "linear" : "nearest");
 	app.game = SDL_CreateTexture(app.renderer, format, SDL_TEXTUREACCESS_STREAMING, width, height);
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 	app.gameWidth = width;
@@ -450,14 +429,11 @@ static void videoRefresh(const void* data, unsigned width, unsigned height, size
 			return;
 		}
 	}
-	if (gameKept) {
-		gameKeptStale = true;
-	} else {
+	if (!appHooks.pictureCame || !appHooks.pictureCame()) {
 		SDL_UpdateTexture(app.game, NULL, data, (int) pitch);
 	}
 	memcpy(app.picture, data, pitch * height);
 	app.picturePitch = pitch;
-	shadowStale = true;
 	if (recording()) {
 		recordVideo(data, width, height, pitch);
 	}
@@ -1072,307 +1048,16 @@ bool loadGame(const char* path) {
 
 // The picture.
 
-// The core's LCD grid: how many times larger it makes the picture, 1 when it's off or LCD Rendering
-// is on the GPU.
-static int coreGridScale(void) {
-	if (settings.lcdOnGpu) {
-		return 1;
-	}
-	struct Option* const o = optionFind("armgba_lcd_grid");
-	int const scale = o ? atoi(o->value) : 0;
-	return scale > 1 ? scale : 1;
-}
-
-// The GPU LCD grid: the gaps between the console screen's pixels, drawn at the size the picture is
-// shown, each spread over the two output pixels nearest it (lcd.h's libretroLcdGapSpread) and faded
-// at small sizes (libretroLcdFade). The first Game Boy's and the Pocket's show the screen's color
-// while off there, the Color's and Advance's a black matrix; lcd.h has each screen's values. It's
-// blended as in linear light: over black, color c becomes c * (1 - a)^(1 / 2.2), which an ordinary
-// blend gives with alpha 1 - (1 - a)^(1 / 2.2); the Game Boy's gaps, near its pixels' colors, take
-// the same. It is white, tinted the gap's color as it's drawn, and how many of its pixels take each
-// alpha goes to overlayKeep.
-static void dropOverlay(void) {
-	SDL_Texture** const all[] = { &overlay, &gapMask, &insideMask, &gapLayer };
-	for (size_t i = 0; i < sizeof(all) / sizeof(*all); ++i) {
-		if (*all[i]) {
-			SDL_DestroyTexture(*all[i]);
-			*all[i] = NULL;
-		}
-	}
-}
-
-static SDL_Texture* makeMask(const uint32_t* pixels, int w, int h, SDL_BlendMode mode) {
-	SDL_Texture* const t = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, w, h);
-	if (t) {
-		SDL_UpdateTexture(t, NULL, pixels, w * 4);
-		SDL_SetTextureBlendMode(t, mode);
-		SDL_SetTextureScaleMode(t, SDL_ScaleModeNearest);
-	}
-	return t;
-}
-
-static void makeOverlay(SDL_Rect to) {
-	uint32_t gap = 0;
-	enum LibretroLcd const lcd = libretroLcd(&gap);
-	bool const grid = settings.lcdOnGpu && settings.gpuGrid;
-	if (overlay && grid && overlayWidth == app.gameWidth && overlayHeight == app.gameHeight && overlayShownWidth == to.w &&
-	    overlayShownHeight == to.h && overlayLcd == (int) lcd) {
-		return;
-	}
-	dropOverlay();
-	overlayWidth = app.gameWidth;
-	overlayHeight = app.gameHeight;
-	overlayShownWidth = to.w;
-	overlayShownHeight = to.h;
-	overlayLcd = (int) lcd;
-	if (!grid || !app.gameWidth || to.w <= 0 || to.h <= 0) {
-		return;
-	}
-	int const w = to.w, h = to.h;
-	uint32_t* pixels = calloc((size_t) w * h, 4);
-	int* across = calloc((size_t) w, sizeof(int));
-	if (!pixels || !across) {
-		free(pixels);
-		free(across);
-		return;
-	}
-	uint8_t linear[256];
-	for (int a = 0; a < 256; ++a) {
-		linear[a] = (uint8_t) lroundf((1 - powf(1 - a / 255.0f, 1 / 2.2f)) * 255);
-	}
-	const struct LibretroLcdLook* const look = &libretroLcdLooks[lcd];
-	// Each column's and row's share of gap as an alpha, 0 to 255; a pixel takes either's.
-	float const pitchX = (float) w / app.gameWidth, pitchY = (float) h / app.gameHeight;
-	float const fade = libretroLcdFade(fminf(pitchX, pitchY));
-	for (int x = 0; x < w; ++x) {
-		across[x] = (int) lroundf(libretroLcdGapSpread(x, pitchX, look->share * pitchX) * look->across * fade * 255);
-	}
-	memset(overlayKeep.weights, 0, sizeof(overlayKeep.weights));
-	for (int y = 0; y < h; ++y) {
-		int const down = (int) lroundf(libretroLcdGapSpread(y, pitchY, look->share * pitchY) * look->down * fade * 255);
-		uint32_t* const row = pixels + (size_t) y * w;
-		for (int x = 0; x < w; ++x) {
-			uint8_t const alpha = linear[across[x] + down - (across[x] * down + 127) / 255];
-			row[x] = (uint32_t) alpha << 24 | 0xFFFFFF;
-			++overlayKeep.weights[alpha];
-		}
-	}
-	for (int a = 0; a < 256; ++a) {
-		overlayKeep.shares[a] = a / 255.0f;
-	}
-	overlayKeep.count = 256;
-	overlayKeep.stale = true;
-	overlay = makeMask(pixels, w, h, SDL_BLENDMODE_BLEND);
-	for (size_t i = 0; i < (size_t) w * h; ++i) {
-		pixels[i] = 0xFF000000 | (pixels[i] >> 24) * 0x010101;
-	}
-	gapMask = makeMask(pixels, w, h, SDL_BLENDMODE_MOD);
-	for (size_t i = 0; i < (size_t) w * h; ++i) {
-		pixels[i] ^= 0xFFFFFF;
-	}
-	insideMask = makeMask(pixels, w, h, SDL_BLENDMODE_MOD);
-	gapLayer = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, w, h);
-	if (gapLayer) {
-		SDL_SetTextureBlendMode(gapLayer, SDL_BLENDMODE_ADD);
-	}
-	free(pixels);
-	free(across);
-}
-
-// Tilt: the shadow falls the way gravity pulls across the screen, its Distance with the screen
-// upright and none with it lying flat, from the accelerometer (open only while it's used), smoothed.
-static int accelerometerIndex = -1;
-static SDL_Sensor* accelerometer;
-static float tiltX, tiltY;
-
-bool tiltAvailable(void) {
-	return accelerometerIndex >= 0;
-}
-
-static void findAccelerometer(void) {
-#ifdef __ANDROID__
-	if (SDL_InitSubSystem(SDL_INIT_SENSOR) != 0) {
-		return;
-	}
-	SDL_EventState(SDL_SENSORUPDATE, SDL_IGNORE);
-	for (int i = 0; i < SDL_NumSensors(); ++i) {
-		if (SDL_SensorGetDeviceType(i) == SDL_SENSOR_ACCEL) {
-			accelerometerIndex = i;
-			return;
-		}
-	}
-#endif
-}
-
-static void followTilt(bool on) {
-	if (!on || accelerometerIndex < 0) {
-		if (accelerometer) {
-			SDL_SensorClose(accelerometer);
-			accelerometer = NULL;
-		}
-		return;
-	}
-	if (!accelerometer && !(accelerometer = SDL_SensorOpen(accelerometerIndex))) {
-		return;
-	}
-	// Its events are ignored, which stops SDL updating it, so it's updated here.
-	SDL_SensorUpdate();
-	float a[3];
-	if (SDL_SensorGetData(accelerometer, a, 3) != 0) {
-		return;
-	}
-	// The accelerometer's axes are the device's own, x right and y up as it's naturally held, and it
-	// reads the push against gravity; down across the screen as the display's turned (SDL names
-	// Android's rotations 0, 90, 180 and 270 portrait, landscape, portrait flipped, landscape flipped).
-	float x, y;
-	switch (SDL_GetDisplayOrientation(0)) {
-	case SDL_ORIENTATION_LANDSCAPE:
-		x = a[1], y = a[0];
-		break;
-	case SDL_ORIENTATION_PORTRAIT_FLIPPED:
-		x = a[0], y = -a[1];
-		break;
-	case SDL_ORIENTATION_LANDSCAPE_FLIPPED:
-		x = -a[1], y = -a[0];
-		break;
-	default:
-		x = -a[0], y = a[1];
-		break;
-	}
-	float const reach = libretroLcdShadowDistance;
-	x *= reach / SDL_STANDARD_GRAVITY;
-	y *= reach / SDL_STANDARD_GRAVITY;
-	float const length = sqrtf(x * x + y * y);
-	if (length > reach) {
-		x *= reach / length;
-		y *= reach / length;
-	}
-	tiltX += (x - tiltX) * 0.1f;
-	tiltY += (y - tiltY) * 0.1f;
-}
-
-// The shadow the first Game Boy's and the Pocket's pixels cast on the reflector behind them, the way
-// the setting points (lcd.h has how far and how dark): a texture a dot to each of the picture's
-// pixels, remade when the picture changes, drawn scaled smoothly over the picture.
-static void drawShadow(SDL_Rect to, uint32_t lit) {
-	if (!shadow || shadowStale) {
-		int w = 0, h = 0;
-		if (shadow) {
-			SDL_QueryTexture(shadow, NULL, NULL, &w, &h);
-		}
-		if (!shadow || w != app.gameWidth || h != app.gameHeight) {
-			if (shadow) {
-				SDL_DestroyTexture(shadow);
-			}
-			shadow = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, app.gameWidth, app.gameHeight);
-			if (!shadow) {
-				return;
-			}
-			SDL_SetTextureBlendMode(shadow, SDL_BLENDMODE_BLEND);
-			SDL_SetTextureScaleMode(shadow, SDL_ScaleModeLinear);
-		}
-		void* pixels;
-		int pitch;
-		if (SDL_LockTexture(shadow, NULL, &pixels, &pitch) != 0) {
-			return;
-		}
-		// A pixel's darkness as an alpha (lcd.h). Game Boy pictures, the only ones with a shadow, are
-		// XRGB8888.
-		int start, scale;
-		libretroLcdShadowFrom(lit, libretroGbDarkestColor(), &start, &scale);
-		for (int y = 0; y < app.gameHeight; ++y) {
-			const uint32_t* const row = (const uint32_t*) (app.picture + y * app.picturePitch);
-			uint32_t* const out = (uint32_t*) ((uint8_t*) pixels + y * pitch);
-			for (int x = 0; x < app.gameWidth; ++x) {
-				uint32_t const c = row[x];
-				int const level = libretroLcdLuminanceOf(c);
-				int const dark = level < start ? (int) ((int64_t) (start - level) * scale >> 16) : 0;
-				out[x] = (uint32_t) (dark < 255 ? dark : 255) << 24;
-			}
-		}
-		SDL_UnlockTexture(shadow);
-		shadowStale = false;
-	}
-	// Up, then on clockwise, or the tilt's way.
-	float dx = tiltX, dy = tiltY;
-	if (settings.shadow != SHADOW_TILT) {
-		float const reach = libretroLcdReach(settings.shadow - 1);
-		dx = libretroLcdWays[settings.shadow - 1][0] * reach;
-		dy = libretroLcdWays[settings.shadow - 1][1] * reach;
-	}
-	SDL_Rect const cast = { to.x + (int) lroundf(dx * to.w / app.gameWidth), to.y + (int) lroundf(dy * to.h / app.gameHeight), to.w, to.h };
-	SDL_RenderSetClipRect(app.renderer, &to);
-	SDL_RenderCopy(app.renderer, shadow, NULL, &cast);
-	SDL_RenderSetClipRect(app.renderer, NULL);
-}
-
-// The game's texture from the picture, darkened through overlayKeep's tables when keeping.
-static void uploadGame(bool keeping) {
-	const uint8_t* data = app.picture;
-	size_t const size = app.picturePitch * (size_t) app.gameHeight;
-	if (keeping && size > keptSize) {
-		uint8_t* const more = realloc(keptPicture, size);
-		keptPicture = more ? more : keptPicture;
-		uint8_t* const moreGaps = realloc(keptGaps, size);
-		keptGaps = moreGaps ? moreGaps : keptGaps;
-		keeping = more && moreGaps;
-		keptSize = keeping ? size : keptSize;
-	}
-	bool const wide = app.format == RETRO_PIXEL_FORMAT_XRGB8888;
-	if (keeping && !wide) {
-		// RGB565, through the tables for it.
-		const uint16_t(*const inside)[64] = overlayKeep.table565[0];
-		const uint16_t(*const around)[64] = overlayKeep.table565[1];
-		for (size_t i = 0; i < size; i += 2) {
-			unsigned const c = *(const uint16_t*) (data + i), r = c >> 11, g = c >> 5 & 0x3F, b = c & 0x1F;
-			*(uint16_t*) (keptPicture + i) = (uint16_t) (inside[0][r] | inside[1][g] | inside[2][b]);
-			*(uint16_t*) (keptGaps + i) = (uint16_t) (around[0][r] | around[1][g] | around[2][b]);
-		}
-	} else if (keeping) {
-		// ARGB8888, blue first in memory.
-		for (size_t i = 0; i < size; i += 4) {
-			keptPicture[i] = overlayKeep.table[2][data[i]];
-			keptPicture[i + 1] = overlayKeep.table[1][data[i + 1]];
-			keptPicture[i + 2] = overlayKeep.table[0][data[i + 2]];
-			keptPicture[i + 3] = data[i + 3];
-			keptGaps[i] = overlayKeep.gaps[2][data[i]];
-			keptGaps[i + 1] = overlayKeep.gaps[1][data[i + 1]];
-			keptGaps[i + 2] = overlayKeep.gaps[0][data[i + 2]];
-			keptGaps[i + 3] = 0xFF;
-		}
-	}
-	if (keeping) {
-		Uint32 const format = wide ? SDL_PIXELFORMAT_ARGB8888 : SDL_PIXELFORMAT_RGB565;
-		Uint32 now = 0;
-		int w = 0, h = 0;
-		if (gapsPicture) {
-			SDL_QueryTexture(gapsPicture, &now, NULL, &w, &h);
-		}
-		if (!gapsPicture || now != format || w != app.gameWidth || h != app.gameHeight) {
-			if (gapsPicture) {
-				SDL_DestroyTexture(gapsPicture);
-			}
-			gapsPicture = SDL_CreateTexture(app.renderer, format, SDL_TEXTUREACCESS_STREAMING, app.gameWidth, app.gameHeight);
-		}
-		if (gapsPicture) {
-			SDL_SetTextureBlendMode(gapsPicture, SDL_BLENDMODE_NONE);
-			SDL_SetTextureScaleMode(gapsPicture, gameSmooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
-			SDL_UpdateTexture(gapsPicture, NULL, keptGaps, (int) app.picturePitch);
-		}
-		data = keptPicture;
-	}
-	SDL_UpdateTexture(app.game, NULL, data, (int) app.picturePitch);
-	gameKept = keeping;
-	gameKeptStale = false;
-	gameKeptSolved = overlayKeep.solved;
-}
-
 static void present(void) {
 	SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 255);
 	SDL_RenderClear(app.renderer);
-	if (app.game && app.loaded && gameSmooth != (settings.filter == FILTER_SMOOTH)) {
+	if (app.game && app.loaded && app.gameSmooth != (settings.filter == FILTER_SMOOTH)) {
 		makeGameTexture(app.gameWidth, app.gameHeight);
-		uploadGame(false);
+		if (appHooks.pictureUpload) {
+			appHooks.pictureUpload();
+		} else {
+			SDL_UpdateTexture(app.game, NULL, app.picture, (int) app.picturePitch);
+		}
 	}
 	if (app.game && app.loaded) {
 		int width, height;
@@ -1394,32 +1079,10 @@ static void present(void) {
 		}
 		to.x = (width - to.w) / 2;
 		to.y = (height - to.h) / 2;
-		makeOverlay(to);
-		uint32_t lit = 0;
-		libretroLcd(&lit);
-		bool const keeping = overlay && app.picture && libretroLcdKeep(&overlayKeep);
-		if (keeping ? !gameKept || gameKeptStale || gameKeptSolved != overlayKeep.solved : gameKept) {
-			uploadGame(keeping);
-		}
-		SDL_RenderCopy(app.renderer, app.game, NULL, &to);
-		if (gameKept && gapsPicture && gapMask && insideMask && gapLayer) {
-			// Each pixel's own gaps: the gap colors times the overlay's alphas, made at the size shown,
-			// added to the picture times the rest.
-			SDL_SetRenderTarget(app.renderer, gapLayer);
-			SDL_RenderCopy(app.renderer, gapsPicture, NULL, NULL);
-			SDL_RenderCopy(app.renderer, gapMask, NULL, NULL);
-			SDL_SetRenderTarget(app.renderer, NULL);
-			SDL_RenderCopy(app.renderer, insideMask, NULL, &to);
-			SDL_RenderCopy(app.renderer, gapLayer, NULL, &to);
-		} else if (overlay) {
-			uint32_t const gap = gameKept ? overlayKeep.gap : lit;
-			SDL_SetTextureColorMod(overlay, gap >> 16 & 0xFF, gap >> 8 & 0xFF, gap & 0xFF);
-			SDL_RenderCopy(app.renderer, overlay, NULL, &to);
-		}
-		bool const shadowed = overlay && settings.shadow && app.picture && app.format == RETRO_PIXEL_FORMAT_XRGB8888 && libretroLcdShadow();
-		followTilt(shadowed && settings.shadow == SHADOW_TILT);
-		if (shadowed) {
-			drawShadow(to, lit);
+		if (appHooks.pictureDraw) {
+			appHooks.pictureDraw(to);
+		} else {
+			SDL_RenderCopy(app.renderer, app.game, NULL, &to);
 		}
 	}
 	touchDraw();
@@ -1433,14 +1096,8 @@ void recreateRenderer(void) {
 		SDL_DestroyTexture(app.game);
 		app.game = NULL;
 	}
-	dropOverlay();
-	if (gapsPicture) {
-		SDL_DestroyTexture(gapsPicture);
-		gapsPicture = NULL;
-	}
-	if (shadow) {
-		SDL_DestroyTexture(shadow);
-		shadow = NULL;
+	if (appHooks.rendererGoing) {
+		appHooks.rendererGoing();
 	}
 	if (app.renderer) {
 		SDL_DestroyRenderer(app.renderer);
@@ -1460,9 +1117,9 @@ void applyWindowSize(void) {
 	SDL_SetWindowFullscreen(app.window, settings.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
 	if (!settings.fullscreen) {
 		// The console's screen times the window size, whatever the core's LCD Grid made the picture.
-		int const grid = coreGridScale();
-		int const w = app.loaded && app.geometry.base_width ? (int) app.geometry.base_width / grid : 240;
-		int const h = app.loaded && app.geometry.base_height ? (int) app.geometry.base_height / grid : 160;
+		int const grid = appHooks.coreScale ? appHooks.coreScale() : 1;
+		int const w = app.loaded && app.geometry.base_width ? (int) app.geometry.base_width / grid : APP_WINDOW_WIDTH;
+		int const h = app.loaded && app.geometry.base_height ? (int) app.geometry.base_height / grid : APP_WINDOW_HEIGHT;
 		SDL_SetWindowSize(app.window, w * settings.scale, h * settings.scale);
 	}
 }
@@ -1744,6 +1401,9 @@ int main(int argc, char** argv) {
 #endif
 	// The settings, then the arguments over them.
 	settingsDefaults();
+	if (appHooks.settingsDefaults) {
+		appHooks.settingsDefaults();
+	}
 	dataDirectory(configDirectory, "XDG_CONFIG_HOME", ".config", "");
 	dataDirectory(ownSystemDirectory, "XDG_CONFIG_HOME", ".config", "/system");
 	dataDirectory(ownSaveDirectory, "XDG_DATA_HOME", ".local/share", "/saves");
@@ -1794,7 +1454,9 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 	osdClear();
-	findAccelerometer();
+	if (appHooks.start) {
+		appHooks.start();
+	}
 	if (listControllers) {
 		// Each joystick SDL sees: its GUID, whether a mapping makes it a controller, its name, and for a
 		// controller its mapping's name and the letters its face buttons are taken to have.
@@ -1812,7 +1474,7 @@ int main(int argc, char** argv) {
 		}
 		return 0;
 	}
-	app.window = SDL_CreateWindow(APP_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 240 * settings.scale, 160 * settings.scale,
+	app.window = SDL_CreateWindow(APP_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, APP_WINDOW_WIDTH * settings.scale, APP_WINDOW_HEIGHT * settings.scale,
 	                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (settings.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
 	if (!app.window) {
 		fprintf(stderr, APP_ID ": %s\n", SDL_GetError());

@@ -8,6 +8,7 @@
 // changing a row does. ui.c draws them and moves through them.
 
 #include "frontend.h"
+#include "app-hooks.h"
 #include "ui.h"
 
 #include <ctype.h>
@@ -18,8 +19,6 @@
 #include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
-#include "lcd.h"
 
 #ifdef __ANDROID__
 #include <jni.h>
@@ -714,12 +713,7 @@ static void optionChange(int index, int delta) {
 // A core option's row, if it shows.
 static void addOption(int i) {
 	struct Option* o = &options[i];
-	// The core's LCD grid and pixel shadow show only with LCD Rendering on the CPU; the shadow's
-	// distance, on the GPU, with the app's own shadow on.
-	bool const cpuLcd = !strcmp(o->key, "armgba_lcd_grid") || !strcmp(o->key, "armgba_lcd_shadow");
-	bool const distance = !strcmp(o->key, "armgba_lcd_shadow_distance");
-	bool const shown = distance && settings.lcdOnGpu ? settings.gpuGrid && settings.shadow && libretroLcdShadow() : o->visible;
-	if (!shown || (cpuLcd && settings.lcdOnGpu)) {
+	if (!(appHooks.optionShown ? appHooks.optionShown(o, o->visible) : o->visible)) {
 		return;
 	}
 	const char* label = o->value;
@@ -762,11 +756,8 @@ static bool anyShown(const char* category) {
 	return false;
 }
 
-static void addLcdRendering(void);
-
 // A category's options, then each of its groups' under a header: the group's name after its
-// category's ("Link: Players" shows as Players). LCD Effects starts with LCD Rendering, which Shaders
-// shows too.
+// category's ("Link: Players" shows as Players), and any rows of the app's own for the group.
 static void categoryMenu(void) {
 	const char* const key = categories[categoryShown].key;
 	addOptions(key);
@@ -775,8 +766,8 @@ static void categoryMenu(void) {
 			const char* const name = categories[c].description ? categories[c].description : categories[c].key;
 			const char* const colon = strstr(name, ": ");
 			addHeader(colon ? colon + 2 : name);
-			if (!strcmp(categories[c].key, "video_lcd")) {
-				addLcdRendering();
+			if (appHooks.groupRows) {
+				appHooks.groupRows(categories[c].key);
 			}
 			addOptions(categories[c].key);
 		}
@@ -823,9 +814,6 @@ enum {
 	SET_INTEGER,
 	SET_STRETCH,
 	SET_FILTER,
-	SET_LCD_RENDERING,
-	SET_GPU_GRID,
-	SET_SHADOW,
 	SET_VSYNC,
 	SET_FPS,
 	SET_VOLUME,
@@ -866,19 +854,6 @@ static void changeSetting(int which, int delta) {
 		break;
 	case SET_FILTER:
 		settings.filter = wrap(settings.filter, d, FILTERS);
-		break;
-	// The core reads its grid again, now off or back at its size.
-	case SET_LCD_RENDERING:
-		settings.lcdOnGpu = !settings.lcdOnGpu;
-		optionsChanged = true;
-		refreshShownOptions();
-		break;
-	case SET_GPU_GRID:
-		settings.gpuGrid = !settings.gpuGrid;
-		break;
-	// Off, then the eight directions.
-	case SET_SHADOW:
-		settings.shadow = wrap(settings.shadow, d, tiltAvailable() ? SHADOW_TILT + 1 : SHADOW_TILT);
 		break;
 	case SET_VSYNC:
 		settings.vsync = !settings.vsync;
@@ -960,13 +935,6 @@ static void changeSetting(int which, int delta) {
 	settingsWrite();
 }
 
-// LCD Rendering, the same row on Core > Video and Shaders: which of them draws the LCD grid and pixel
-// shadow.
-static void addLcdRendering(void) {
-	addValue("LCD Rendering", settings.lcdOnGpu ? "GPU" : "CPU", changeSetting, SET_LCD_RENDERING);
-	helpFor("Who draws the LCD grid and pixel shadow: the CPU (Core \xE2\x80\xBA Video) or the GPU (Shaders).");
-}
-
 // General > Video: the window, how the picture is scaled and shown, and what's drawn over it. The
 // emulator's own picture options are in Core > Video.
 static void videoMenu(void) {
@@ -993,24 +961,13 @@ static void videoMenu(void) {
 	helpFor("The notes at the bottom left, such as a state saved or a controller connected.");
 }
 
-// General > Shaders: what the GPU does to the picture as it scales it; its LCD grid and pixel
-// shadow only with LCD Rendering on the GPU, the shadow only on the first Game Boy's and the Pocket's
-// screens, or before a game is loaded.
+// General > Shaders: what the GPU does to the picture as it scales it, and any rows of the app's own.
 static void shadersMenu(void) {
 	static const char* const filters[FILTERS] = { "Sharp", "Smooth" };
 	addValue("Filter", filters[settings.filter], changeSetting, SET_FILTER);
 	helpFor("Sharp keeps pixels square; Smooth blends them.");
-	addLcdRendering();
-	if (!settings.lcdOnGpu) {
-		return;
-	}
-	addValue("LCD Grid", onOff(settings.gpuGrid), changeSetting, SET_GPU_GRID);
-	helpFor("The gaps between the screen's pixels, at any size; fainter when smaller.");
-	if (settings.gpuGrid && (!app.loaded || libretroLcdShadow())) {
-		static const char* const shadows[SHADOW_TILT + 1] = { "Off", "Up", "Up Right", "Right", "Down Right", "Down", "Down Left", "Left", "Up Left", "Tilt" };
-		addValue("Game Boy Pixel Shadow", shadows[settings.shadow], changeSetting, SET_SHADOW);
-		helpFor(tiltAvailable() ? "Where the Game Boy's pixel shadow falls; Tilt moves it as the device tilts."
-		                        : "Where the Game Boy's pixel shadow falls.");
+	if (appHooks.shaderRows) {
+		appHooks.shaderRows();
 	}
 }
 
@@ -1470,6 +1427,9 @@ static void resetConfig(int argument, int delta) {
 	}
 	struct Settings const kept = settings;
 	settingsDefaults();
+	if (appHooks.settingsDefaults) {
+		appHooks.settingsDefaults();
+	}
 	memcpy(settings.cheevosUser, kept.cheevosUser, sizeof(settings.cheevosUser));
 	memcpy(settings.cheevosToken, kept.cheevosToken, sizeof(settings.cheevosToken));
 	memcpy(settings.nickname, kept.nickname, sizeof(settings.nickname));

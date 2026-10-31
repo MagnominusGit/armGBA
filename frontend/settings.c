@@ -8,6 +8,7 @@
 // ~/.config/armgba/armgba.cfg: lines of key = "value".
 
 #include "frontend.h"
+#include "app-hooks.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,10 +44,8 @@ void settingsDefaults(void) {
 	settings.fullscreen = !getenv("XDG_CURRENT_DESKTOP");
 	settings.vsync = true;
 	settings.filter = FILTER_SHARP;
-	settings.lcdOnGpu = true;
 	settings.showMessages = true;
 	settings.touchControls = true;
-	settings.shadow = 4;
 	settings.volume = 100;
 	settings.latency = 3;
 	settings.rewindMegabytes = 64;
@@ -152,6 +151,9 @@ static void copyText(char* out, size_t size, const char* value) {
 static void takeSetting(const char* key, const char* value) {
 	int const n = atoi(value);
 	bool const yes = !strcmp(value, "true");
+	if (appHooks.settingRead && appHooks.settingRead(key, value, n, yes)) {
+		return;
+	}
 	if (!strcmp(key, "scale")) {
 		settings.scale = n < 1 ? 1 : n > 8 ? 8 : n;
 	} else if (!strcmp(key, "fullscreen")) {
@@ -164,16 +166,6 @@ static void takeSetting(const char* key, const char* value) {
 		settings.vsync = yes;
 	} else if (!strcmp(key, "filter")) {
 		settings.filter = n >= 0 && n < FILTERS ? n : FILTER_SHARP;
-		// The GPU LCD grid was once the third filter.
-		if (n == 2) {
-			settings.gpuGrid = true;
-		}
-	} else if (!strcmp(key, "lcd_rendering")) {
-		settings.lcdOnGpu = strcmp(value, "cpu") != 0;
-	} else if (!strcmp(key, "gpu_lcd_grid")) {
-		settings.gpuGrid = yes;
-	} else if (!strcmp(key, "lcd_shadow")) {
-		settings.shadow = n >= 0 && n <= SHADOW_TILT ? n : 4;
 	} else if (!strcmp(key, "show_fps")) {
 		settings.showFps = yes;
 	} else if (!strcmp(key, "volume")) {
@@ -287,8 +279,9 @@ void settingsWrite(void) {
 	fprintf(f, "# " APP_ID "'s own settings; the menu changes them. Keys and buttons are SDL's numbers.\n");
 	fprintf(f, "scale = %d\nfullscreen = %s\ninteger_scale = %s\nstretch = %s\nvsync = %s\nfilter = %d\nshow_fps = %s\n", settings.scale,
 	        no[settings.fullscreen], no[settings.integerScale], no[settings.stretch], no[settings.vsync], settings.filter, no[settings.showFps]);
-	fprintf(f, "lcd_rendering = %s\ngpu_lcd_grid = %s\nlcd_shadow = %d\n", settings.lcdOnGpu ? "gpu" : "cpu", no[settings.gpuGrid],
-	        settings.shadow);
+	if (appHooks.settingsWrite) {
+		appHooks.settingsWrite(f);
+	}
 	fprintf(f, "volume = %d\nlatency = %d\nrunahead = %d\nrewind = %s\nrewind_megabytes = %d\nauto_state = %s\n", settings.volume,
 	        settings.latency, settings.runahead, no[settings.rewind], settings.rewindMegabytes, no[settings.autoState]);
 	fprintf(f, "nickname = \"%s\"\nnetplay_host = \"%s\"\nnetplay_port = %d\ninput_delay = %d\n", settings.nickname, settings.host,

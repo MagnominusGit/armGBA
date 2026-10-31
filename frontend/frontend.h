@@ -82,13 +82,6 @@ struct Settings {
 	bool stretch;
 	bool vsync;
 	int filter;
-	// LCD Rendering: the LCD grid and Game Boy pixel shadow drawn here on the GPU, or by the core on the
-	// CPU; never both.
-	bool lcdOnGpu;
-	bool gpuGrid;
-	// Where the GPU grid's Game Boy pixels cast their shadow: 0 nowhere, then up and on clockwise, then
-	// SHADOW_TILT, the way the device tilts.
-	int shadow;
 	bool showFps;
 	int volume;
 	int latency;
@@ -200,6 +193,8 @@ struct App {
 	// The last picture, as the core gave it, for screenshots and recording.
 	uint8_t* picture;
 	size_t picturePitch;
+	// The game's texture scales smoothly (the Smooth filter), as it was made.
+	bool gameSmooth;
 	bool loaded;
 	// The core started with no game, a Game Boy Advance with its cartridge out.
 	bool noCartridge;
@@ -273,9 +268,6 @@ void* readWholeFile(const char* path, size_t* size);
 // then kept from the game until let go.
 bool padHotkeyPressed(SDL_JoystickID which, int binding, int action);
 const char* padHotkeyName(void);
-// Whether there's an accelerometer for the Game Boy Pixel Shadow's Tilt (Android's only).
-bool tiltAvailable(void);
-#define SHADOW_TILT 9
 // The On-Screen Controls (touch.c): attached or detached as wanted when the controllers change, a
 // touch, and drawn over the game.
 void touchUpdate(void);

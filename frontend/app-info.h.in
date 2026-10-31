@@ -14,6 +14,9 @@
 // The Java classes' path for JNI, from the package.
 #define APP_JAVA_PATH "@APP_JAVA_PATH@"
 #define APP_JAVA_CLASS "@APP_JAVA_CLASS@"
+// The console's screen, for the window's size before a game gives its own.
+#define APP_WINDOW_WIDTH @APP_WINDOW_WIDTH@
+#define APP_WINDOW_HEIGHT @APP_WINDOW_HEIGHT@
 
 // The game list's files, and the games looked for inside an archive (as libretro-common lists them).
 #define APP_EXTENSIONS @APP_EXTENSION_LIST@

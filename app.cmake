@@ -5,6 +5,8 @@ set(APP_NAME armGBA)
 set(APP_WORDMARK ARMGBA)
 set(APP_JAVA_PACKAGE org.armgba.app)
 set(APP_JAVA_CLASS Armgba)
+# The console's screen: the window is a multiple of it before a game says its own.
+set(APP_WINDOW 240 160)
 # The game list's files (archives too), and what's looked for inside an archive.
 set(APP_EXTENSIONS gba gb gbc zip 7z gba2 gb2 bin)
 set(APP_ARCHIVED gba gb gbc bin gba2 gb2)
