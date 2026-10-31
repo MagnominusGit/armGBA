@@ -6,7 +6,8 @@
 
 // The app's names, from app.cmake.
 
-#pragma once
+#ifndef ARMGBA_FRONTEND_APP_INFO_H
+#define ARMGBA_FRONTEND_APP_INFO_H
 
 #define APP_ID "@APP_ID@"
 #define APP_NAME "@APP_NAME@"
@@ -26,3 +27,8 @@
 #define APP_SYSTEM_KEYS @APP_SYSTEM_KEY_LIST@
 #define APP_SYSTEM_NAMES @APP_SYSTEM_NAME_LIST@
 #define APP_SYSTEM_FOLDERS @APP_SYSTEM_FOLDER_LIST@
+// Help texts that name the console's buttons and what the app draws over its picture.
+#define APP_HELP_SWAP "@APP_HELP_SWAP@"
+#define APP_HELP_SHADERS "@APP_HELP_SHADERS@"
+
+#endif

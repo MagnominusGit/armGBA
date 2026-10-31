@@ -1146,7 +1146,7 @@ static void controlsMenu(void) {
 	helpFor("A controller on the screen, played by touch, there while no other controller is connected.");
 #endif
 	addValue("Swap A/B and X/Y", onOff(settings.swapFaceButtons), changeSetting, SET_SWAP_FACE_BUTTONS);
-	helpFor("Off: A is the right button, as on a Game Boy. On: A and B swap, and X and Y.");
+	helpFor(APP_HELP_SWAP);
 	addItem("Reset Controls and Hotkeys", resetControls, 0);
 	helpFor("Puts every button, key and hotkey back as it first was.");
 	items[itemCount - 1].confirm = true;
@@ -1179,7 +1179,7 @@ static void addSettingsPages(void) {
 	addItem("Video...", openSettingsPage, 0);
 	helpFor("The window, VSync, scaling, and the frame rate and messages on screen.");
 	addItem("Shaders...", openSettingsPage, 1);
-	helpFor("The filter, and the GPU's LCD grid and Game Boy pixel shadow.");
+	helpFor(APP_HELP_SHADERS);
 	addItem("Audio...", openSettingsPage, 2);
 	helpFor("The volume, and how long sound waits to play.");
 	addItem("Controls...", openSettingsPage, 3);

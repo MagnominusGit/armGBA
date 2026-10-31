@@ -16,3 +16,6 @@ set(APP_SYSTEMS gb gbc gba)
 set(APP_SYSTEM_gb "Game Boy" gameboy "game boy")
 set(APP_SYSTEM_gbc "Game Boy Color" gameboycolor "game boy color")
 set(APP_SYSTEM_gba "Game Boy Advance" gameboyadvance "game boy advance")
+# Help texts that name the console's buttons and what the app draws over its picture.
+set(APP_HELP_SWAP "Off: A is the right button, as on a Game Boy. On: A and B swap, and X and Y.")
+set(APP_HELP_SHADERS "The filter, and the GPU's LCD grid and Game Boy pixel shadow.")

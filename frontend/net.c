@@ -1337,8 +1337,8 @@ static void heldWelcomeLeft(void) {
 }
 
 // The host's game: the file of its name beside this device's game, in the game list's folder, the
-// Game Boy, Game Boy Color and Game Boy Advance folders, or the Games folder and its subfolders, and
-// only if its CRC is the host's game's. The host gives a file's name, never a path.
+// systems' folders, or the Games folder and its subfolders, and only if its CRC is the host's game's.
+// The host gives a file's name, never a path.
 static bool loadHostGame(const char* name, uint32_t crc) {
 	if (strchr(name, '/')) {
 		return false;
