@@ -72,7 +72,7 @@ static void restart(int argument, int delta) {
 
 // The files the game list shows: games, and archives that may hold one.
 static bool gameFile(const char* name) {
-	static const char* const extensions[] = { ".gba", ".gb", ".gbc", ".zip", ".7z", ".gba2", ".gb2", ".bin" };
+	static const char* const extensions[] = { APP_EXTENSIONS };
 	const char* dot = strrchr(name, '.');
 	for (size_t i = 0; dot && i < sizeof(extensions) / sizeof(*extensions); ++i) {
 		if (!strcasecmp(dot, extensions[i])) {
@@ -1237,38 +1237,51 @@ static void addSettingsPages(void) {
 
 // Saves and Folders: where games, BIOS files, saves, states and screenshots are. Each folder's row
 // opens its choices: Auto, armGBA's own, for saves In Game Folder, or a folder typed in.
-enum { FOLDER_GAMES, FOLDER_GB, FOLDER_GBC, FOLDER_GBA, FOLDER_BIOS, FOLDER_SAVES, FOLDER_STATES, FOLDER_SHOTS, FOLDERS };
-static const struct {
+enum { FOLDER_GAMES, FOLDER_SYSTEMS, FOLDER_BIOS = FOLDER_SYSTEMS + CONSOLES, FOLDER_SAVES, FOLDER_STATES, FOLDER_SHOTS, FOLDERS };
+static struct {
 	const char* label;
 	char* setting;
-	// armGBA's own folder, or NULL; and what Auto is.
+	// The app's own folder, or NULL; and what Auto is.
 	const char* own;
 	const char* autoHelp;
 	const char* help;
 } folders[FOLDERS] = {
-	{ "Games", settings.gamesFolder, NULL, "ROCKNIX's roms, or a roms folder with gb, gbc or gba in it.",
-	  "The folder with your games (ROMs), where Load Game opens." },
-	{ "Game Boy", settings.consoleFolders[0], NULL, "A folder in the Games folder named gb or Game Boy.", "Listed first in Load Game." },
-	{ "Game Boy Color", settings.consoleFolders[1], NULL, "A folder in the Games folder named gbc or Game Boy Color.", "Listed first in Load Game." },
-	{ "Game Boy Advance", settings.consoleFolders[2], NULL, "A folder in the Games folder named gba or Game Boy Advance.", "Listed first in Load Game." },
-	{ "BIOS", settings.biosFolder, ownSystemDirectory, "ROCKNIX's roms/bios on ROCKNIX, " APP_NAME "'s own folder elsewhere.", "Read as each game loads." },
-	{ "Saves", settings.saveFolder, ownSaveDirectory, "Beside each game on ROCKNIX, " APP_NAME "'s own folder elsewhere.",
-	  "Games' saves. Applies when a game loads." },
-	{ "States", settings.stateFolder, ownStateDirectory, "ROCKNIX's roms/savestates on ROCKNIX, " APP_NAME "'s own folder elsewhere.",
-	  "Save states. Applies when a game loads." },
-	{ "Screenshots", settings.shotFolder, ownShotDirectory, "ROCKNIX's roms/screenshots on ROCKNIX, " APP_NAME "'s own folder elsewhere.", "Screenshots and recordings." },
+	[FOLDER_GAMES] = { "Games", settings.gamesFolder, NULL, NULL, "The folder with your games (ROMs), where Load Game opens." },
+	[FOLDER_BIOS] = { "BIOS", settings.biosFolder, ownSystemDirectory, "ROCKNIX's roms/bios on ROCKNIX, " APP_NAME "'s own folder elsewhere.", "Read as each game loads." },
+	[FOLDER_SAVES] = { "Saves", settings.saveFolder, ownSaveDirectory, "Beside each game on ROCKNIX, " APP_NAME "'s own folder elsewhere.",
+	                   "Games' saves. Applies when a game loads." },
+	[FOLDER_STATES] = { "States", settings.stateFolder, ownStateDirectory, "ROCKNIX's roms/savestates on ROCKNIX, " APP_NAME "'s own folder elsewhere.",
+	                    "Save states. Applies when a game loads." },
+	[FOLDER_SHOTS] = { "Screenshots", settings.shotFolder, ownShotDirectory, "ROCKNIX's roms/screenshots on ROCKNIX, " APP_NAME "'s own folder elsewhere.",
+	                   "Screenshots and recordings." },
 };
 static int folderShown;
 
+// The rows for the Games folder's Auto and the systems' folders, from the systems (app.cmake).
+static void foldersFill(void) {
+	static char gamesHelp[256], systemHelp[CONSOLES][128];
+	size_t at = (size_t) snprintf(gamesHelp, sizeof(gamesHelp), "ROCKNIX's roms, or a roms folder with ");
+	for (int i = 0; i < CONSOLES; ++i) {
+		const char* const between = i == 0 ? "" : i == CONSOLES - 1 ? " or " : ", ";
+		at += (size_t) snprintf(gamesHelp + at, sizeof(gamesHelp) - at, "%s%s", between, consoleKeys[i]);
+		snprintf(systemHelp[i], sizeof(systemHelp[i]), "A folder in the Games folder named %s or %s.", consoleKeys[i], consoleNames[i]);
+		folders[FOLDER_SYSTEMS + i].label = consoleNames[i];
+		folders[FOLDER_SYSTEMS + i].setting = settings.consoleFolders[i];
+		folders[FOLDER_SYSTEMS + i].autoHelp = systemHelp[i];
+		folders[FOLDER_SYSTEMS + i].help = "Listed first in Load Game.";
+	}
+	snprintf(gamesHelp + at, sizeof(gamesHelp) - at, " in it.");
+	folders[FOLDER_GAMES].autoHelp = gamesHelp;
+}
+
 // The folder in use, for the help line; the save folder is the game's.
 static const char* folderPath(int which) {
+	if (which >= FOLDER_SYSTEMS && which < FOLDER_BIOS) {
+		return consoleDirectories[which - FOLDER_SYSTEMS][0] ? consoleDirectories[which - FOLDER_SYSTEMS] : NULL;
+	}
 	switch (which) {
 	case FOLDER_GAMES:
 		return gamesDirectory;
-	case FOLDER_GB:
-	case FOLDER_GBC:
-	case FOLDER_GBA:
-		return consoleDirectories[which - FOLDER_GB][0] ? consoleDirectories[which - FOLDER_GB] : NULL;
 	case FOLDER_BIOS:
 		return systemDirectory;
 	case FOLDER_SAVES:
@@ -1434,11 +1447,12 @@ static void addFolder(int which) {
 }
 
 static void foldersMenu(void) {
+	foldersFill();
 	addHeader("Saves");
 	addValue("Auto Save State", onOff(settings.autoState), changeSetting, SET_AUTO_STATE);
 	helpFor("Saves a state when the game closes and loads it when the game starts again.");
 	addHeader("Game Folders");
-	for (int i = FOLDER_GAMES; i <= FOLDER_GBA; ++i) {
+	for (int i = FOLDER_GAMES; i < FOLDER_BIOS; ++i) {
 		addFolder(i);
 	}
 	addHeader("Data Folders");

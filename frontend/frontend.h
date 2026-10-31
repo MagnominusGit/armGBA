@@ -24,8 +24,8 @@ enum {
 	// A directory, a file name and its extension.
 	FILE_SIZE = PATH_SIZE + NAME_SIZE + 16,
 	PORTS = 4,
-	// Game Boy, Game Boy Color, Game Boy Advance.
-	CONSOLES = 3,
+	// The systems the app's games are for (app.cmake).
+	CONSOLES = APP_SYSTEM_COUNT,
 	BUTTONS = 16,
 	// In libretro's order: B is the first button, A the ninth.
 	BUTTON_B = 0,
@@ -178,6 +178,8 @@ extern char systemDirectory[PATH_SIZE];
 extern char gamesDirectory[PATH_SIZE];
 extern char consoleDirectories[CONSOLES][PATH_SIZE];
 extern const char* const consoleNames[CONSOLES];
+// Their keys: each one's Games folder setting is <key>_folder.
+extern const char* const consoleKeys[CONSOLES];
 extern char ownSystemDirectory[PATH_SIZE];
 extern char saveDirectory[PATH_SIZE];
 extern char ownSaveDirectory[PATH_SIZE];

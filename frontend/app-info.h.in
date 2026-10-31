@@ -14,3 +14,12 @@
 // The Java classes' path for JNI, from the package.
 #define APP_JAVA_PATH "@APP_JAVA_PATH@"
 #define APP_JAVA_CLASS "@APP_JAVA_CLASS@"
+
+// The game list's files, and the games looked for inside an archive (as libretro-common lists them).
+#define APP_EXTENSIONS @APP_EXTENSION_LIST@
+#define APP_ARCHIVED "@APP_ARCHIVED_LIST@"
+// The systems: their keys, names, and the folder names each is found by in the Games folder.
+#define APP_SYSTEM_COUNT @APP_SYSTEM_COUNT@
+#define APP_SYSTEM_KEYS @APP_SYSTEM_KEY_LIST@
+#define APP_SYSTEM_NAMES @APP_SYSTEM_NAME_LIST@
+#define APP_SYSTEM_FOLDERS @APP_SYSTEM_FOLDER_LIST@

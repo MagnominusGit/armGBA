@@ -35,7 +35,8 @@ char configDirectory[PATH_SIZE];
 char systemDirectory[PATH_SIZE];
 char gamesDirectory[PATH_SIZE];
 char consoleDirectories[CONSOLES][PATH_SIZE];
-const char* const consoleNames[CONSOLES] = { "Game Boy", "Game Boy Color", "Game Boy Advance" };
+const char* const consoleNames[CONSOLES] = { APP_SYSTEM_NAMES };
+const char* const consoleKeys[CONSOLES] = { APP_SYSTEM_KEYS };
 char ownSystemDirectory[PATH_SIZE];
 char saveDirectory[PATH_SIZE];
 char ownSaveDirectory[PATH_SIZE];
@@ -137,11 +138,8 @@ static bool findFolder(char out[PATH_SIZE], const char* parent, const char* cons
 	return found;
 }
 
-static const char* const consoleFolderNames[CONSOLES][4] = {
-	{ "gb", "gameboy", "game boy", NULL },
-	{ "gbc", "gameboycolor", "game boy color", NULL },
-	{ "gba", "gameboyadvance", "game boy advance", NULL },
-};
+// Each system's folder names: its key and the names app.cmake gives, up to six.
+static const char* const consoleFolderNames[CONSOLES][8] = { APP_SYSTEM_FOLDERS };
 
 static bool holdsConsoles(const char* folder) {
 	char found[PATH_SIZE];
@@ -1000,7 +998,7 @@ bool loadGame(const char* path) {
 	char named[PATH_SIZE * 2];
 	snprintf(named, sizeof(named), "%s", path);
 	if (path_is_compressed_file(path)) {
-		struct string_list* entries = file_archive_get_file_list(path, "gba|gb|gbc|bin|gba2|gb2");
+		struct string_list* entries = file_archive_get_file_list(path, APP_ARCHIVED);
 		if (!entries || !entries->size) {
 			string_list_free(entries);
 			osd("No game in that archive");
