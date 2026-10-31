@@ -680,7 +680,7 @@ static void pickerMenu(void) {
 // The options that act once chosen, then go back to Off: chosen only from their list, so a press
 // left or right doesn't load or send a save.
 static bool actsOnce(const struct Option* o) {
-	static const char* const keys[] = { "armgba_back_up_save", "armgba_load_save", "armgba_send_save" };
+	static const char* const keys[] = { APP_ID "_back_up_save", APP_ID "_load_save", APP_ID "_send_save" };
 	for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
 		if (!strcmp(o->key, keys[i])) {
 			return true;
@@ -1268,7 +1268,7 @@ static void folderPick(int kind, int delta);
 static bool pickerOpen;
 static int pickerFolder;
 
-static jclass armgbaClass(JNIEnv* env) {
+static jclass activityClass(JNIEnv* env) {
 	jclass const found = (*env)->FindClass(env, APP_JAVA_PATH "/" APP_JAVA_CLASS);
 	if (!found && (*env)->ExceptionCheck(env)) {
 		(*env)->ExceptionClear(env);
@@ -1278,14 +1278,14 @@ static jclass armgbaClass(JNIEnv* env) {
 
 static void openPicker(void) {
 	JNIEnv* const env = SDL_AndroidGetJNIEnv();
-	jclass const armgba = env ? armgbaClass(env) : NULL;
-	jmethodID const pick = armgba ? (*env)->GetStaticMethodID(env, armgba, "pickFolder", "()V") : NULL;
+	jclass const activity = env ? activityClass(env) : NULL;
+	jmethodID const pick = activity ? (*env)->GetStaticMethodID(env, activity, "pickFolder", "()V") : NULL;
 	if (!pick) {
 		folderPick(3, 0);
 		return;
 	}
-	(*env)->CallStaticVoidMethod(env, armgba, pick);
-	(*env)->DeleteLocalRef(env, armgba);
+	(*env)->CallStaticVoidMethod(env, activity, pick);
+	(*env)->DeleteLocalRef(env, activity);
 	pickerOpen = true;
 	pickerFolder = folderShown;
 }
@@ -1295,11 +1295,11 @@ void folderPickerPoll(void) {
 		return;
 	}
 	JNIEnv* const env = SDL_AndroidGetJNIEnv();
-	jclass const armgba = env ? armgbaClass(env) : NULL;
-	jmethodID const take = armgba ? (*env)->GetStaticMethodID(env, armgba, "takeFolder", "()Ljava/lang/String;") : NULL;
-	jstring const answer = take ? (jstring) (*env)->CallStaticObjectMethod(env, armgba, take) : NULL;
-	if (armgba) {
-		(*env)->DeleteLocalRef(env, armgba);
+	jclass const activity = env ? activityClass(env) : NULL;
+	jmethodID const take = activity ? (*env)->GetStaticMethodID(env, activity, "takeFolder", "()Ljava/lang/String;") : NULL;
+	jstring const answer = take ? (jstring) (*env)->CallStaticObjectMethod(env, activity, take) : NULL;
+	if (activity) {
+		(*env)->DeleteLocalRef(env, activity);
 	}
 	if (!answer) {
 		return;
@@ -1540,13 +1540,13 @@ static void netAction(int which, int delta) {
 // Link Mode and Shared Controls, as Core's Link page shows them, and that page, which the host's
 // session follows.
 static void addNetplayLink(void) {
-	struct Option* const mode = optionFind("armgba_link_mode");
+	struct Option* const mode = optionFind(APP_ID "_link_mode");
 	if (!mode) {
 		return;
 	}
 	addHeader("Link");
 	addOption((int) (mode - options));
-	struct Option* const shared = optionFind("armgba_shared_controls");
+	struct Option* const shared = optionFind(APP_ID "_shared_controls");
 	if (shared) {
 		addOption((int) (shared - options));
 	}
@@ -1694,7 +1694,7 @@ static void netplayMenu(void) {
 	helpFor("Removed: joins with no game, for a single-pak game. Needs Link Mode Separate.");
 	// A joining device's own choice for when the session ends.
 	for (int i = 0; i < optionCount; ++i) {
-		if (!strcmp(options[i].key, "armgba_keep_progress")) {
+		if (!strcmp(options[i].key, APP_ID "_keep_progress")) {
 			addOption(i);
 		}
 	}

@@ -10,7 +10,6 @@
 
 #include "frontend.h"
 #include "app-hooks.h"
-#include "link.h"
 #include "games.h"
 #include "patch.h"
 
@@ -223,7 +222,9 @@ static void tellSaveFolders(void) {
 			games[gameCount++] = consoleDirectories[c];
 		}
 	}
-	libretroSaveManagerFolders(saves, saveCount, games, gameCount, savesBesideGames());
+	if (appHooks.saveManagerFolders) {
+		appHooks.saveManagerFolders(saves, saveCount, games, gameCount, savesBesideGames());
+	}
 }
 
 // The BIOS and screenshot folders, as the Folders say; the core reads the BIOS folder as each game

@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "hooks.h"
+#include "link.h"
 
 const struct AppHooks appHooks = {
 	.start = lcdStart,
@@ -20,4 +21,12 @@ const struct AppHooks appHooks = {
 	.settingsDefaults = lcdSettingsDefaults,
 	.settingRead = lcdSettingRead,
 	.settingsWrite = lcdSettingsWrite,
+	.netplayPlayer = libretroSetNetplayPlayer,
+	.firmwareCrc = libretroFirmwareCrc,
+	.sessionValue = netSessionValue,
+	.takeSave = libretroTakeSave,
+	.sessionEnded = libretroSessionEnded,
+	.playOn = libretroPlayOn,
+	.saveManagerFolders = libretroSaveManagerFolders,
+	.cheevosConsole = netCheevosConsole,
 };

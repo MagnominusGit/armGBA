@@ -10,6 +10,7 @@
 // rcheevos on the main thread. Only the login token is kept, never the password.
 
 #include "frontend.h"
+#include "app-hooks.h"
 
 #include <dlfcn.h>
 #include <stdlib.h>
@@ -476,23 +477,12 @@ void cheevosLogout(void) {
 	status[0] = '\0';
 }
 
-// The console RetroAchievements files the game under, from its header.
-static uint32_t consoleOf(const uint8_t* data, size_t size) {
-	if (size >= 0xC0 && data[0xB2] == 0x96) {
-		return RC_CONSOLE_GAMEBOY_ADVANCE;
-	}
-	if (size >= 0x150 && data[0x104] == 0xCE && data[0x105] == 0xED) {
-		return data[0x143] & 0x80 ? RC_CONSOLE_GAMEBOY_COLOR : RC_CONSOLE_GAMEBOY;
-	}
-	return RC_CONSOLE_UNKNOWN;
-}
-
 // The loaded game's achievements, found by the hash of its file, when logged in.
 void cheevosLoadGame(void) {
 	if (!client || (!rc_client_get_user_info(client) && !settings.cheevosToken[0])) {
 		return;
 	}
-	uint32_t const console = consoleOf(app.gameData, app.gameSize);
+	uint32_t const console = appHooks.cheevosConsole ? appHooks.cheevosConsole(app.gameData, app.gameSize) : RC_CONSOLE_UNKNOWN;
 	char hash[33];
 	if (console == RC_CONSOLE_UNKNOWN || !rc_hash_generate_from_buffer(hash, console, app.gameData, app.gameSize)) {
 		return;

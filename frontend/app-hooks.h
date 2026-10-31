@@ -43,6 +43,20 @@ struct AppHooks {
 	void (*settingsDefaults)(void);
 	bool (*settingRead)(const char* key, const char* value, int n, bool yes);
 	void (*settingsWrite)(FILE* f);
+	// Netplay: this device's player (-1 when not in a session), the firmware every device running
+	// every console must match (a CRC, 0 for none, and its name), an option's value as the session
+	// has it, a joining player's save taken in (why not, or NULL), and a joined session ended, the
+	// game playing on or not.
+	void (*netplayPlayer)(int player);
+	uint32_t (*firmwareCrc)(const char** name);
+	const char* (*sessionValue)(const char* key, const char* value);
+	const char* (*takeSave)(int player, const void* save, size_t size, const void* rtc, size_t rtcSize);
+	void (*sessionEnded)(void);
+	void (*playOn)(void);
+	// Save Manager's folders: save folders, game folders, and whether the game folders come first.
+	void (*saveManagerFolders)(const char* const* saves, int saveCount, const char* const* games, int gameCount, bool gamesFirst);
+	// The console RetroAchievements files a game under (rc_consoles.h), 0 when unknown.
+	uint32_t (*cheevosConsole)(const uint8_t* data, size_t size);
 };
 
 extern const struct AppHooks appHooks;

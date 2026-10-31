@@ -17,7 +17,7 @@
 // a check of the state every few seconds; a player whose state differs is sent the host's again.
 
 #include "frontend.h"
-#include "link.h"
+#include "app-hooks.h"
 
 #include <arpa/inet.h>
 #include <dirent.h>
@@ -292,7 +292,7 @@ static const char* optionValue(const char* key);
 const char* const netLinkNames[] = { "Together", "Separate", "Off" };
 
 static int sessionLink(void) {
-	return !netTogether ? LINK_SEPARATE : !strcmp(optionValue("armgba_link_mode"), "off") ? LINK_OFF : LINK_TOGETHER;
+	return !netTogether ? LINK_SEPARATE : !strcmp(optionValue(APP_ID "_link_mode"), "off") ? LINK_OFF : LINK_TOGETHER;
 }
 
 static void setStatus(void) {
@@ -358,8 +358,8 @@ static const char* baseName(const char* path) {
 // how the game runs, only this device's save files.
 static bool ownOption(const char* key) {
 	static const char* const own[] = {
-		"armgba_back_up_save", "armgba_load_save", "armgba_load_into", "armgba_send_save", "armgba_receive_into", "armgba_keep_progress", "armgba_player1_saves",
-		"armgba_keep_saves", "armgba_list_saves", "armgba_safe_saves",
+		APP_ID "_back_up_save", APP_ID "_load_save", APP_ID "_load_into", APP_ID "_send_save", APP_ID "_receive_into", APP_ID "_keep_progress", APP_ID "_player1_saves",
+		APP_ID "_keep_saves", APP_ID "_list_saves", APP_ID "_safe_saves",
 	};
 	for (size_t i = 0; i < sizeof(own) / sizeof(*own); ++i) {
 		if (!strcmp(key, own[i])) {
@@ -371,7 +371,7 @@ static bool ownOption(const char* key) {
 
 // Player 2's game is a path on the host; here it is the game of the same name beside this device's.
 static bool localSecondGame(const char* hostValue, const char** value) {
-	struct Option* o = optionFind("armgba_player2_game");
+	struct Option* o = optionFind(APP_ID "_player2_game");
 	*value = hostValue;
 	if (!o || hostValue[0] != '/') {
 		return true;
@@ -389,15 +389,15 @@ static bool localSecondGame(const char* hostValue, const char** value) {
 static char linkStarted[16];
 
 void netGameStarted(void) {
-	snprintf(linkStarted, sizeof(linkStarted), "%s", optionValue("armgba_link_mode"));
+	snprintf(linkStarted, sizeof(linkStarted), "%s", optionValue(APP_ID "_link_mode"));
 }
 
 // The link mode a session needs; the game starts again when it started with another.
 static bool linkMode(const char* mode) {
-	if (!strcmp(optionValue("armgba_link_mode"), mode) && !strcmp(linkStarted, mode)) {
+	if (!strcmp(optionValue(APP_ID "_link_mode"), mode) && !strcmp(linkStarted, mode)) {
 		return false;
 	}
-	setOption("armgba_link_mode", mode);
+	setOption(APP_ID "_link_mode", mode);
 	retro_reset();
 	netGameStarted();
 	return true;
@@ -801,7 +801,7 @@ static uint32_t gameCrc(void) {
 static int playersMost(void) {
 	switch (sessionLink()) {
 	case LINK_TOGETHER:
-		return SDL_max(2, SDL_min(PEERS, atoi(optionValue("armgba_link_players"))));
+		return SDL_max(2, SDL_min(PEERS, atoi(optionValue(APP_ID "_link_players"))));
 	case LINK_OFF:
 		return PEERS;
 	default:
@@ -842,12 +842,25 @@ static void useSocket(struct Connection* c, int fd) {
 static int answerOn(void);
 static void hearBroadcasts(bool on);
 
+// This device's player for the core, -1 when not in a session.
+static void netplayPlayer(int player) {
+	if (appHooks.netplayPlayer) {
+		appHooks.netplayPlayer(player);
+	}
+}
+
+// The firmware every device running every console must match: a CRC, 0 for none, and its name.
+static uint32_t firmwareCrc(const char** name) {
+	*name = "";
+	return appHooks.firmwareCrc ? appHooks.firmwareCrc(name) : 0;
+}
+
 // Hosts the loaded game, linked as Link Mode says or as given: Together, Separate, or Off for one
 // console the players share. The game restarts if it started with another link mode.
 bool netHost(const char* link) {
 	char mode[16];
 	// With no cartridge, Save Manager and single-pak games link Separate.
-	snprintf(mode, sizeof(mode), "%s", app.noCartridge ? "separate" : link ? link : optionValue("armgba_link_mode"));
+	snprintf(mode, sizeof(mode), "%s", app.noCartridge ? "separate" : link ? link : optionValue(APP_ID "_link_mode"));
 	bool const separate = !strcmp(mode, "separate"), oneConsole = !strcmp(mode, "off");
 	// Every device runs every console, Together's or Off's one; Separate, each device its own.
 	bool const together = !separate;
@@ -873,12 +886,12 @@ bool netHost(const char* link) {
 	netTogether = together;
 	netMode = NET_HOSTING;
 	self = 0;
-	libretroSetNetplayPlayer(self);
+	netplayPlayer(self);
 	resetSync();
 	selfCount = together ? SDL_min(localPlayers(), playersMost()) : 1;
 	// Off: one console the players share, as Shared Controls says, or everyone's buttons at once.
-	if (oneConsole && !strcmp(optionValue("armgba_shared_controls"), "off")) {
-		setOption("armgba_shared_controls", "everyone");
+	if (oneConsole && !strcmp(optionValue(APP_ID "_shared_controls"), "off")) {
+		setOption(APP_ID "_shared_controls", "everyone");
 	}
 	if (linkMode(mode) && !app.noCartridge) {
 		osd(separate ? "Restarted for the link cable" : oneConsole ? "Restarted with one console, shared" : "Restarted with every player's console");
@@ -992,13 +1005,15 @@ void netStop(void) {
 			packets->stop();
 		}
 	}
-	if (netMode == NET_JOINED) {
-		libretroSessionEnded();
+	if (netMode == NET_JOINED && appHooks.sessionEnded) {
+		appHooks.sessionEnded();
 	}
 	if (netInHostsGame() && app.loaded) {
 		app.hostsGame = true;
 		if (!app.closing) {
-			libretroPlayOn();
+			if (appHooks.playOn) {
+				appHooks.playOn();
+			}
 			osd("Netplay: the session ended; saves now go to " APP_NAME "/Remote");
 		}
 	}
@@ -1025,7 +1040,7 @@ void netStop(void) {
 	netTogether = false;
 	selfCount = 1;
 	memset(names, 0, sizeof(names));
-	libretroSetNetplayPlayer(-1);
+	netplayPlayer(-1);
 	setStatus();
 }
 
@@ -1123,15 +1138,9 @@ static void sendNames(void) {
 	sendOthers(-1, MSG_NAMES, message, (size_t) (at - message));
 }
 
-// An option as the session has it: a host running armGBA's firmware, its system folder having no
-// Nintendo BIOS or boot ROM, has the players run armGBA's too.
+// An option as the session has it.
 static const char* sessionValue(const char* key, const char* value) {
-	const char* firmware;
-	bool const own = !libretroFirmwareCrc(&firmware);
-	if (own && ((!strcmp(key, "armgba_bios") && !strcmp(value, "nintendo")) || (!strcmp(key, "armgba_gb_boot_rom") && !strcmp(value, "enabled")))) {
-		return "open-source";
-	}
-	return value;
+	return appHooks.sessionValue ? appHooks.sessionValue(key, value) : value;
 }
 
 // Tells a player why they can't join, then closes the connection.
@@ -1208,7 +1217,7 @@ static void hostHello(struct Connection* c, const uint8_t* p, size_t size) {
 	put16(message + 2, (unsigned) optionCount);
 	put32(message + 4, gameCrc());
 	const char* firmware;
-	put32(message + 8, libretroFirmwareCrc(&firmware));
+	put32(message + 8, firmwareCrc(&firmware));
 	message[12] = (uint8_t) count;
 	char* at = (char*) message + 13;
 	at += sprintf(at, "%s", baseName(app.gamePath)) + 1;
@@ -1378,7 +1387,7 @@ static void clientWelcome(const uint8_t* p, size_t size) {
 	netTogether = p[0];
 	self = p[1];
 	selfCount = netTogether ? SDL_max(1, SDL_min(PEERS - self, p[12])) : 1;
-	libretroSetNetplayPlayer(self);
+	netplayPlayer(self);
 	// Every device runs every console in Together and Off, so each needs the game.
 	if (netTogether && app.noCartridge) {
 		cantJoin(CANT_NO_CARTRIDGE, NULL);
@@ -1411,7 +1420,7 @@ static void clientWelcome(const uint8_t* p, size_t size) {
 		if (ownOption(key)) {
 			continue;
 		}
-		if (!strcmp(key, "armgba_player2_game") && !localSecondGame(value, &value)) {
+		if (!strcmp(key, APP_ID "_player2_game") && !localSecondGame(value, &value)) {
 			osd("Netplay: you need %s beside your game", baseName(value));
 			netStop();
 			return;
@@ -1425,7 +1434,7 @@ static void clientWelcome(const uint8_t* p, size_t size) {
 		// Every device runs every console, so on the same firmware: the host's Nintendo BIOS or boot
 		// ROM must be in this device's system folder too. It is never sent.
 		const char* firmware;
-		uint32_t const own = libretroFirmwareCrc(&firmware);
+		uint32_t const own = firmwareCrc(&firmware);
 		if (own != get32(p + 8)) {
 			bool const other = own != 0;
 			cantJoin(other ? CANT_OTHER_FIRMWARE : CANT_FIRMWARE, NULL);
@@ -1494,7 +1503,8 @@ static void hostTakeSave(struct Connection* c, const uint8_t* p, size_t size) {
 	int const player = p[0];
 	size_t const saveSize = get32(p + 1);
 	const char* why = sessionLink() != LINK_TOGETHER ? "the host isn't on Link Mode Together"
-	                                                 : libretroTakeSave(player, p + 5, saveSize, p + 5 + saveSize, size - 5 - saveSize);
+	                  : !appHooks.takeSave           ? "the host's emulator takes no saves"
+	                                                 : appHooks.takeSave(player, p + 5, saveSize, p + 5 + saveSize, size - 5 - saveSize);
 	uint8_t answer[128] = { why == NULL };
 	snprintf((char*) answer + 1, sizeof(answer) - 1, "%s", why ? why : "");
 	sendTo(c, MSG_SAVE_IN, answer, 2 + strlen((const char*) answer + 1));
@@ -1535,7 +1545,7 @@ static void handle(struct Connection* c, int type, const uint8_t* p, size_t size
 	case MSG_CANT_JOIN:
 		if (host && size >= 1) {
 			const char* firmware;
-			libretroFirmwareCrc(&firmware);
+			firmwareCrc(&firmware);
 			c->turnedAway = true;
 			if (p[0] == CANT_OTHER_FIRMWARE) {
 				osd("Netplay: %s can't join: their Nintendo %s isn't the same as yours. Both can switch to " APP_NAME "'s in Core > System",
@@ -1788,16 +1798,16 @@ static Uint32 probedAt, scannedAt;
 static void hearBroadcasts(bool on) {
 #ifdef __ANDROID__
 	JNIEnv* const env = SDL_AndroidGetJNIEnv();
-	jclass const armgba = env ? (*env)->FindClass(env, APP_JAVA_PATH "/" APP_JAVA_CLASS) : NULL;
-	jmethodID const hear = armgba ? (*env)->GetStaticMethodID(env, armgba, "hearBroadcasts", "(Z)V") : NULL;
+	jclass const activity = env ? (*env)->FindClass(env, APP_JAVA_PATH "/" APP_JAVA_CLASS) : NULL;
+	jmethodID const hear = activity ? (*env)->GetStaticMethodID(env, activity, "hearBroadcasts", "(Z)V") : NULL;
 	if (hear) {
-		(*env)->CallStaticVoidMethod(env, armgba, hear, (jboolean) on);
+		(*env)->CallStaticVoidMethod(env, activity, hear, (jboolean) on);
 	}
 	if (env && (*env)->ExceptionCheck(env)) {
 		(*env)->ExceptionClear(env);
 	}
-	if (armgba) {
-		(*env)->DeleteLocalRef(env, armgba);
+	if (activity) {
+		(*env)->DeleteLocalRef(env, activity);
 	}
 #else
 	(void) on;
@@ -1840,7 +1850,7 @@ static void answerProbes(void) {
 			put16(answer + 12, (unsigned) settings.netPort);
 			snprintf((char*) answer + 14, 32, "%.31s", settings.nickname);
 			snprintf((char*) answer + 46, 128, "%.127s", app.gameName);
-			const char* const shared = optionValue("armgba_shared_controls");
+			const char* const shared = optionValue(APP_ID "_shared_controls");
 			answer[174] = !strcmp(shared, "everyone") ? 1 : !strcmp(shared, "pass around") ? 2 : 0;
 			sendto(answerer, answer, sizeof(answer), 0, (struct sockaddr*) &from, length);
 		}
