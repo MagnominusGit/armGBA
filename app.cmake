@@ -24,6 +24,13 @@ set(APP_SYSTEMS gb gbc gba)
 set(APP_SYSTEM_gb "Game Boy" gameboy "game boy")
 set(APP_SYSTEM_gbc "Game Boy Color" gameboycolor "game boy color")
 set(APP_SYSTEM_gba "Game Boy Advance" gameboyadvance "game boy advance")
+# The keyboard's default keys, as SDL names them (NONE for none), in libretro's order: B, Y, Select,
+# Start, Up, Down, Left, Right, A, X, L, R, L2, R2, L3, R3; then, for keys that move the sticks, the
+# left stick's up, down, left and right and the right stick's. APP_BUTTON_NAMES names them in the
+# menus, - for one the core doesn't use (all 24 with the stick keys), and APP_BUTTON_ORDER lists them
+# by libretro's numbers; both have defaults.
+# mGBA's keys; C and V are the turbo buttons, 1 to 4 L2 to R3.
+set(APP_KEYS Z C BACKSPACE RETURN UP DOWN LEFT RIGHT X V A S 1 2 3 4)
 # Help texts that name the console's buttons and what the app draws over its picture.
 set(APP_HELP_SWAP "Off: A is the right button, as on a Game Boy. On: A and B swap, and X and Y.")
 set(APP_HELP_SHADERS "The filter, and the GPU's LCD grid and Game Boy pixel shadow.")
