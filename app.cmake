@@ -3,6 +3,7 @@
 set(APP_ID armgba)
 set(APP_NAME armGBA)
 set(APP_WORDMARK ARMGBA)
+set(APP_ACCENT Blue)
 set(APP_JAVA_PACKAGE org.armgba.app)
 set(APP_JAVA_CLASS Armgba)
 # Its version, and how it's built: the CMake option that turns it on, and its target.
