@@ -568,5 +568,5 @@ Gambatte. Each part keeps its own notice:
 | `libretro/libretro.h` | MIT |
 | `libretro/deps/` | MIT and public domain, as each file states |
 | `app/`, `app.cmake`, `shaders/`, `bios/`, `gbboot/` | Mozilla Public License 2.0 |
-| `armulators/` | its own notices: Mozilla Public License 2.0, with the fonts under the SIL Open Font License 1.1 and its `deps/` MIT and public domain |
+| `armulators/` | its own notices: GNU GPL, version 2 or later, with the fonts under the SIL Open Font License 1.1 and its `deps/` MIT and public domain |
 | The Game Boy palettes (other than Grayscale) and color curves in `libretro/gb-gambatte.cpp` | MIT, from SameBoy (Lior Halphon) |
