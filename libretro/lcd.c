@@ -33,7 +33,7 @@ int lcdThreads;
 // faster than it lightens, as it relaxes. Each subpixel moves in linear light from where it was
 // towards the new frame by a share each frame. The time constants, in milliseconds to darken and to
 // lighten, are estimates for each kind of panel: the first Game Boy's STN, the Pocket's and Light's
-// FSTN, and the Color's and Advance's reflective TFTs; Half halves them. With Interlaced Rows on, the
+// FSTN, and the Color's and Advance's reflective TFTs; 25%, 50% and 75% take that share of them. With Interlaced Rows on, the
 // Color's and Advance's also drive alternate rows harder each frame, the other rows the next, the
 // weaker rows moving half as far, so a picture that alternates each frame shows in stripes, as it does
 // on the consoles (as SameBoy's accurate frame blending and BGB's Color interlacing also have it).
@@ -891,7 +891,7 @@ void sendPicture(const void* picture, unsigned width, unsigned height, size_t pi
 static uint8_t next5[2][256 * 32], next6[2][256 * 64], next8[2][256 * 256];
 static int builtFor = -1;
 
-static void buildNext(int kind, int level, int bits, uint8_t* table, float drive) {
+static void buildNext(int kind, int strength, int bits, uint8_t* table, float drive) {
 	// Each level in linear light, and where in linear light each level's rounding gives way to the next.
 	static float linear[256], bounds[255];
 	if (!linear[255]) {
@@ -902,8 +902,8 @@ static void buildNext(int kind, int level, int bits, uint8_t* table, float drive
 			}
 		}
 	}
-	float const dark = (float) (1 - exp(-16.743 * 2 / (level + 1) / screenTimes[kind][0])) * drive;
-	float const light = (float) (1 - exp(-16.743 * 2 / (level + 1) / screenTimes[kind][1])) * drive;
+	float const dark = (float) (1 - exp(-16.743 * 4 / strength / screenTimes[kind][0])) * drive;
+	float const light = (float) (1 - exp(-16.743 * 4 / strength / screenTimes[kind][1])) * drive;
 	int const codes = 1 << bits;
 	for (int now = 0; now < 256; ++now) {
 		for (int code = 0; code < codes; ++code) {
@@ -1014,16 +1014,16 @@ void showPicture(const void* picture, unsigned width, unsigned height, size_t pi
 	size_t const bytes = pitch / width;
 	size_t const pixels = pitch / bytes * height;
 	int const kind = screenKind();
-	int const wanted = (kind * 2 + ghosting - 1) * 2 + (bytes == 4);
+	int const wanted = (kind * 4 + ghosting - 1) * 2 + (bytes == 4);
 	if (builtFor != wanted) {
 		builtFor = wanted;
 		for (int d = 0; d < (kind == SCREEN_TFT ? 2 : 1); ++d) {
 			float const drive = d ? 0.5f : 1;
 			if (bytes == 4) {
-				buildNext(kind, ghosting - 1, 8, next8[d], drive);
+				buildNext(kind, ghosting, 8, next8[d], drive);
 			} else {
-				buildNext(kind, ghosting - 1, 5, next5[d], drive);
-				buildNext(kind, ghosting - 1, 6, next6[d], drive);
+				buildNext(kind, ghosting, 5, next5[d], drive);
+				buildNext(kind, ghosting, 6, next6[d], drive);
 			}
 		}
 	}

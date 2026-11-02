@@ -67,7 +67,7 @@ the Tilt and Solar Sensors only for cartridges with one, the link options only w
 | | Game Boy Contrast | Game Boy | 0% to 100% of the wheel in tenths, 50% by default (original Game Boy screens) |
 | | Game Boy on GBA: Border | Game Boy | Cropped, Shown (Game Boy Advance model) |
 | | Game Boy on GBA: Screen | Game Boy | Game Boy Advance, Game Boy Color (Game Boy Advance model) |
-| Video: LCD Effects | LCD Ghosting | Both | Off, Half, Full |
+| Video: LCD Effects | LCD Ghosting | Both | Off, 25%, 50%, 75%, 100% (always on the CPU) |
 | | Interlaced Rows | Both | Off, On |
 | | LCD Grid | Both | Off, 2x to 8x |
 | | Game Boy Pixel Shadow | Game Boy | Off, Up, Up Right, Right, Down Right (default), Down, Down Left, Left, Up Left, Tilt (Android: follows the device's tilt) |

@@ -598,7 +598,7 @@ static void readOptions(void) {
 	}
 	threadedVideo = threaded;
 	colorCorrection = optionIs("armgba_color_correction", "enabled") && buildCorrectedColors();
-	static const struct Choice ghostingChoices[] = { { "half", 1 }, { "enabled", 2 } };
+	static const struct Choice ghostingChoices[] = { { "25", 1 }, { "half", 2 }, { "75", 3 }, { "enabled", 4 } };
 	ghosting = optionChoice("armgba_lcd_ghosting", ghostingChoices, COUNT(ghostingChoices), 0);
 	static const struct Choice gridChoices[] = { { "2", 2 }, { "3", 3 }, { "4", 4 }, { "5", 5 }, { "6", 6 }, { "7", 7 }, { "8", 8 } };
 	int const scale = optionChoice("armgba_lcd_grid", gridChoices, COUNT(gridChoices), 1);
