@@ -33,10 +33,12 @@ int lcdThreads;
 // faster than it lightens, as it relaxes. Each subpixel moves in linear light from where it was
 // towards the new frame by a share each frame. The time constants, in milliseconds to darken and to
 // lighten, are estimates for each kind of panel: the first Game Boy's STN, the Pocket's and Light's
-// FSTN, and the Color's and Advance's reflective TFTs; 25%, 50% and 75% take that share of them. With Interlaced Rows on, the
-// Color's and Advance's also drive alternate rows harder each frame, the other rows the next, the
-// weaker rows moving half as far, so a picture that alternates each frame shows in stripes, as it does
-// on the consoles (as SameBoy's accurate frame blending and BGB's Color interlacing also have it).
+// FSTN, and the Color's and Advance's reflective TFTs; 25%, 50% and 75% take that share of them.
+// With Interlaced Rows on, the Color's and Advance's also drive alternate rows harder each frame, the
+// other rows the next: the harder driven rows' times shorter, the others' longer, so that over two
+// frames every row moves as far as without it, and a picture that alternates each frame shows in
+// stripes, as it does on the consoles (as SameBoy's accurate frame blending and BGB's Color
+// interlacing also have it), the Color's a little more than the Advance's.
 // Each subpixel's level is kept 8-bit, gamma encoded, and its next level read from a table built for
 // the screen and the picture's channel widths, the rows shared out among the CPU's cores. A frame
 // RetroArch runs again, and doesn't show, leaves the screen as it is.
@@ -887,11 +889,12 @@ void sendPicture(const void* picture, unsigned width, unsigned height, size_t pi
 }
 
 // Each channel's next level, from its level now and the channel's value in the new picture: tables for
-// 5- and 6-bit channels (RGB565) and 8-bit ones (XRGB8888), for strong and weak drive.
+// 5- and 6-bit channels (RGB565) and 8-bit ones (XRGB8888), for the rows driven harder (all rows
+// without Interlaced Rows) and the others.
 static uint8_t next5[2][256 * 32], next6[2][256 * 64], next8[2][256 * 256];
 static int builtFor = -1;
 
-static void buildNext(int kind, int strength, int bits, uint8_t* table, float drive) {
+static void buildNext(int kind, int strength, int bits, uint8_t* table, float scale) {
 	// Each level in linear light, and where in linear light each level's rounding gives way to the next.
 	static float linear[256], bounds[255];
 	if (!linear[255]) {
@@ -902,8 +905,8 @@ static void buildNext(int kind, int strength, int bits, uint8_t* table, float dr
 			}
 		}
 	}
-	float const dark = (float) (1 - exp(-16.743 * 4 / strength / screenTimes[kind][0])) * drive;
-	float const light = (float) (1 - exp(-16.743 * 4 / strength / screenTimes[kind][1])) * drive;
+	float const dark = (float) (1 - exp(-16.743 * 4 / strength / (screenTimes[kind][0] * scale)));
+	float const light = (float) (1 - exp(-16.743 * 4 / strength / (screenTimes[kind][1] * scale)));
 	int const codes = 1 << bits;
 	for (int now = 0; now < 256; ++now) {
 		for (int code = 0; code < codes; ++code) {
@@ -1014,16 +1017,20 @@ void showPicture(const void* picture, unsigned width, unsigned height, size_t pi
 	size_t const bytes = pitch / width;
 	size_t const pixels = pitch / bytes * height;
 	int const kind = screenKind();
-	int const wanted = (kind * 4 + ghosting - 1) * 2 + (bytes == 4);
+	// Interlaced rows: the harder driven rows' share of the time, and the others' so that the two
+	// frames' rates add up to two plain ones (1 / lead + 1 / lag = 2).
+	bool const alternate = kind == SCREEN_TFT && interleaved;
+	float const lead = !alternate ? 1 : advancePanel() ? 0.85f : 0.8f;
+	int const wanted = ((kind * 4 + ghosting - 1) * 3 + (alternate ? 1 + advancePanel() : 0)) * 2 + (bytes == 4);
 	if (builtFor != wanted) {
 		builtFor = wanted;
-		for (int d = 0; d < (kind == SCREEN_TFT ? 2 : 1); ++d) {
-			float const drive = d ? 0.5f : 1;
+		for (int d = 0; d < (alternate ? 2 : 1); ++d) {
+			float const scale = d ? 1 / (2 - 1 / lead) : lead;
 			if (bytes == 4) {
-				buildNext(kind, ghosting, 8, next8[d], drive);
+				buildNext(kind, ghosting, 8, next8[d], scale);
 			} else {
-				buildNext(kind, ghosting, 5, next5[d], drive);
-				buildNext(kind, ghosting, 6, next6[d], drive);
+				buildNext(kind, ghosting, 5, next5[d], scale);
+				buildNext(kind, ghosting, 6, next6[d], scale);
 			}
 		}
 	}
@@ -1066,7 +1073,7 @@ void showPicture(const void* picture, unsigned width, unsigned height, size_t pi
 	}
 	ghost.picture = picture;
 	ghost.bytes = bytes;
-	ghost.alternate = kind == SCREEN_TFT && interleaved;
+	ghost.alternate = alternate;
 	startJobs();
 	runJobs(ghostJob);
 	sendPicture(ghost.shown, width, height, pitch);
