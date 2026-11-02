@@ -1020,7 +1020,7 @@ void showPicture(const void* picture, unsigned width, unsigned height, size_t pi
 	// Interlaced rows: the harder driven rows' share of the time, and the others' so that the two
 	// frames' rates add up to two plain ones (1 / lead + 1 / lag = 2).
 	bool const alternate = kind == SCREEN_TFT && interleaved;
-	float const lead = !alternate ? 1 : advancePanel() ? 0.85f : 0.8f;
+	float const lead = !alternate ? 1 : advancePanel() ? 0.8f : 0.75f;
 	int const wanted = ((kind * 4 + ghosting - 1) * 3 + (alternate ? 1 + advancePanel() : 0)) * 2 + (bytes == 4);
 	if (builtFor != wanted) {
 		builtFor = wanted;
