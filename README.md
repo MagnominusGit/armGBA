@@ -122,7 +122,11 @@ Boy Color, the CPU and OAM DMA. The screen, timers and sound keep the console's 
 at their own speed. Games that slow down or draw fewer frames than the screen
 shows, such as 3D ones, run smoother. It takes more of the host's CPU while a game is busy. Game
 Boy Color games in double speed go no faster than 200%, four times the first Game Boy's CPU. CPU
-Clock During Boot at 100% keeps the BIOS intro and boot ROMs as on the console.
+Clock During Boot at 100% keeps the BIOS intro and boot ROMs as on the console. On the Game Boy and
+Game Boy Color, the CPU keeps the console's pace for two lines after a game reads STAT or LY, so
+code timed against the picture still meets it. A few games depend on the CPU's speed in their own
+logic and misbehave above 100%, as they would on an overclocked console; set CPU Clock back to 100%
+for those.
 
 Low Memory has the frontend leave the game to the core, which maps it from its file instead of
 keeping a copy in memory, so the host reads the parts the game uses as it plays and can drop them

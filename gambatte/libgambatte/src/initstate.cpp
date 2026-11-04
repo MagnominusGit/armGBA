@@ -101,6 +101,8 @@ void gambatte::setInitState(SaveState &state, bool const cgb, bool const sgb, bo
 	state.mem.mbcExtra2 = 0;
 	state.mem.mbcExtra3 = 0;
 	state.mem.mbcExtra4 = 0;
+	state.mem.cpuCarry = 0;
+	state.mem.cpuStockLeft = 0;
 	state.mem.IME = false;
 	state.mem.halted = false;
 	state.mem.enableRam = false;

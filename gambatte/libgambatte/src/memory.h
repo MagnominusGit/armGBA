@@ -82,6 +82,10 @@ public:
 	unsigned long cpuCycles(unsigned mcycles) {
 		if (cpuQuarters_ == 4)
 			return 4 * mcycles;
+		if (stockLeft_) {
+			stockLeft_ = stockLeft_ > 4 * mcycles ? stockLeft_ - 4 * mcycles : 0;
+			return 4 * mcycles;
+		}
 		unsigned const quarters = cpuQuartersNow(), unit = isDoubleSpeed() ? 2 : 1;
 		cpuCarry_ += 16 * mcycles;
 		unsigned long const cycles = cpuCarry_ / (unit * quarters) * unit;
@@ -89,6 +93,13 @@ public:
 		return cycles;
 	}
 	unsigned cpuQuartersNow() const { return isDoubleSpeed() && cpuQuarters_ > 8 ? 8 : cpuQuarters_; }
+	// armGBA: a game reading STAT or LY may be timing its code against the picture, counting the CPU's
+	// cycles to land in a blanking period or between two reads of a mode change; for two lines after,
+	// the CPU runs at the console's own pace, so such loops meet the picture as on the console.
+	void cpuTimingPicture() {
+		if (cpuQuarters_ != 4)
+			stockLeft_ = 2 * 456 << isDoubleSpeed();
+	}
 	// armGBA: OAM DMA moves a byte per machine cycle of the CPU, so it keeps pace with code timed
 	// to wait for it; at a clock between, it is a little ahead of the CPU, never behind.
 	unsigned oamDmaStep() const {
@@ -413,6 +424,7 @@ public:
 private:
 	unsigned cpuQuarters_;
 	unsigned cpuCarry_;
+	unsigned long stockLeft_;
 	Cartridge cart_;
 	Sgb sgb_;
 	unsigned char ioamhram_[0x200];

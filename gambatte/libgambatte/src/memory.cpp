@@ -47,6 +47,7 @@ int serialCntFrom(unsigned long cyclesUntilDone, bool cgbFast) {
 Memory::Memory(Interrupter const &interrupter)
 : cpuQuarters_(4)
 , cpuCarry_(0)
+, stockLeft_(0)
 , getInput_(0)
 , divLastUpdate_(0)
 , lastOamDmaUpdate_(disabled_time)
@@ -95,6 +96,8 @@ unsigned long Memory::saveState(SaveState &state, unsigned long cc) {
 	state.mem.unhaltTime = intreq_.eventTime(intevent_unhalt);
 	state.mem.nextBlitTime = intreq_.eventTime(intevent_blit);
 	state.mem.blankLcd = blanklcd_;
+	state.mem.cpuCarry = cpuCarry_;
+	state.mem.cpuStockLeft = stockLeft_;
 	state.mem.lastOamDmaUpdate = oamDmaStartPos_
 		? lastOamDmaUpdate_ + ((oamDmaStartPos_ - oamDmaPos_) & 0xFF) * oamDmaStep()
 		: lastOamDmaUpdate_;
@@ -120,6 +123,8 @@ unsigned long Memory::saveState(SaveState &state, unsigned long cc) {
 
 void Memory::loadState(SaveState const &state) {
 	biosMode_ = state.mem.biosMode;
+	cpuCarry_ = state.mem.cpuCarry;
+	stockLeft_ = state.mem.cpuStockLeft;
 	stopped_ = state.mem.stopped;
 	lastCartBusUpdate_ = state.mem.lastCartBusUpdate;
 	totalSamplesEmitted_ = (unsigned long long)state.mem.totalSamplesEmittedHigh << 32;
@@ -686,8 +691,10 @@ unsigned Memory::nontrivial_ff_read(unsigned const p, unsigned long const cc) {
 		psg_.generateSamples(cc, isDoubleSpeed());
 		return psg_.waveRamRead(p & 0xF);
 	case 0x41:
+		cpuTimingPicture();
 		return ioamhram_[0x141] | lcd_.getStat(ioamhram_[0x145], cc);
 	case 0x44:
+		cpuTimingPicture();
 		return lcd_.getLyReg(cc);
 	case 0x4C:
 		if (!biosMode_)

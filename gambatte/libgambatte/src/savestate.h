@@ -85,6 +85,10 @@ struct SaveState {
 		unsigned long mbcExtra2;
 		unsigned long mbcExtra3;
 		unsigned long mbcExtra4;
+		// armGBA: the CPU Clock's part of a cycle carried over, and how long the CPU keeps the console's
+		// pace (Memory::cpuTimingPicture); 0 in a state from before these were kept
+		unsigned long cpuCarry;
+		unsigned long cpuStockLeft;
 		unsigned short rombank;
 		unsigned short dmaSource;
 		unsigned short dmaDestination;

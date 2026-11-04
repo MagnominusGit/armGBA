@@ -260,6 +260,8 @@ SaverList::SaverList()
 	{ static char const label[] = { m,b,c,e,x,t,NO2, NUL }; ADD(mem.mbcExtra2); }
 	{ static char const label[] = { m,b,c,e,x,t,NO3, NUL }; ADD(mem.mbcExtra3); }
 	{ static char const label[] = { m,b,c,e,x,t,NO4, NUL }; ADD(mem.mbcExtra4); }
+	{ static char const label[] = { c,p,u,c,a,r,y, NUL }; ADD(mem.cpuCarry); }
+	{ static char const label[] = { c,p,u,s,t,o,k, NUL }; ADD(mem.cpuStockLeft); }
 	{ static char const label[] = { r,o,m,b,a,n,k, NUL }; ADD(mem.rombank); }
 	{ static char const label[] = { d,m,a,s,r,c,   NUL }; ADD(mem.dmaSource); }
 	{ static char const label[] = { d,m,a,d,s,t,   NUL }; ADD(mem.dmaDestination); }
