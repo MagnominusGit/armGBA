@@ -212,6 +212,10 @@ static int netplayClient = -1;
 static bool sessionSaveDue;
 // RetroArch said which client this device is in a session it joined, and the session's end was seen.
 static bool clientTold, sessionOver;
+// Whether this RetroArch doesn't know the call that says which netplay client this device is (1.22.2
+// and earlier log each try).
+static bool clientIndexUnknown;
+static bool askClientIndex(unsigned* client);
 static int16_t mixedSamples[2 * 4096];
 
 // Player 2's game: the choices offered, and the game running (empty for player 1's).
@@ -1440,7 +1444,7 @@ void retro_unload_game(void) {
 	netplaySeen = false;
 	netplayJoined = false;
 	sessionSaveDue = false;
-	clientTold = sessionOver = playingOn = false;
+	clientTold = sessionOver = playingOn = clientIndexUnknown = false;
 	noGame = false;
 	sharedHinted = false;
 	memset(&passed, 0, sizeof(passed));
@@ -1990,7 +1994,7 @@ static void readScreensKeys(void) {
 	bool const netplay = (netplaySeen && !playingOn) || netplayPlayer >= 0;
 	if (netplaySeen) {
 		unsigned client = 0;
-		bool const told = environment(RETRO_ENVIRONMENT_GET_NETPLAY_CLIENT_INDEX, &client) && client < MAX_PLAYERS;
+		bool const told = askClientIndex(&client) && client < MAX_PLAYERS;
 		netplayClient = told && !(client == 0 && netplayJoined) ? (int) client : -1;
 	}
 	int here = netplayJoined ? 1 : 0;
@@ -2588,12 +2592,23 @@ static void showOptionsForNetplay(void) {
 	}
 }
 
+// Which netplay client this device is, as RetroArch says; asked only once netplay has been seen, and
+// not again in this game once a RetroArch that doesn't know the call has failed it in a session.
+static bool askClientIndex(unsigned* client) {
+	if (!netplaySeen || clientIndexUnknown) {
+		return false;
+	}
+	bool const told = environment(RETRO_ENVIRONMENT_GET_NETPLAY_CLIENT_INDEX, client);
+	clientIndexUnknown = !told && !clientTold;
+	return told;
+}
+
 // A session this device joined in RetroArch ends as RetroArch stops saying which client it is. Its game,
 // the host's, plays on here.
 static void watchSessionEnd(void) {
 	unsigned client = 0;
 	// A session joined again, playing on after the last one, is watched in turn.
-	if (environment(RETRO_ENVIRONMENT_GET_NETPLAY_CLIENT_INDEX, &client)) {
+	if (askClientIndex(&client)) {
 		clientTold = true;
 		sessionOver = playingOn = false;
 		return;
@@ -2691,7 +2706,7 @@ int joinedPlayer(void) {
 	if (netplayPlayer >= 0) {
 		return netplayPlayer;
 	}
-	return environment(RETRO_ENVIRONMENT_GET_NETPLAY_CLIENT_INDEX, &client) && client > 0 && client < MAX_PLAYERS ? (int) client : 1;
+	return askClientIndex(&client) && client > 0 && client < MAX_PLAYERS ? (int) client : 1;
 }
 
 static bool saveConsoles(void* data, size_t size) {
