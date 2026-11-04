@@ -60,6 +60,7 @@ the Tilt and Solar Sensors only for cartridges with one, the link options only w
 | | BIOS (applies on restart) | Game Boy Advance | Nintendo's (System Folder), armGBA's (Built In) |
 | | CPU Clock | Both | 100%, 25% to 400% in steps of 25% |
 | | CPU Clock During Boot | Both | 100%, CPU Clock (with CPU Clock not at 100%) |
+| | Low Memory (applies when a game is opened) | Game Boy Advance | Off, On |
 | | Game Boy Model (applies on restart) | Game Boy | Auto, Game Boy, Game Boy Pocket / Light, Game Boy Color, Game Boy Advance |
 | | Game Boy Boot ROM (applies on restart) | Game Boy | Nintendo's (System Folder), armGBA's (Built In), Off |
 | Video | Threaded Video | Game Boy Advance | Off, On, One Frame Late |
@@ -121,6 +122,11 @@ at their own speed. Games that slow down or draw fewer frames than the screen
 shows, such as 3D ones, run smoother. It takes more of the host's CPU while a game is busy. Game
 Boy Color games in double speed go no faster than 200%, four times the first Game Boy's CPU. CPU
 Clock During Boot at 100% keeps the BIOS intro and boot ROMs as on the console.
+
+Low Memory has the frontend leave the game to the core, which maps it from its file instead of
+keeping a copy in memory, so the host reads the parts the game uses as it plays and can drop them
+again. Games with a soft patch beside them and files over 32 MiB are read in as with Low Memory
+off.
 
 LCD Grid draws the gaps between the console screen's pixels into a picture as many times larger,
 with the shadow a first Game Boy's or a Pocket's pixels cast: pick the largest that fits the screen,

@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <zlib.h>
 
 // No patched game is larger: a 32 MiB Game Boy Advance cartridge, or an 8 MiB Game Boy one, with room.
@@ -248,10 +249,11 @@ static uint8_t* readFile(const char* path, size_t* size) {
 	return data;
 }
 
-int patchGame(const char* path, void** data, size_t* size, char* name, size_t nameSize) {
-	// The game's path without the part in an archive or the extension.
-	char base[4096];
-	snprintf(base, sizeof(base), "%s", path);
+static const char* const kinds[] = { "bps", "ups", "ips" };
+
+// The game's path without the part in an archive or the extension.
+static void patchBase(const char* path, char* base, size_t size) {
+	snprintf(base, size, "%s", path);
 	char* const hash = strchr(base, '#');
 	if (hash) {
 		*hash = '\0';
@@ -261,7 +263,26 @@ int patchGame(const char* path, void** data, size_t* size, char* name, size_t na
 	if (dot && (!slash || dot > slash)) {
 		*dot = '\0';
 	}
-	static const char* const kinds[] = { "bps", "ups", "ips" };
+}
+
+bool patchesBeside(const char* path) {
+	char base[4096];
+	patchBase(path, base, sizeof(base));
+	for (int number = 0; number < 2; ++number) {
+		for (int kind = 0; kind < 3; ++kind) {
+			char file[4200];
+			snprintf(file, sizeof(file), number ? "%s.%s%d" : "%s.%s", base, kinds[kind], number);
+			if (!access(file, F_OK)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+int patchGame(const char* path, void** data, size_t* size, char* name, size_t nameSize) {
+	char base[4096];
+	patchBase(path, base, sizeof(base));
 	static bool (*const appliers[])(struct Patch*) = { applyBps, applyUps, applyIps };
 	uint8_t* game = *data;
 	size_t gameSize = *size;

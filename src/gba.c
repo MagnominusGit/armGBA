@@ -7,8 +7,12 @@
 #include "gba.h"
 #include "cpu/jit.h"
 
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 enum {
 	SP_BASE_SYSTEM = 0x03007F00,
@@ -126,11 +130,26 @@ struct GBA* gbaCreate(void) {
 	return gba;
 }
 
+// Cartridges mapped from their files (gbaMapRom), which the host can drop from memory and read
+// again as the game needs them.
+static uint8_t* mappedRoms[8];
+
+static void romFree(uint8_t* rom) {
+	for (size_t i = 0; rom && i < sizeof(mappedRoms) / sizeof(*mappedRoms); ++i) {
+		if (mappedRoms[i] == rom) {
+			munmap(rom, SIZE_ROM);
+			mappedRoms[i] = NULL;
+			return;
+		}
+	}
+	free(rom);
+}
+
 void gbaDestroy(struct GBA* gba) {
 	renderThreadStop(gba);
 	jitDeinit(gba);
 	cartFree(gba);
-	free(gba->rom);
+	romFree(gba->rom);
 	free(gba->multiboot);
 	free(gba);
 }
@@ -210,7 +229,7 @@ bool gbaLoadRom(struct GBA* gba, const void* data, size_t size) {
 	if (size > SIZE_ROM) {
 		size = SIZE_ROM;
 	}
-	free(gba->rom);
+	romFree(gba->rom);
 	free(gba->multiboot);
 	gba->multiboot = NULL;
 	gba->multibootSize = 0;
@@ -242,6 +261,57 @@ bool gbaLoadRom(struct GBA* gba, const void* data, size_t size) {
 		}
 		size = SIZE_ROM;
 	}
+	gba->romSize = size;
+	gba->romMask = toPow2(size) - 1;
+	return true;
+}
+
+// As gbaLoadRom, with the file mapped over the cartridge space instead of copied in. Returns false,
+// for gbaLoadRom to copy it, if the file can't be mapped or is one gbaLoadRom changes.
+bool gbaMapRom(struct GBA* gba, const char* path) {
+	size_t slot = 0;
+	while (slot < sizeof(mappedRoms) / sizeof(*mappedRoms) && mappedRoms[slot]) {
+		++slot;
+	}
+	int const file = open(path, O_RDONLY | O_CLOEXEC);
+	if (slot == sizeof(mappedRoms) / sizeof(*mappedRoms) || file < 0) {
+		if (file >= 0) {
+			close(file);
+		}
+		return false;
+	}
+	struct stat info;
+	uint8_t* rom = MAP_FAILED;
+	size_t size = 0;
+	if (!fstat(file, &info) && info.st_size >= 0xC0 && info.st_size <= SIZE_ROM) {
+		size = info.st_size;
+		rom = mmap(NULL, SIZE_ROM, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	}
+	// A Classic NES Series cartridge's repeats are the file mapped again.
+	size_t mapped = 0;
+	while (rom != MAP_FAILED && mapped < SIZE_ROM && (!mapped || (rom[0xAC] == 'F' && !(size & (size - 1))))) {
+		if (mmap(rom + mapped, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_FIXED, file, 0) == MAP_FAILED) {
+			munmap(rom, SIZE_ROM);
+			rom = MAP_FAILED;
+		}
+		mapped += size;
+	}
+	close(file);
+	if (rom == MAP_FAILED) {
+		return false;
+	}
+	if (multibootImage(rom, size) || !cartLoad(gba, rom, size)) {
+		munmap(rom, SIZE_ROM);
+		return false;
+	}
+	if (mapped == SIZE_ROM) {
+		size = SIZE_ROM;
+	}
+	romFree(gba->rom);
+	free(gba->multiboot);
+	gba->multiboot = NULL;
+	gba->multibootSize = 0;
+	gba->rom = mappedRoms[slot] = rom;
 	gba->romSize = size;
 	gba->romMask = toPow2(size) - 1;
 	return true;

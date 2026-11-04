@@ -343,6 +343,11 @@ void retro_set_environment(retro_environment_t callback) {
 		secondOption = optionDefinition("armgba_player2_game");
 		findSaveOptions();
 	}
+	// Low Memory: the frontend gives the core the game's path, and the core maps the file.
+	static const struct retro_system_content_info_override mapped[] = { { "gba|bin", true, false }, { NULL, false, false } };
+	if (optionIs("armgba_low_memory", "enabled")) {
+		callback(RETRO_ENVIRONMENT_SET_CONTENT_INFO_OVERRIDE, (void*) mapped);
+	}
 }
 
 void retro_set_video_refresh(retro_video_refresh_t callback) {
@@ -860,6 +865,24 @@ static void checkBooted(void) {
 	}
 }
 
+static void* readPatched(const char* path, size_t* size);
+
+// With Low Memory, the frontend leaves the game to the core, which maps it from its file unless it
+// has a patch to apply.
+static bool loadCartridge(struct GBA* machine, const struct retro_game_info* game) {
+	if (game->data) {
+		return gbaLoadRom(machine, game->data, game->size);
+	}
+	if (!patchesBeside(game->path) && gbaMapRom(machine, game->path)) {
+		return true;
+	}
+	size_t size = 0;
+	void* data = readPatched(game->path, &size);
+	bool const loaded = data && gbaLoadRom(machine, data, size);
+	free(data);
+	return loaded;
+}
+
 static struct GBA* startAdvance(const struct retro_game_info* game) {
 	struct GBA* machine = gbaCreate();
 	if (!machine) {
@@ -868,7 +891,7 @@ static struct GBA* startAdvance(const struct retro_game_info* game) {
 	// RetroArch loads the save file into save memory after this, and writes it back from there.
 	machine->savedata.backed = true;
 	machine->renderer.rgb565 = true;
-	if (!loadBios(machine) || !gbaLoadRom(machine, game->data, game->size)) {
+	if (!loadBios(machine) || !loadCartridge(machine, game)) {
 		gbaDestroy(machine);
 		return NULL;
 	}
@@ -1008,7 +1031,7 @@ static bool readOtherGames(const struct retro_game_info* second, const void* sam
                            const void* data[], size_t sizes[], void* read[]) {
 	for (int i = 1; i < count; ++i) {
 		const char* path = i == 1 ? secondPath : otherPaths[i];
-		if (i == 1 && second) {
+		if (i == 1 && second && second->data) {
 			data[i] = second->data;
 			sizes[i] = second->size;
 		} else if (othersBare) {
@@ -1369,7 +1392,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 	if (!game) {
 		return loadNoGame();
 	}
-	if (!game->data) {
+	if (!game->data && (!game->path || isPairFile(game->path) || hasGameBoyExtension(game->path))) {
 		return false;
 	}
 	if (isPairFile(game->path)) {
@@ -1384,7 +1407,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 
 bool retro_load_game_special(unsigned type, const struct retro_game_info* info, size_t count) {
 	readSaveActions(false);
-	if (type == SUBSYSTEM_ADVANCE_LINK && count == 2 && info[0].data && info[1].data) {
+	if (type == SUBSYSTEM_ADVANCE_LINK && count == 2 && (info[0].data || info[0].path) && (info[1].data || info[1].path)) {
 		gameBoy = false;
 		return loadAdvance(&info[0], &info[1]);
 	}

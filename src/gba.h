@@ -850,6 +850,7 @@ bool gbaLoadBios(struct GBA*, const void* data, size_t size);
 // armGBA's own BIOS (bios/), for when there is no gba_bios.bin.
 extern const uint8_t armgbaBios[SIZE_BIOS];
 bool gbaLoadRom(struct GBA*, const void* data, size_t size);
+bool gbaMapRom(struct GBA*, const char* path);
 void gbaReset(struct GBA*, bool skipBios);
 void gbaRunPart(struct GBA*);
 void gbaSetKeys(struct GBA*, uint16_t keys);

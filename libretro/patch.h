@@ -11,6 +11,7 @@
 // archive's name, "Game.bps"), applied to the game as it is read; the file stays as it is. Patches
 // numbered on from 1, "Game.ips1", "Game.bps2" and so on, follow it in turn.
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -21,6 +22,8 @@ extern "C" {
 // holds the patched game. Returns how many applied, or -1 if one didn't (made for another release of
 // the game, or damaged), leaving the game as it was read; name then has that patch's file name.
 int patchGame(const char* path, void** data, size_t* size, char* name, size_t nameSize);
+// Whether path's game has a patch beside it.
+bool patchesBeside(const char* path);
 
 #ifdef __cplusplus
 }
