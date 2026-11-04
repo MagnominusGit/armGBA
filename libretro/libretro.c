@@ -46,6 +46,11 @@ static retro_log_printf_t logPrintf;
 
 struct GBA* gba;
 bool skipBios;
+// The CPU Clock option, as quarters above the console's clock (cpu.overclock). With CPU Clock
+// During Boot at 100%, the BIOS intro or boot ROM runs on the console's clock until the game starts.
+static int8_t cpuOverclock;
+static bool stockDuringBoot;
+static bool booting;
 enum { TILT_LEFT_STICK, TILT_RIGHT_STICK, TILT_DPAD };
 static int tiltControl;
 static bool leftStickDpad;
@@ -585,6 +590,10 @@ static void readOptions(void) {
 	static const struct Choice tiltChoices[] = { { "right stick", TILT_RIGHT_STICK }, { "d-pad", TILT_DPAD } };
 
 	skipBios = optionIs("armgba_skip_bios", "enabled");
+	const char* clock = option("armgba_cpu_clock");
+	int percent = clock ? atoi(clock) : 100;
+	cpuOverclock = percent >= 25 && percent <= 400 && percent % 25 == 0 ? percent / 25 - 4 : 0;
+	stockDuringBoot = !optionIs("armgba_cpu_clock_boot", "clock");
 	const char* address = option("armgba_gamecube_address");
 	dolphinSetHost(gamecubeWanted() && !gameBoy ? (address ? address : "auto") : NULL);
 	int threaded = optionChoice("armgba_threaded_video", threadedChoices, COUNT(threadedChoices), THREADED_OFF);
@@ -814,6 +823,42 @@ uint32_t libretroFirmwareCrc(const char** option) {
 	return gameBoy ? libretroGbBootCrc() : biosCrc;
 }
 
+// The clock the consoles run on now.
+static int8_t clockNow(void) {
+	return booting && stockDuringBoot ? 0 : cpuOverclock;
+}
+
+// Restarts a console, on the CPU Clock chosen.
+static void resetAdvance(struct GBA* machine) {
+	booting = !skipBios;
+	machine->cpu.overclock = clockNow();
+	gbaReset(machine, skipBios);
+}
+
+// Puts the consoles on the CPU Clock chosen, when it changed or a state from another was loaded.
+static void applyCpuClock(void) {
+	libretroGbSetCpuClock(4 + clockNow());
+	for (int i = 0; !gameBoy && i < playersHere; ++i) {
+		gbaSetOverclock(gbas[i], clockNow());
+	}
+}
+
+// Once the game has started, from the cartridge or a program another console sent, the CPU Clock
+// applies.
+static void checkBooted(void) {
+	if (!booting) {
+		return;
+	}
+	bool still = gameBoy && libretroGbBooting();
+	for (int i = 0; !gameBoy && i < playersHere; ++i) {
+		still |= gbas[i]->cpu.r[15] < 0x02000000;
+	}
+	if (!still) {
+		booting = false;
+		applyCpuClock();
+	}
+}
+
 static struct GBA* startAdvance(const struct retro_game_info* game) {
 	struct GBA* machine = gbaCreate();
 	if (!machine) {
@@ -919,7 +964,7 @@ static bool startOtherAdvances(int count, const void* const data[], const size_t
 	linkSetGba(NULL);
 	for (int i = 0; i < count; ++i) {
 		if (i) {
-			gbaReset(gbas[i], skipBios);
+			resetAdvance(gbas[i]);
 		}
 		cables[i] = (struct SioLink) { .context = (void*) (intptr_t) i, .players = count, .id = i, .begin = cableBegin, .finish = cableFinish, .wrote = cableWrote };
 	}
@@ -1161,6 +1206,8 @@ static bool loadGameBoy(const struct retro_game_info* game, const struct retro_g
 	playersHere = 1;
 	libretroGbSetPlayers(1, false);
 	readOptions();
+	booting = true;
+	libretroGbSetCpuClock(4 + clockNow());
 	char error[256];
 	libretroGbSelect(0);
 	if (!libretroGbLoad(game->data, game->size, directory, gbModel, gbColorCorrection, AUDIO_RATE, error, sizeof(error))) {
@@ -1251,7 +1298,7 @@ static bool loadAdvance(const struct retro_game_info* game, const struct retro_g
 	cartridgeOut = false;
 	applyCartridge();
 	cartridgeSaveUnread = cartridgeOut && !noGame;
-	gbaReset(gba, skipBios);
+	resetAdvance(gba);
 	if (!noGame) {
 		readPlayerOneSave();
 	}
@@ -1409,6 +1456,8 @@ void retro_reset(void) {
 	applyLinkOptions();
 	offerLinkNetplay();
 	if (gameBoy) {
+		booting = true;
+		applyCpuClock();
 		for (int i = playersHere - 1; i >= 0; --i) {
 			libretroGbSelect(i);
 			libretroGbReset(gbModel);
@@ -1421,7 +1470,7 @@ void retro_reset(void) {
 	bool const putBack = applyCartridge();
 	for (int i = 0; i < playersHere; ++i) {
 		loadBios(gbas[i]);
-		gbaReset(gbas[i], skipBios);
+		resetAdvance(gbas[i]);
 	}
 	if (putBack) {
 		readCartridgeSave();
@@ -1784,11 +1833,13 @@ static uint8_t restartHeld[MAX_PLAYERS];
 
 void restartConsole(int player) {
 	if (gameBoy) {
+		booting = true;
+		applyCpuClock();
 		libretroGbSelect(player);
 		libretroGbRestart();
 		libretroGbSelect(0);
 	} else {
-		gbaReset(gbas[player], skipBios);
+		resetAdvance(gbas[player]);
 	}
 	char message[48];
 	snprintf(message, sizeof(message), playersHere > 1 ? "Player %d's console restarted" : "Restarted", player + 1);
@@ -2493,7 +2544,9 @@ void retro_run(void) {
 	if (environment(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated) {
 		readOptions();
 		saveOptionsChanged();
+		applyCpuClock();
 	}
+	checkBooted();
 	// A new LCD Grid size changes the picture's largest size too, which only a new AV info can say.
 	if (gridAnnounce) {
 		struct retro_system_av_info av;
@@ -2664,6 +2717,7 @@ bool retro_unserialize(const void* data, size_t size) {
 	if (!(tagged || (size == consolesStateSize() && !togetherRunning())) || !loadConsoles(data, consolesStateSize())) {
 		return false;
 	}
+	applyCpuClock();
 	// A loaded state has every console's save as it was; player 1's isn't copied over them after.
 	copySaves = 0;
 	if (tagged) {

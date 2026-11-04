@@ -88,6 +88,10 @@ bool libretroGbIsColor(void);
 // Sets the cheat codes: Game Genie (HHH-HHH or HHH-HHH-HHH) and GameShark (01VVAAAA), each split by
 // '+' or spaces. They stay in force, including after a restart. Returns false if a code is neither.
 bool libretroGbSetCheats(const char* const* codes, size_t count);
+// The CPU Clock for every console, in quarters of the console's own clock (4).
+void libretroGbSetCpuClock(unsigned quarters);
+// Whether a console is still running its boot ROM.
+bool libretroGbBooting(void);
 size_t libretroGbStateSize(void);
 // States for rollback and run-ahead save the whole machine exactly; others, in gambatte's format.
 void libretroGbExactStates(bool exact);

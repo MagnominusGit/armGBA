@@ -372,7 +372,7 @@ static bool leading(void) {
 
 // The console's own clock: a Game Boy Advance's cycles, or a Game Boy's samples.
 static uint64_t consoleTime(void) {
-	return console == CONSOLE_GBA && gba ? gba->timing.globalCycles + (uint32_t) gba->cpu.cycles : exact.samples;
+	return console == CONSOLE_GBA && gba ? timingConsoleCycles(gba) : exact.samples;
 }
 
 static uint64_t linkTime(void) {

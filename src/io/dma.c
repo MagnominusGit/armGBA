@@ -359,7 +359,7 @@ static int lowest(uint8_t bits) {
 // Runs whatever channels are ready, in priority order, with the CPU held. Returns the cycles it
 // took, which the CPU's internal cycles under way can be counted against.
 int32_t dmaRun(struct GBA* gba) {
-	uint32_t start = timingCurrentTime(gba);
+	uint32_t start = timingCpuTime(gba);
 	struct CPU* cpu = &gba->cpu;
 	bool wasHalted = cpu->halted;
 	gba->activeDma = lowest(gba->dmaRunnable);
@@ -378,5 +378,5 @@ int32_t dmaRun(struct GBA* gba) {
 		processEvents(gba);
 	}
 	busTick(gba, 1);
-	return timingCurrentTime(gba) - start;
+	return timingCpuTime(gba) - start;
 }

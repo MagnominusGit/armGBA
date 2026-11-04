@@ -326,6 +326,10 @@ bool GB::isCgb() const {
 	return p_->cpu.isCgb();
 }
 
+bool GB::inBootRom() const {
+	return p_->cpu.inBootRom();
+}
+
 bool GB::isCgbDmg() const {
 	return p_->cpu.isCgbDmg();
 }
@@ -501,6 +505,10 @@ void GB::setGameGenie(std::string const &codes) {
 
 void GB::setGameShark(std::string const &codes) {
 	p_->cpu.setGameShark(codes);
+}
+
+void GB::setCpuQuarters(unsigned quarters) {
+	p_->cpu.setCpuQuarters(quarters);
 }
 
 unsigned char GB::externalRead(unsigned short addr) {

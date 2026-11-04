@@ -171,7 +171,9 @@ struct CPU {
 	// The I flag as the IRQ check sees it: its value when the previous instruction started, or as a
 	// pipeline refill left it.
 	bool irqMasked;
-	bool unused;
+	// The CPU's clock above the console's, in quarters of it (-3 to 12), 0 for the console's own.
+	// The CPU, its bus and DMA run on it; the rest keeps the console's clock (see timing.c).
+	int8_t overclock;
 	// Whether the next code fetch is sequential to the last one.
 	bool fetchSeq;
 	// Whether the cartridge prefetcher is running. It sits right after fetchSeq at an even offset,
@@ -860,6 +862,7 @@ void gbaWriteIf(struct GBA*, uint16_t value);
 void gbaWriteIme(struct GBA*, uint16_t value);
 void gbaTestKeypadIrq(struct GBA*, uint32_t late);
 void gbaHalt(struct GBA*);
+void gbaSetOverclock(struct GBA*, int8_t overclock);
 void gbaStop(struct GBA*);
 void gbaInterrupt(struct GBA*);
 void gbaFrameStarted(struct GBA*, uint32_t late);
@@ -903,9 +906,20 @@ void timingDeschedule(struct GBA*, struct Event*);
 bool timingIsScheduled(struct GBA*, struct Event*);
 int32_t timingTick(struct GBA*, int32_t cycles);
 int32_t timingNextEvent(struct GBA*);
+uint64_t timingConsoleCycles(struct GBA*);
+uint64_t timingCpuCycles(struct GBA*, uint64_t console);
+// The console's clock now, which events and the hardware outside the CPU keep to.
 static inline int32_t timingCurrentTime(struct GBA* gba) {
+	if (gba->cpu.overclock) {
+		return timingConsoleCycles(gba);
+	}
 	return gba->timing.masterCycles + gba->cpu.cycles;
 }
+// The CPU's clock now, which the cycle counter and compiled code keep to.
+static inline int32_t timingCpuTime(struct GBA* gba) {
+	return gba->timing.masterCycles + gba->cpu.cycles;
+}
+uint32_t timingCpuAt(struct GBA*, uint32_t time);
 int32_t timingUntil(struct GBA*, struct Event*);
 void timingInterrupt(struct GBA*);
 void timingResetNextEvent(struct GBA*);

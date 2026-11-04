@@ -43,10 +43,10 @@ unsigned long Interrupter::interrupt(unsigned long cc, Memory &memory) {
 		pc_ = (pc_ - 1) & 0xFFFF;
 		prefetched_ = false;
 	}
-	cc += 12;
+	cc += memory.cpuCycles(3);
 	sp_ = (sp_ - 1) & 0xFFFF;
 	memory.write<false, false>(sp_, pc_ >> 8, cc);
-	cc += 4;
+	cc += memory.cpuCycles(1);
 
 	unsigned const pendingIrqs = memory.pendingIrqs(cc);
 	unsigned const n = pendingIrqs & -pendingIrqs;
@@ -61,7 +61,7 @@ unsigned long Interrupter::interrupt(unsigned long cc, Memory &memory) {
 	memory.write<false, false>(sp_, pc_ & 0xFF, cc);
 	memory.ackIrq(n, cc);
 	pc_ = address;
-	cc += 4;
+	cc += memory.cpuCycles(1);
 
 	if (address == 0x40 && !gsCodes_.empty())
 		applyVblankCheats(cc, memory);

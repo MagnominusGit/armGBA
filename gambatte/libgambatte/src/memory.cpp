@@ -45,7 +45,9 @@ int serialCntFrom(unsigned long cyclesUntilDone, bool cgbFast) {
 } // unnamed namespace.
 
 Memory::Memory(Interrupter const &interrupter)
-: getInput_(0)
+: cpuQuarters_(4)
+, cpuCarry_(0)
+, getInput_(0)
 , divLastUpdate_(0)
 , lastOamDmaUpdate_(disabled_time)
 , lastCartBusUpdate_(0)
@@ -94,7 +96,7 @@ unsigned long Memory::saveState(SaveState &state, unsigned long cc) {
 	state.mem.nextBlitTime = intreq_.eventTime(intevent_blit);
 	state.mem.blankLcd = blanklcd_;
 	state.mem.lastOamDmaUpdate = oamDmaStartPos_
-		? lastOamDmaUpdate_ + ((oamDmaStartPos_ - oamDmaPos_) & 0xFF) * 4
+		? lastOamDmaUpdate_ + ((oamDmaStartPos_ - oamDmaPos_) & 0xFF) * oamDmaStep()
 		: lastOamDmaUpdate_;
 	state.mem.dmaSource = dmaSource_;
 	state.mem.dmaDestination = dmaDestination_;
@@ -151,14 +153,14 @@ void Memory::loadState(SaveState const &state) {
 
 	if (lastOamDmaUpdate_ != disabled_time) {
 		if (lastOamDmaUpdate_ > state.cpu.cycleCounter) {
-			oamDmaStartPos_ = (oamDmaPos_ + (lastOamDmaUpdate_ - state.cpu.cycleCounter) / 4) & 0xFF;
+			oamDmaStartPos_ = (oamDmaPos_ + (lastOamDmaUpdate_ - state.cpu.cycleCounter) / oamDmaStep()) & 0xFF;
 			lastOamDmaUpdate_ = state.cpu.cycleCounter;
 		}
 		oamDmaInitSetup();
 
 		unsigned oamEventPos = oamDmaPos_ < oam_size ? oam_size : oamDmaStartPos_;
 		intreq_.setEventTime<intevent_oam>(
-			lastOamDmaUpdate_ + ((oamEventPos - oamDmaPos_) & 0xFF) * 4);
+			lastOamDmaUpdate_ + ((oamEventPos - oamDmaPos_) & 0xFF) * oamDmaStep());
 	}
 
 	intreq_.setEventTime<intevent_blit>(ioamhram_[0x140] & lcdc_en
@@ -277,7 +279,7 @@ unsigned long Memory::event(unsigned long cc) {
 		if (lastOamDmaUpdate_ != disabled_time) {
 			unsigned const oamEventPos = oamDmaPos_ < oam_size ? oam_size : oamDmaStartPos_;
 			intreq_.setEventTime<intevent_oam>(
-				lastOamDmaUpdate_ + ((oamEventPos - oamDmaPos_) & 0xFF) * 4);
+				lastOamDmaUpdate_ + ((oamEventPos - oamDmaPos_) & 0xFF) * oamDmaStep());
 		} else
 			intreq_.setEventTime<intevent_oam>(disabled_time);
 
@@ -305,7 +307,7 @@ unsigned long Memory::event(unsigned long cc) {
 		}
 
 		if (halted()) {
-			cc += 4 * (isCgb() || cc - intreq_.eventTime(intevent_interrupts) < 2);
+			cc += isCgb() || cc - intreq_.eventTime(intevent_interrupts) < 2 ? cpuCycles(1) : 0;
 			if (cc > lastOamDmaUpdate_)
 				updateOamDma(cc);
 			if ((lcd_.hdmaIsEnabled() && lcd_.isHdmaPeriod(cc) && haltHdmaState_ == hdma_low)
@@ -360,9 +362,9 @@ unsigned long Memory::dma(unsigned long cc) {
 
 		cc += 2 + 2 * doubleSpeed;
 
-		if (cc - 3 > lOamDmaUpdate && !halted()) {
+		if (cc - (oamDmaStep() - 1) > lOamDmaUpdate && !halted()) {
 			oamDmaPos_ = (oamDmaPos_ + 1) & 0xFF;
-			lOamDmaUpdate += 4;
+			lOamDmaUpdate += oamDmaStep();
 			if (oamDmaPos_ == oamDmaStartPos_)
 				startOamDma(lOamDmaUpdate);
 
@@ -493,6 +495,9 @@ unsigned long Memory::stop(unsigned long cc, bool &prefetched) {
 		}
 		// ensure that no updates with a previous cc occur.
 		cc += 8;
+		// armGBA: overclocked, the CPU may stand between two dots of double speed; it starts on one.
+		if (isDoubleSpeed() && cpuQuarters_ != 4)
+			cc += cc & 1;
 	} else {
 		// FIXME: test and implement stop correctly.
 		prefetched = halt(cc);
@@ -567,13 +572,14 @@ void Memory::updateInput() {
 
 void Memory::updateOamDma(unsigned long const cc) {
 	unsigned char const *const oamDmaSrc = oamDmaSrcPtr();
-	unsigned cycles = (cc - lastOamDmaUpdate_) >> 2;
+	unsigned const step = oamDmaStep();
+	unsigned cycles = (cc - lastOamDmaUpdate_) / step;
 
 	if (halted()) {
-		lastOamDmaUpdate_ += 4 * cycles;
+		lastOamDmaUpdate_ += step * cycles;
 	} else while (cycles--) {
 		oamDmaPos_ = (oamDmaPos_ + 1) & 0xFF;
-		lastOamDmaUpdate_ += 4;
+		lastOamDmaUpdate_ += step;
 		if (oamDmaPos_ == oamDmaStartPos_)
 			startOamDma(lastOamDmaUpdate_);
 
@@ -1193,7 +1199,7 @@ void Memory::nontrivial_ff_write(unsigned const p, unsigned data, unsigned long 
 	case 0x46:
 		lastOamDmaUpdate_ = cc;
 		oamDmaStartPos_ = (oamDmaPos_ + 2) & 0xFF;
-		intreq_.setEventTime<intevent_oam>(std::min(intreq_.eventTime(intevent_oam), cc + 8));
+		intreq_.setEventTime<intevent_oam>(std::min(intreq_.eventTime(intevent_oam), cc + 2 * oamDmaStep()));
 		ioamhram_[0x146] = data;
 		oamDmaInitSetup();
 		return;

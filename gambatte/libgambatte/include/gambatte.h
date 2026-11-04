@@ -265,6 +265,9 @@ public:
 	/** Returns true if the currently loaded ROM image is treated as having CGB support. */
 	bool isCgb() const;
 
+	/** armGBA: Returns true while the boot ROM is still mapped in. */
+	bool inBootRom() const;
+
 	/** Returns true if the currently loaded ROM image is treated as having CGB-DMG support. */
 	bool isCgbDmg() const;
 
@@ -382,6 +385,11 @@ public:
 	  * @param codes Game Shark codes in format 01HHHHHH;01HHHHHH;... where H is [0-9]|[A-F]
 	  */
 	void setGameShark(std::string const &codes);
+
+	/**
+	  * armGBA: the CPU Clock, in quarters of the console's (4 = its own, 1 to 16).
+	  */
+	void setCpuQuarters(unsigned quarters);
 
 	/**
 	  * Read a single byte from the CPU bus. This includes all RAM, ROM, MMIO, etc as

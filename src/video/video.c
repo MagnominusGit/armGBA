@@ -70,11 +70,11 @@ static void planDraw(struct GBA* gba) {
 	struct Video* video = &gba->video;
 	int vcount = video->vcount;
 	if (vcount < VISIBLE_LINES && !video->drawn) {
-		video->drawDue = video->lineStart + HBLANK_START;
+		video->drawDue = timingCpuAt(gba, video->lineStart + HBLANK_START);
 	} else if (vcount + 1 < VISIBLE_LINES) {
-		video->drawDue = video->lineStart + LINE_LENGTH + HBLANK_START;
+		video->drawDue = timingCpuAt(gba, video->lineStart + LINE_LENGTH + HBLANK_START);
 	} else {
-		video->drawDue = video->lineStart + (TOTAL_LINES - vcount) * LINE_LENGTH + HBLANK_START;
+		video->drawDue = timingCpuAt(gba, video->lineStart + (TOTAL_LINES - vcount) * LINE_LENGTH + HBLANK_START);
 	}
 }
 
@@ -133,10 +133,10 @@ void videoSync(struct GBA* gba) {
 	}
 	if ((int32_t) (now - video->lineStart) >= HBLANK_START) {
 		gba->io[IO(REG_DISPSTAT)] |= 0x0002;
-		video->stableUntil = nextLineStart(gba);
+		video->stableUntil = timingCpuAt(gba, nextLineStart(gba));
 		drawLine(gba);
 	} else {
-		video->stableUntil = video->lineStart + HBLANK_START;
+		video->stableUntil = timingCpuAt(gba, video->lineStart + HBLANK_START);
 	}
 	planDraw(gba);
 }
@@ -351,7 +351,7 @@ int32_t videoVramStall(struct GBA* gba, int32_t wait) {
 	if (video->vcount >= VISIBLE_LINES) {
 		return 0;
 	}
-	int32_t until = (int32_t) (video->lineStart + HBLANK_START - (uint32_t) timingCurrentTime(gba)) - wait;
+	int32_t until = (int32_t) (timingCpuAt(gba, video->lineStart + HBLANK_START) - (uint32_t) timingCpuTime(gba)) - wait;
 	return until > 0 ? until : 0;
 }
 
@@ -379,7 +379,7 @@ void videoStartAt(struct GBA* gba, int vcount, int32_t untilHblank) {
 	video->vcount = vcount;
 	gba->io[IO(REG_VCOUNT)] = vcount;
 	video->lineStart = timingCurrentTime(gba) + untilHblank - HBLANK_START;
-	video->stableUntil = video->lineStart + HBLANK_START;
+	video->stableUntil = timingCpuAt(gba, video->lineStart + HBLANK_START);
 	video->drawn = false;
 	planDraw(gba);
 	scheduleVideo(gba, timingCurrentTime(gba));

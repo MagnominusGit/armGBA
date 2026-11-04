@@ -138,6 +138,8 @@ struct Console {
 };
 Console consoles[MAX_PLAYERS];
 Console* s = &consoles[0];
+// The CPU Clock, in quarters of the console's own clock.
+static unsigned cpuQuarters = 4;
 // How many consoles of a link run here (1 without one), and whether the Four Player Adapter joins
 // them; two without it share the cable.
 int players = 1;
@@ -616,6 +618,7 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	}
 	if (!s->gb) {
 		s->gb = new gambatte::GB;
+		s->gb->setCpuQuarters(cpuQuarters);
 	}
 	s->gb->setLinkCallback(players > 1 ? 0 : linkClocked);
 	s->linked = false;
@@ -1146,6 +1149,24 @@ size_t libretroGbMemoryMap(struct retro_memory_descriptor* out) {
 
 bool libretroGbIsColor(void) {
 	return s->gb && s->gb->isCgb();
+}
+
+bool libretroGbBooting(void) {
+	for (int i = 0; i < MAX_PLAYERS; ++i) {
+		if (consoles[i].gb && consoles[i].gb->inBootRom()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void libretroGbSetCpuClock(unsigned quarters) {
+	cpuQuarters = quarters;
+	for (int i = 0; i < MAX_PLAYERS; ++i) {
+		if (consoles[i].gb) {
+			consoles[i].gb->setCpuQuarters(quarters);
+		}
+	}
 }
 
 bool libretroGbSetCheats(const char* const* codes, size_t count) {

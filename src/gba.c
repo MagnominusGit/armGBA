@@ -92,7 +92,7 @@ static void irqReset(struct GBA* gba) {
 	irq->line = false;
 	irq->lineDriven = false;
 	irq->quietPending = false;
-	irq->ifStable = timingCurrentTime(gba) + INT32_MAX;
+	irq->ifStable = timingCpuTime(gba) + INT32_MAX;
 	for (int i = 0; i < 4; ++i) {
 		irq->apply[i].busy = false;
 		irq->availableChange[i].busy = false;
@@ -343,7 +343,7 @@ void gbaIrqSync(struct GBA* gba) {
 	}
 	uint32_t now = timingCurrentTime(gba);
 	uint32_t hblank = videoNextHblank(gba, irq->quietFrom);
-	irq->ifStable = hblank + 2;
+	irq->ifStable = timingCpuAt(gba, hblank + 2);
 	if ((int32_t) (now - (hblank + 1)) < 0) {
 		return;
 	}
@@ -355,7 +355,7 @@ void gbaIrqSync(struct GBA* gba) {
 	// Set until IF is written.
 	gba->io[IO(REG_IF)] |= 1 << IRQ_HBLANK;
 	irq->quietPending = false;
-	irq->ifStable = now + INT32_MAX;
+	irq->ifStable = timingCpuTime(gba) + INT32_MAX;
 }
 
 // Requests from H-blanks at from or later.
@@ -363,7 +363,7 @@ static void startQuiet(struct GBA* gba, uint32_t from) {
 	struct Irq* irq = &gba->irq;
 	irq->quietPending = true;
 	irq->quietFrom = from;
-	irq->ifStable = videoNextHblank(gba, from) + 2;
+	irq->ifStable = timingCpuAt(gba, videoNextHblank(gba, from) + 2);
 }
 
 // Called after DISPSTAT's H-blank IRQ enable or IE changed. When leaving quiet mode, a request
@@ -391,7 +391,7 @@ void gbaIrqQuietChanged(struct GBA* gba, bool wasQuiet) {
 		}
 	}
 	irq->quietPending = false;
-	irq->ifStable = timingCurrentTime(gba) + INT32_MAX;
+	irq->ifStable = timingCpuTime(gba) + INT32_MAX;
 }
 
 // The three interrupt registers. Each write goes through the pipeline's first stage one cycle
@@ -447,6 +447,28 @@ void gbaTestKeypadIrq(struct GBA* gba, uint32_t late) {
 	} else {
 		gba->keysLast = 0x400;
 	}
+}
+
+// Puts the CPU on another clock between frames. The console's time stays; the CPU's clock and the
+// times kept on it move to where the new clock has them, and the deadlines compiled code checks are
+// worked out again.
+void gbaSetOverclock(struct GBA* gba, int8_t overclock) {
+	if (overclock == gba->cpu.overclock) {
+		return;
+	}
+	uint64_t console = timingConsoleCycles(gba);
+	uint64_t cpu = gba->timing.globalCycles + gba->cpu.cycles;
+	gba->cpu.overclock = overclock;
+	int32_t moved = timingCpuCycles(gba, console) - cpu;
+	gba->timing.masterCycles += moved;
+	gba->timing.globalCycles += moved;
+	gba->prefetcher.base += moved;
+	gba->irq.ifStable += moved;
+	timingResetNextEvent(gba);
+	gbaIrqSync(gba);
+	videoSync(gba);
+	// As after a state load, the run loop starts afresh.
+	jitStateLoaded(gba, false);
 }
 
 // Halting takes a cycle on top of the write.

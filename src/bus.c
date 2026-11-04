@@ -90,7 +90,7 @@ static int32_t prefetcherStop(struct GBA* gba, bool codeFetch) {
 		return 0;
 	}
 	gba->cpu.prefetching = false;
-	int32_t lead = timingCurrentTime(gba) - p->base;
+	int32_t lead = timingCpuTime(gba) - p->base;
 	if (lead >= p->full) {
 		return 0;
 	}
@@ -115,7 +115,7 @@ static int32_t stopCost(struct GBA* gba) {
 	if (!gba->cpu.prefetching) {
 		return 0;
 	}
-	int32_t lead = timingCurrentTime(gba) - p->base;
+	int32_t lead = timingCpuTime(gba) - p->base;
 	if (lead >= p->full) {
 		return 0;
 	}
@@ -143,7 +143,7 @@ bool busRefillCartridge(struct GBA* gba, uint32_t pc, bool thumb) {
 	if (cpu->cycles + stop + n + s >= cpu->nextEvent) {
 		return false;
 	}
-	uint32_t now = timingCurrentTime(gba);
+	uint32_t now = timingCpuTime(gba);
 	gba->dmaIdleCredit = 0;
 	gba->romNext = (pc + 2 * size) & (SIZE_ROM - 1);
 	gba->romLatch = gba->romNext;
@@ -169,7 +169,7 @@ bool busRefillCartridge(struct GBA* gba, uint32_t pc, bool thumb) {
 // an ordinary access, after which the prefetcher reads on from there.
 static int32_t prefetcherFetch(struct GBA* gba, uint32_t address, int size, bool seq) {
 	struct Prefetcher* p = &gba->prefetcher;
-	uint32_t now = timingCurrentTime(gba);
+	uint32_t now = timingCpuTime(gba);
 	if (gba->cpu.prefetching && address == p->head) {
 		uint32_t base = p->base;
 		if ((int32_t) (now - base) > p->full) {

@@ -67,6 +67,35 @@ public:
 	unsigned long stop(unsigned long cycleCounter, bool &prefetched);
 	void stall(unsigned long cycleCounter, unsigned long cycles);
 	bool isCgb() const { return lcd_.isCgb(); }
+	bool inBootRom() const { return biosMode_; }
+	// armGBA: the CPU Clock, in quarters of the console's own (4). The CPU's machine cycles take
+	// 16 / quarters of the counter's cycles, any part left over carried to the next; the rest of the
+	// console keeps the counter's pace. In double speed a dot is two of the counter's cycles: there
+	// the CPU moves a whole dot at a time and goes no faster than 200%, as the picture can't take
+	// more than one access of the CPU's in a dot.
+	void setCpuQuarters(unsigned quarters) {
+		if (quarters != cpuQuarters_) {
+			cpuQuarters_ = quarters;
+			cpuCarry_ = 0;
+		}
+	}
+	unsigned long cpuCycles(unsigned mcycles) {
+		if (cpuQuarters_ == 4)
+			return 4 * mcycles;
+		unsigned const quarters = cpuQuartersNow(), unit = isDoubleSpeed() ? 2 : 1;
+		cpuCarry_ += 16 * mcycles;
+		unsigned long const cycles = cpuCarry_ / (unit * quarters) * unit;
+		cpuCarry_ -= cycles * quarters;
+		return cycles;
+	}
+	unsigned cpuQuartersNow() const { return isDoubleSpeed() && cpuQuarters_ > 8 ? 8 : cpuQuarters_; }
+	// armGBA: OAM DMA moves a byte per machine cycle of the CPU, so it keeps pace with code timed
+	// to wait for it; at a clock between, it is a little ahead of the CPU, never behind.
+	unsigned oamDmaStep() const {
+		if (cpuQuarters_ == 4)
+			return 4;
+		return isDoubleSpeed() ? 2 * (8 / cpuQuartersNow()) : 16 / cpuQuarters_;
+	}
 	bool isCgbDmg() const { return lcd_.isCgbDmg(); }
 	bool isSgb() const { return gbIsSgb_; }
 	bool ime() const { return intreq_.ime(); }
@@ -382,6 +411,8 @@ public:
 	template<bool isReader>void SyncState(NewState *ns);
 
 private:
+	unsigned cpuQuarters_;
+	unsigned cpuCarry_;
 	Cartridge cart_;
 	Sgb sgb_;
 	unsigned char ioamhram_[0x200];

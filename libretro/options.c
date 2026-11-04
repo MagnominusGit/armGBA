@@ -19,7 +19,7 @@
 
 struct retro_core_options_v2* coreOptions;
 // Which options were last shown, once set.
-static bool optionsShown[40];
+static bool optionsShown[48];
 static bool optionsShownSet;
 
 static void fillTurboPeriods(struct retro_core_option_v2_definition* definitions) {
@@ -62,6 +62,16 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "Nintendo's gba_bios.bin from the system folder, else armGBA's own. Applies on Restart.",
 	  NULL, "system",
 	  { { "nintendo", "Nintendo's (System Folder)" }, { "open-source", "armGBA's (Built In)" }, { NULL, NULL } }, "nintendo" },
+	{ "armgba_cpu_clock", "CPU Clock", NULL,
+	  "Eases slowdown; game speed and music stay the same.",
+	  NULL, "system",
+	  { { "25", "25%" }, { "50", "50%" }, { "75", "75%" }, { "100", "100%" }, { "125", "125%" }, { "150", "150%" },
+	    { "175", "175%" }, { "200", "200%" }, { "225", "225%" }, { "250", "250%" }, { "275", "275%" }, { "300", "300%" },
+	    { "325", "325%" }, { "350", "350%" }, { "375", "375%" }, { "400", "400%" }, { NULL, NULL } }, "100" },
+	{ "armgba_cpu_clock_boot", "CPU Clock During Boot", NULL,
+	  "100%: the BIOS intro or boot ROM as on the console, the CPU Clock from the game's start.",
+	  NULL, "system",
+	  { { "stock", "100%" }, { "clock", "CPU Clock" }, { NULL, NULL } }, "stock" },
 	{ "armgba_gb_model", "Game Boy Model", NULL,
 	  "The console Game Boy games run on; on the Advance, L or R stretches. Applies on Restart.",
 	  NULL, "system",
@@ -307,6 +317,8 @@ bool showOptions(void) {
 	} options[] = {
 		{ "armgba_skip_bios", !gameBoy },
 		{ "armgba_bios", !gameBoy },
+		{ "armgba_cpu_clock", true },
+		{ "armgba_cpu_clock_boot", !optionIs("armgba_cpu_clock", "100") },
 		{ "armgba_threaded_video", !gameBoy },
 		{ "armgba_lcd_shadow", libretroLcdShadow() && !optionIs("armgba_lcd_grid", "disabled") },
 		{ "armgba_lcd_shadow_distance", libretroLcdShadow() && !optionIs("armgba_lcd_grid", "disabled") && !optionIs("armgba_lcd_shadow", "off") },

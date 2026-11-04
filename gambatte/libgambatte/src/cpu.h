@@ -124,6 +124,7 @@ public:
 	std::size_t fillSoundBuffer() { return mem_.fillSoundBuffer(cycleCounter_); }
 	void stall(unsigned long cycles) { mem_.stall(cycleCounter_, cycles); }
 	bool isCgb() const { return mem_.isCgb(); }
+	bool inBootRom() const { return mem_.inBootRom(); }
 	bool isCgbDmg() const { return mem_.isCgbDmg(); }
 	bool isSgb() const { return mem_.isSgb(); }
 
@@ -145,6 +146,7 @@ public:
 
 	void setGameGenie(std::string const &codes) { mem_.setGameGenie(codes); }
 	void setGameShark(std::string const &codes) { mem_.setGameShark(codes); }
+	void setCpuQuarters(unsigned quarters) { mem_.setCpuQuarters(quarters); }
 	void setBios(Array<unsigned char> &buffer) { mem_.setBios(buffer); }
 
 	unsigned char externalRead(unsigned short addr) {

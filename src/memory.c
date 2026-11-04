@@ -149,7 +149,7 @@ void memoryAdjustWaitstates(struct GBA* gba, uint16_t parameters) {
 		gba->prefetchDisabled = true;
 		// The read in flight finishes, and that is as far ahead as it gets.
 		struct Prefetcher* p = &gba->prefetcher;
-		int32_t lead = timingCurrentTime(gba) - p->base;
+		int32_t lead = timingCpuTime(gba) - p->base;
 		if (gba->cpu.prefetching && lead < p->full) {
 			p->full = (lead / p->duty + 1) * p->duty;
 		}
@@ -252,7 +252,7 @@ static inline void videoChanged(struct GBA* gba, uint8_t* p, uint8_t what) {
 
 // Lines whose H-blank has come are drawn before what they show changes.
 static inline void drawFirst(struct GBA* gba) {
-	if ((int32_t) (timingCurrentTime(gba) - gba->video.drawDue) >= 0) {
+	if ((int32_t) (timingCpuTime(gba) - gba->video.drawDue) >= 0) {
 		videoSync(gba);
 	}
 }

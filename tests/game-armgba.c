@@ -63,6 +63,8 @@ static int64_t fixedTime(void* context) {
 
 static void reset(void) {
 	gba->gpio.clock = fixedTime;
+	// OVERCLOCK=<quarters>: the CPU Clock, as cpu.overclock (-3 for 25%, 12 for 400%).
+	gba->cpu.overclock = getenv("OVERCLOCK") ? atoi(getenv("OVERCLOCK")) : 0;
 	if (save) {
 		memcpy(gba->savedata.storage, save, saveSize);
 	}

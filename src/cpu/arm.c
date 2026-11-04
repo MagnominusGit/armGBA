@@ -95,7 +95,9 @@ int32_t cpuWritePc(struct GBA* gba) {
 // Clears the CPU, in System mode at address 0; gbaReset puts it where the BIOS or a game starts.
 void cpuReset(struct GBA* gba) {
 	struct CPU* cpu = &gba->cpu;
+	int8_t overclock = cpu->overclock;
 	memset(cpu, 0, sizeof(*cpu));
+	cpu->overclock = overclock;
 	cpu->mode = MODE_SYSTEM;
 	cpu->cpsr = MODE_SYSTEM;
 	gba->activeRegion = -1;

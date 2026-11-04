@@ -1479,7 +1479,7 @@ static void idleCapture(struct GBA* gba, struct IdleState* s) {
 	s->prefetch[0] = cpu->prefetch[0];
 	s->prefetch[1] = cpu->prefetch[1];
 	if (cpu->prefetching) {
-		int32_t lead = timingCurrentTime(gba) - p->base;
+		int32_t lead = timingCpuTime(gba) - p->base;
 		s->prefetcherLead = lead < p->full ? lead : p->full;
 		s->prefetcherWidth = p->width;
 		s->prefetcherDuty = p->duty;
@@ -1780,7 +1780,7 @@ void jitRunLoop(struct GBA* gba) {
 		void* resumeHere = resume;
 		resume = NULL;
 		// Closed once passed, so it can't come round again 2^31 cycles later.
-		if (jit->stepping && (int32_t) (jit->stepUntil - timingCurrentTime(gba)) <= 0) {
+		if (jit->stepping && (int32_t) (jit->stepUntil - timingCpuTime(gba)) <= 0) {
 			jit->stepping = false;
 		}
 		if (jit->flushRequested) {
@@ -2119,7 +2119,7 @@ static bool continuable(struct GBA* gba, uint32_t pc, bool thumb) {
 		return false;
 	}
 	// The fetch after a stop restarts the buffer: a fetch from it whose read finishes then.
-	p->base = timingCurrentTime(gba) + busCycles(gba, pc, width, false) - duty;
+	p->base = timingCpuTime(gba) + busCycles(gba, pc, width, false) - duty;
 	p->head = pc + 2 * width;
 	cpu->fetchSeq = false;
 	return true;
