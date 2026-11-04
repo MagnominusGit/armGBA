@@ -19,7 +19,7 @@
 
 struct retro_core_options_v2* coreOptions;
 // Which options were last shown, once set.
-static bool optionsShown[48];
+static bool optionsShown[64];
 static bool optionsShownSet;
 
 static void fillTurboPeriods(struct retro_core_option_v2_definition* definitions) {
@@ -31,6 +31,27 @@ static void fillTurboPeriods(struct retro_core_option_v2_definition* definitions
 		snprintf(periods[i], sizeof(periods[i]), "%d", TURBO_FEWEST + (int) i);
 		snprintf(labels[i], sizeof(labels[i]), "%d frames", TURBO_FEWEST + (int) i);
 		definitions->values[i] = (struct retro_core_option_value) { periods[i], labels[i] };
+	}
+}
+
+// Clock Offset's choices: -30 to 30 days, and -23 to 23 hours.
+static void fillClockOffsets(struct retro_core_option_v2_definition* definitions) {
+	static char values[61 + 47][4];
+	static char labels[61 + 47][12];
+	int n = 0;
+	for (; definitions->key; ++definitions) {
+		bool const days = !strcmp(definitions->key, "armgba_clock_days");
+		if (!days && strcmp(definitions->key, "armgba_clock_hours")) {
+			continue;
+		}
+		int const most = days ? 30 : 23;
+		for (int i = 0; i <= 2 * most; ++i, ++n) {
+			int const value = i - most;
+			snprintf(values[n], sizeof(values[n]), "%d", value);
+			snprintf(labels[n], sizeof(labels[n]), "%+d %s%s", value, days ? "day" : "hour", abs(value) == 1 ? "" : "s");
+			definitions->values[i] = (struct retro_core_option_value) { values[n], value ? labels[n] : "0" };
+		}
+		definitions->values[2 * most + 1] = (struct retro_core_option_value) { NULL, NULL };
 	}
 }
 
@@ -76,6 +97,30 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "Best with unzipped games: a zipped one is unpacked first and runs unpatched. Applies when a game is opened.",
 	  NULL, "system",
 	  { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
+	{ "armgba_clock_source", "Clock Source", NULL,
+	  "Real Time: the device's time. Game Time: the game's own, which runs only while the game runs.",
+	  NULL, "clock",
+	  { { "real", "Real Time" }, { "game", "Game Time" }, { NULL, NULL } }, "real" },
+	{ "armgba_clock_speed", "Clock Speed", NULL,
+	  "How fast Game Time runs against the console's time.",
+	  NULL, "clock",
+	  { { "stopped", "Stopped" }, { "0.1x", "0.1x" }, { "0.25x", "0.25x" }, { "0.5x", "0.5x" }, { "0.75x", "0.75x" }, { "1x", "1x" },
+	    { "1.25x", "1.25x" }, { "1.5x", "1.5x" }, { "2x", "2x" }, { "3x", "3x" }, { "4x", "4x" }, { "6x", "6x" }, { "10x", "10x" },
+	    { "24x", "24x (a day an hour)" }, { "60x", "60x (an hour a minute)" }, { NULL, NULL } }, "1x" },
+	{ "armgba_clock_days", "Clock Offset: Days", NULL,
+	  "Moves the clock forwards or back. Back can hold daily events until the clock catches up.",
+	  NULL, "clock", { { NULL, NULL } }, "0" },
+	{ "armgba_clock_hours", "Clock Offset: Hours", NULL,
+	  "Moves the clock forwards or back by hours.",
+	  NULL, "clock", { { NULL, NULL } }, "0" },
+	{ "armgba_clock_reset_allowed", "Allow Clock Reset", NULL,
+	  "Shows Reset Clock. Goes back to Off once the clock is reset.",
+	  NULL, "clock",
+	  { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
+	{ "armgba_clock_reset", "Reset Clock", NULL,
+	  "Game Boy: clears the clock as a dead battery does; games that check ask for the time. GBA: the device's time, offsets at 0.",
+	  NULL, "clock",
+	  { { "no", "No" }, { "reset", "Reset" }, { NULL, NULL } }, "no" },
 	{ "armgba_gb_model", "Game Boy Model", NULL,
 	  "The console Game Boy games run on; on the Advance, L or R stretches. Applies on Restart.",
 	  NULL, "system",
@@ -257,6 +302,7 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 
 static struct retro_core_option_v2_category optionCategories[] = {
 	{ "system", "System", "The console the game runs on and how it starts." },
+	{ "clock", "Clock", "The cartridge's clock, for games that keep the time. In netplay, every player needs the same Clock options." },
 	{ "video", "Video", "Colors, the picture and how it is drawn." },
 	// Video's own group, and Link's and Saves': the standalone frontend shows them on their category's
 	// page, under their names.
@@ -332,6 +378,9 @@ bool showOptions(void) {
 	bool const together = togetherWanted();
 	bool const linked = together || separateWanted();
 	bool const effects = optionIs("armgba_lcd_effects", "enabled");
+	enum LibretroGbClock const gbClock = gameBoy ? libretroGbClock() : LIBRETRO_GB_NO_CLOCK;
+	bool const clock = devices & HW_RTC || gbClock;
+	bool const gameTime = optionIs("armgba_clock_source", "game");
 	const struct {
 		const char* key;
 		bool shown;
@@ -341,6 +390,12 @@ bool showOptions(void) {
 		{ "armgba_cpu_clock", true },
 		{ "armgba_cpu_clock_boot", !optionIs("armgba_cpu_clock", "100") },
 		{ "armgba_low_memory", !gameBoy },
+		{ "armgba_clock_source", clock },
+		{ "armgba_clock_speed", clock && gameTime },
+		{ "armgba_clock_days", clock && gbClock != LIBRETRO_GB_HUC3_CLOCK },
+		{ "armgba_clock_hours", clock && gbClock != LIBRETRO_GB_HUC3_CLOCK },
+		{ "armgba_clock_reset_allowed", gbClock == LIBRETRO_GB_MBC3_CLOCK || devices & HW_RTC },
+		{ "armgba_clock_reset", (gbClock == LIBRETRO_GB_MBC3_CLOCK || devices & HW_RTC) && optionIs("armgba_clock_reset_allowed", "enabled") },
 		{ "armgba_threaded_video", !gameBoy },
 		{ "armgba_lcd_ghosting", effects },
 		{ "armgba_lcd_grid", effects },
@@ -410,6 +465,7 @@ void setOptions(void) {
 // frontend as plain variables.
 bool optionsGive(retro_environment_t callback) {
 	fillTurboPeriods(optionDefinitions);
+	fillClockOffsets(optionDefinitions);
 	unsigned version = 0;
 	if (callback(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
 		callback(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, &optionsV2);

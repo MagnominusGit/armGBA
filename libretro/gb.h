@@ -73,6 +73,16 @@ void* libretroGbSaveRam(size_t* size);
 // An MBC3 or HuC3 cartridge's clock, which the frontend keeps as the .rtc file; NULL for other
 // cartridges.
 void* libretroGbRtc(size_t* size);
+// The cartridge's clock: none, an MBC3's or a HuC3's.
+enum LibretroGbClock { LIBRETRO_GB_NO_CLOCK, LIBRETRO_GB_MBC3_CLOCK, LIBRETRO_GB_HUC3_CLOCK };
+enum LibretroGbClock libretroGbClock(void);
+// The Clock options for every console: Game Time keeps the clock from counting the time the game was
+// off; the speed is in percent of the console's (0 stopped); the offset, in seconds, moves an MBC3
+// clock by its change.
+void libretroGbSetClock(bool gameTime, unsigned percent, long long offset);
+// Clears every MBC3 clock with its halt bit set, as a dead battery leaves it; returns whether there
+// was one.
+bool libretroGbResetClock(void);
 // Sets how far a tilt-sensor cartridge is tilted, each axis from -32768 to 32767. Right and towards
 // the player are positive, like a stick's right and down.
 void libretroGbSetTilt(int x, int y);

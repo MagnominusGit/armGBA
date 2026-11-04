@@ -386,6 +386,7 @@ public:
 
 	void setTimeMode(bool useCycles, unsigned long const cc) { cart_.setTimeMode(useCycles, cc); }
 	void setRtcDivisorOffset(long const rtcDivisorOffset) { cart_.setRtcDivisorOffset(rtcDivisorOffset); }
+	void setRtcSpeed(unsigned percent, unsigned long const cc) { cart_.setRtcSpeed(percent, cc); }
 	bool hasMbc3Rtc() const { return cart_.hasMbc3Rtc(); }
 	void getRtcRegs(unsigned long *dest, unsigned long const cc) { cart_.getRtcRegs(dest, cc); }
 	void setRtcRegs(unsigned long *src, unsigned long const cc) { cart_.setRtcRegs(src, cc); }

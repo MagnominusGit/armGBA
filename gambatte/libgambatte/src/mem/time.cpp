@@ -27,6 +27,7 @@ Time::Time()
 , useCycles_(true)
 , rtcDivisor_(0x400000)
 , ds_(0)
+, percent_(100)
 , clock_(0)
 {
 }
@@ -63,10 +64,15 @@ void Time::setTimeMode(bool useCycles, unsigned long const cc) {
 	lastTime_ = std::time(0);
 }
 
+void Time::setSpeed(unsigned const percent, unsigned long const cc) {
+	update(cc);
+	percent_ = percent;
+}
+
 unsigned long long Time::diff(unsigned long const cc) {
 	unsigned long long diff;
 	if (useCycles_) {
-		diff = (cc - lastCycles_) >> ds_;
+		diff = ((cc - lastCycles_) >> ds_) * (unsigned long long) percent_ / 100;
 		lastCycles_ = cc;
 	} else {
 		std::time_t const now = std::time(0);

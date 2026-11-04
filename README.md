@@ -49,10 +49,11 @@ to the right stick or the D-pad; with the D-pad, L is the flick.
 
 ## Options
 
-The options are in six categories, Link's in four parts: Link (Link Mode), Link: Players, Link:
+The options are in seven categories, Link's in four parts: Link (Link Mode), Link: Players, Link:
 Connection, and Link: Screens and Controllers; the standalone frontend shows Link's as one page with
 headers. The menu shows only those that do something for the game loaded and the Link Mode chosen:
-the Tilt and Solar Sensors only for cartridges with one, the link options only with Link Mode on.
+the Tilt and Solar Sensors and the Clock options only for cartridges with one, the link options
+only with Link Mode on.
 
 | Category | Option | Console | Values (default first) |
 | --- | --- | --- | --- |
@@ -63,6 +64,12 @@ the Tilt and Solar Sensors only for cartridges with one, the link options only w
 | | Low Memory (applies when a game is opened) | Game Boy Advance | Off, On |
 | | Game Boy Model (applies on restart) | Game Boy | Auto, Game Boy, Game Boy Pocket / Light, Game Boy Color, Game Boy Advance |
 | | Game Boy Boot ROM (applies on restart) | Game Boy | Nintendo's (System Folder), armGBA's (Built In), Off |
+| Clock | Clock Source | Both | Real Time, Game Time |
+| | Clock Speed (with Game Time) | Both | Stopped, 0.1x, 0.25x, 0.5x, 0.75x, 1x, 1.25x, 1.5x, 2x, 3x, 4x, 6x, 10x, 24x, 60x (1x by default) |
+| | Clock Offset: Days | Both (not HuC3) | -30 to +30 days, 0 by default |
+| | Clock Offset: Hours | Both (not HuC3) | -23 to +23 hours, 0 by default |
+| | Allow Clock Reset | Both (Game Boy: MBC3) | Off, On (back to Off after a reset) |
+| | Reset Clock (with Allow Clock Reset on) | Both (Game Boy: MBC3) | No, Reset |
 | Video | Threaded Video | Game Boy Advance | Off, On, One Frame Late |
 | | Frame Skip | Both | Off, Auto, 1, 2, 3 (not in netplay) |
 | | GBA Color Correction | Game Boy Advance | Off, On |
@@ -328,10 +335,28 @@ the same addresses.
 interchangeable with mGBA's core. An EEPROM reports busy for about 7 ms after a write, and Flash for
 1.8 ms after a sector erase, as in mGBA.
 
-**Clocks.** A Game Boy cartridge's clock (MBC3 or HuC3) is kept in the `.rtc` file and moves on by the
-time the game was off. armGBA and gambatte-libretro read each other's MBC3 `.rtc` files. A host clock
-that was never set, or that went back, adds no time. While a game runs, its clock counts emulated
-time, so fast-forward speeds it up.
+**Clocks.** A Game Boy cartridge's clock (MBC3 or HuC3) is kept in the `.rtc` file and moves on by
+the time the game was off. gambatte-libretro and mGBA read the same file: gambatte-libretro its
+first 8 bytes, mGBA the MBC3 registers after them. armGBA reads either core's own file too. A host
+clock that was never set, or that went back, adds no time. While a game runs, its clock counts
+emulated time, so fast-forward speeds it up. A Game Boy Advance cartridge's clock reads the device's
+time. The chip only counts from 2000 to 2099, so a host clock that was never set, which starts at
+1970, reads as 2000 and counts on from there. mGBA and gpSP keep no Game Boy Advance `.rtc` file,
+and the save file is the same in all three.
+
+With Clock Source set to Game Time, the game has a clock of its own. It runs only while the game
+runs, at Clock Speed, and a Game Boy Advance game keeps it in a `.rtc` file too, starting from the
+device's time. A state loaded in Game Time brings its clock with it. The Clock Offsets move the
+clock forwards or back; a Game Boy clock stops at day 0, and moving forwards again first makes up
+what it couldn't go back. A game that counts days from its last save may hold its daily events,
+after the clock goes back, until the clock catches up. Reset Clock shows only once Allow Clock Reset
+is on, which goes back to Off after the reset, so a reset takes two steps. On a Game Boy cartridge
+it clears its MBC3 clock with the halt bit set, as a dead battery leaves it, and games that check
+ask for the time again as they start; the save is kept. On a Game Boy Advance cartridge it puts the
+clock back on the device's time: the Clock Offsets go back to 0, and Game Time starts again from
+now. It never sets the Game Boy Advance clock's power-loss flag, which games report as a dead
+battery. In netplay, a Game Boy Advance clock counts the console's time from the host's, so every
+device reads the same; every player needs the same Clock options.
 
 **Game Boy Advance cartridge hardware.** The Matrix mapper of the 64 MiB Game Boy Advance Video
 cartridges, the bank register of multi-game cartridges, Vast Fame's protection, and the mirrored ROM
@@ -574,8 +599,9 @@ Code taken from other projects, each under its own license (see License):
 - **mGBA** (Jeffrey Pfau and contributors, MPL-2.0): the software renderer, bus and I/O behaviour,
   save chips, the GPIO clock, the light sensor, gyro, tilt sensor and rumble, the Matrix and Vast Fame
   cartridge mappers, the save override list, the GBA sound channels, the cheat code decoders and
-  engine, and the unlicensed Game Boy mapper tables. It is also the yardstick the GBA side is
-  compared with, through `tests/mgba-oracle.patch`.
+  engine, the unlicensed Game Boy mapper tables, and its MBC3 `.rtc` layout, which armGBA's clock
+  files carry too. It is also the yardstick the GBA side is compared with, through
+  `tests/mgba-oracle.patch`.
 - **Gambatte** (sinamas) as extended by **Gambatte-Speedrun** (pokemon-speedrunning/gambatte-core,
   GPL-2.0): the whole Game Boy core in `gambatte/`, with **snes_spc** (Shay Green, LGPL) inside it.
 - **SameBoy** (Lior Halphon, MIT): the Game Boy screen palettes other than Grayscale, and the Game

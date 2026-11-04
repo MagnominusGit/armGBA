@@ -44,6 +44,7 @@ public:
 	void speedChange(unsigned long cycleCounter);
 
 	void setTimeMode(bool useCycles, unsigned long cycleCounter);
+	void setSpeed(unsigned percent, unsigned long cycleCounter);
 
 	void set(Clock *clock) { clock_ = clock; }
 	void setTime(unsigned long long const dividers) { if (clock_) clock_->setTime(dividers); }
@@ -62,6 +63,7 @@ private:
 	bool useCycles_;
 	unsigned long rtcDivisor_;
 	bool ds_;
+	unsigned percent_;
 
 	Clock *clock_;
 	void update(unsigned long const cc) { if (clock_) clock_->updateClock(cc); }

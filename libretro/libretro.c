@@ -1108,6 +1108,7 @@ static void startOthers(const struct retro_game_info* second, const void* sameDa
 		readOtherSaves();
 	}
 	readOptions();
+	readClockOptions(false);
 	announcePlayers();
 }
 
@@ -1244,6 +1245,7 @@ static bool loadGameBoy(const struct retro_game_info* game, const struct retro_g
 	playersHere = 1;
 	libretroGbSetPlayers(1, false);
 	readOptions();
+	readClockOptions(false);
 	booting = true;
 	libretroGbSetCpuClock(4 + clockNow());
 	char error[256];
@@ -1333,6 +1335,7 @@ static bool loadAdvance(const struct retro_game_info* game, const struct retro_g
 	showButtons();
 	threadedVideo = 0;
 	readOptions();
+	readClockOptions(false);
 	cartridgeOut = false;
 	applyCartridge();
 	cartridgeSaveUnread = cartridgeOut && !noGame;
@@ -1438,6 +1441,7 @@ void retro_unload_game(void) {
 	}
 	writeCoreSaves(true);
 	forgetSaves();
+	clockForget();
 	pairFile = false;
 	secondFromFrontend = false;
 	secondPath[0] = '\0';
@@ -1490,6 +1494,7 @@ void retro_reset(void) {
 	// Restart can come straight after an option change, before a frame has read it, so read the
 	// options first.
 	readOptions();
+	readClockOptions(true);
 	memset(&passed, 0, sizeof(passed));
 	applyLinkOptions();
 	offerLinkNetplay();
@@ -2633,6 +2638,7 @@ void retro_run(void) {
 	bool updated = false;
 	if (environment(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated) {
 		readOptions();
+		readClockOptions(true);
 		saveOptionsChanged();
 		applyCpuClock();
 	}
@@ -2649,6 +2655,7 @@ void retro_run(void) {
 	inputPoll();
 	readFastForward();
 	writeKeptSaves();
+	clockFrame();
 	if (gbTogether) {
 		runGameBoys();
 	} else if (gameBoy) {
@@ -2888,7 +2895,7 @@ unsigned retro_get_region(void) {
 
 // Memory the frontend may read or keep, and its size:
 // - the cartridge's save memory, loaded and saved as the save file;
-// - a Game Boy cartridge's clock, as the .rtc file;
+// - the cartridge's clock, as the .rtc file;
 // - work RAM, for achievements and cheats.
 // RetroArch gets no save memory when the core keeps player 1's save itself.
 static void* memory(unsigned id, size_t* size) {
@@ -2923,6 +2930,10 @@ static void* memory(unsigned id, size_t* size) {
 	case RETRO_MEMORY_SAVE_RAM:
 		*size = saveSize(gba);
 		return gba->savedata.storage;
+	case MEMORY_SECOND_RTC:
+		return gbaTogether ? clockMemory(1, size) : NULL;
+	case RETRO_MEMORY_RTC:
+		return clockMemory(0, size);
 	case RETRO_MEMORY_SYSTEM_RAM:
 		*size = SIZE_EWRAM;
 		return gba->ewram;

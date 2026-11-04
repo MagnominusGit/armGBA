@@ -155,6 +155,14 @@ bool adapterWanted(int count);
 bool showOptions(void);
 void setOptions(void);
 
+// clock.c: the Clock options, read as the game starts (act false) and as they change, when Reset Clock
+// acts; the Game Boy Advance cartridge clock's time, given before each frame; a console's .rtc file in
+// Game Time; the clocks forgotten as the game closes.
+void readClockOptions(bool act);
+void clockFrame(void);
+void* clockMemory(int player, size_t* size);
+void clockForget(void);
+
 // lcd.c: LCD Ghosting (0 off, then 1 to 4 quarters) and Interlaced Rows; LCD Scale in halves (2 when
 // off), whether it draws Pixel Gaps, and the pixel shadow's way (0 none, then up and on clockwise);
 // the threads they share rows among (0 chooses). showPicture sends the picture on through them all,

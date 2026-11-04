@@ -88,7 +88,7 @@ static void* rtcMemory(int player, size_t* size) {
 		libretroGbSelect(0);
 		return data;
 	}
-	return NULL;
+	return clockMemory(player, size);
 }
 
 static uint64_t hashOf(const void* data, size_t size) {

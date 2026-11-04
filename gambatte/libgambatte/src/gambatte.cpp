@@ -195,6 +195,10 @@ void GB::setRtcDivisorOffset(long const rtcDivisorOffset) {
 	p_->cpu.setRtcDivisorOffset(rtcDivisorOffset);
 }
 
+void GB::setRtcSpeed(unsigned const percent) {
+	p_->cpu.setRtcSpeed(percent);
+}
+
 bool GB::hasMbc3Rtc() const {
 	return p_->cpu.loaded() && p_->cpu.hasMbc3Rtc();
 }

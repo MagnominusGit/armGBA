@@ -240,6 +240,9 @@ public:
 	/** adjust the assumed clock speed of the CPU compared to the RTC */
 	void setRtcDivisorOffset(long const rtcDivisorOffset);
 
+	/** armGBA: the clock's speed in percent of the console's, 0 stopped */
+	void setRtcSpeed(unsigned percent);
+
 	/** armGBA: whether the cartridge has an MBC3 clock, and its registers: rtc_dh, rtc_dl, rtc_h, rtc_m, rtc_s,
 	  * rtc_c (cycles into the second), then the latched five (mem/rtc.h) */
 	bool hasMbc3Rtc() const;

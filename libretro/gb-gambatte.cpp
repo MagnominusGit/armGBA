@@ -70,17 +70,29 @@ bool hasSystemPath;
 // The boot ROM choice from the option.
 LibretroGbBoot bootWanted = LIBRETRO_GB_BOOT_NINTENDO;
 
-// An MBC3 clock, kept by the frontend as the .rtc file:
-// - 8 bytes: the Unix time the clock would have started from, as gambatte-libretro stores it, so
-//   either core reads the other's file;
-// - the registers, in rtc.h's order, and when they were saved, which carry more detail.
-// A HuC3 chip's file stores the chip's whole state in place of the registers.
+// A cartridge's clock, kept by the frontend as the .rtc file. Other cores read their part of it:
+// - 8 bytes: the Unix time the clock would have started from, gambatte-libretro's whole file;
+// - "aGBm", and the Unix time it was saved;
+// - an MBC3's registers at that time, 4 bytes each, seconds first, then the time again: what mGBA
+//   reads of its own file;
+// - the cycles into the second and the latched registers, which carry more detail;
+// - the Clock Offset the clock was moved by, and how much of a move back it couldn't make, in
+//   seconds.
+// A HuC3 chip's file has "aGBh" and the chip's whole state after the saved time. Files from before
+// the mGBA part ("aGBc") had the registers and the offset where mGBA's part is now.
 enum {
 	RTC_BASE = 0,
 	RTC_MAGIC = 8,
 	RTC_SAVED = 12,
 	RTC_REGS = 20,
-	RTC_SIZE = RTC_REGS + 14,
+	MGBA_REGS = 20,
+	MGBA_SAVED = 40,
+	RTC_CYCLES = 48,
+	RTC_LATCH = 52,
+	RTC_MOVED = 64,
+	RTC_SHORT = 72,
+	RTC_SIZE = 80,
+	OLD_OFFSET = RTC_REGS + 14,
 	HUC3_STATE = 0x104,
 	HUC3_SIZE = RTC_REGS + HUC3_STATE,
 	// In the HuC3 state: the cycles into the current minute, then I/O with the minutes and days as
@@ -130,6 +142,10 @@ struct Console {
 	std::string gameGenie;
 	std::string gameShark;
 	unsigned char rtcFile[HUC3_SIZE];
+	// The Clock Offset the MBC3 clock was moved by, and how much of a move back the clock couldn't
+	// make, at day 0; a move forwards makes that up first.
+	long long clockMoved;
+	long long clockShort;
 	// The frontend fills rtcFile after the game is loaded, so the file is read just before the
 	// first frame.
 	bool rtcPending;
@@ -140,6 +156,10 @@ Console consoles[MAX_PLAYERS];
 Console* s = &consoles[0];
 // The CPU Clock, in quarters of the console's own clock.
 static unsigned cpuQuarters = 4;
+// The Clock options: Game Time, the speed in percent and the offset in seconds.
+static bool gameTime;
+static unsigned clockPercent = 100;
+static long long clockOffset;
 // How many consoles of a link run here (1 without one), and whether the Four Player Adapter joins
 // them; two without it share the cable.
 int players = 1;
@@ -209,6 +229,41 @@ void runClock(unsigned long r[11], unsigned long long seconds) {
 	r[RTC_DH] = (r[RTC_DH] & 0xFE) | (days >> 8 & 1);
 }
 
+// Moves a running clock by some seconds, forwards or back, though not before day 0. Returns how much
+// of a move back it couldn't make.
+long long moveClock(unsigned long r[11], long long seconds) {
+	if (r[RTC_DH] & 0x40 || r[RTC_H] >= 24 || r[RTC_M] >= 60 || r[RTC_S] >= 60) {
+		return 0;
+	}
+	long long const day = 24 * 60 * 60;
+	long long total = (((r[RTC_DH] & 1) << 8 | r[RTC_DL]) * 24 + r[RTC_H]) * 3600 + r[RTC_M] * 60 + r[RTC_S] + seconds;
+	long long const shortBy = total < 0 ? -total : 0;
+	total += shortBy;
+	if (total >= 512 * day) {
+		total %= 512 * day;
+		r[RTC_DH] |= 0x80;
+	}
+	r[RTC_S] = total % 60;
+	r[RTC_M] = total / 60 % 60;
+	r[RTC_H] = total / 3600 % 24;
+	r[RTC_DL] = total / day & 0xFF;
+	r[RTC_DH] = (r[RTC_DH] & 0xFE) | (total / day >> 8 & 1);
+	return shortBy;
+}
+
+// Moves the selected console's clock from one Clock Offset to another, making up first what an
+// earlier move back couldn't make.
+void moveBy(Console& c, unsigned long r[11], long long offset) {
+	long long seconds = offset - c.clockMoved;
+	if (seconds > 0) {
+		long long const owed = seconds < c.clockShort ? seconds : c.clockShort;
+		c.clockShort -= owed;
+		seconds -= owed;
+	}
+	c.clockShort += moveClock(r, seconds);
+	c.clockMoved = offset;
+}
+
 // How much of rtcFile the cartridge's clock uses, or 0 if it has none.
 size_t rtcSize() {
 	return !s->gb ? 0 : s->gb->hasMbc3Rtc() ? RTC_SIZE : s->gb->hasHuC3() ? HUC3_SIZE : 0;
@@ -241,82 +296,134 @@ void runHuC3(unsigned char* state, unsigned long long seconds) {
 	}
 }
 
-// Loads the clock from the .rtc file and advances it by the time the game was off, when the host
-// clock can tell.
+unsigned long get32(const unsigned char* from) {
+	return from[0] | from[1] << 8 | from[2] << 16 | (unsigned long) from[3] << 24;
+}
+
+void put32(unsigned char* to, unsigned long value) {
+	for (int i = 0; i < 4; ++i) {
+		to[i] = value >> i * 8;
+	}
+}
+
+// Whether a file holds mGBA's registers and the time they were saved, sane ones.
+bool mgbaFile(const unsigned char* file, unsigned long long now) {
+	static const unsigned ends[5] = { 64, 64, 32, 256, 256 };
+	unsigned long long const saved = get64(file + MGBA_SAVED);
+	for (int i = 0; i < 5; ++i) {
+		if (get32(file + MGBA_REGS + i * 4) >= ends[i]) {
+			return false;
+		}
+	}
+	return saved >= SANE_TIME / 2 && saved <= now + 366 * 86400ull;
+}
+
+// Loads the clock from the .rtc file, armGBA's, mGBA's or gambatte-libretro's, and advances it by the
+// time the game was off, when the host clock can tell, except in Game Time.
 void readRtcFile() {
 	s->rtcPending = false;
 	unsigned long long const now = std::time(0);
+	const unsigned char* const file = s->rtcFile;
+	unsigned long long saved = get64(file + RTC_SAVED);
 	if (s->gb->hasHuC3()) {
-		if (std::memcmp(s->rtcFile + RTC_MAGIC, "aGBh", 4)) {
-			return;
-		}
 		unsigned char state[HUC3_STATE];
-		std::memcpy(state, s->rtcFile + RTC_REGS, sizeof(state));
-		unsigned long long const saved = get64(s->rtcFile + RTC_SAVED);
-		if (saved >= SANE_TIME && now >= saved) {
+		if (!std::memcmp(file + RTC_MAGIC, "aGBh", 4)) {
+			std::memcpy(state, file + RTC_REGS, sizeof(state));
+		} else {
+			// gambatte-libretro's: the minutes and days since the clock's start.
+			unsigned long long const base = get64(file + RTC_BASE);
+			if (!base || base < SANE_TIME / 2 || now < SANE_TIME || base > now) {
+				return;
+			}
+			s->gb->getHuC3Regs(state);
+			std::memset(state, 0, 4);
+			putNibbles(state + HUC3_MINUTES, 0);
+			putNibbles(state + HUC3_DAYS, 0);
+			saved = base;
+		}
+		if (!gameTime && saved >= SANE_TIME / 2 && now >= SANE_TIME && now >= saved) {
 			runHuC3(state, now - saved);
 		}
 		s->gb->setHuC3Regs(state);
 		return;
 	}
 	unsigned long r[11] = { 0 };
-	if (!std::memcmp(s->rtcFile + RTC_MAGIC, "aGBc", 4)) {
-		const unsigned char* const regs = s->rtcFile + RTC_REGS;
-		r[RTC_DH] = regs[0] & 0xC1;
-		r[RTC_DL] = regs[1];
-		r[RTC_H] = regs[2] & 0x1F;
-		r[RTC_M] = regs[3] & 0x3F;
-		r[RTC_S] = regs[4] & 0x3F;
-		r[RTC_C] = (regs[5] | regs[6] << 8 | regs[7] << 16 | (unsigned long) regs[8] << 24) % RTC_SECOND;
-		r[RTC_DH + RTC_LATCHED] = regs[9] & 0xC1;
-		r[RTC_DL + RTC_LATCHED] = regs[10];
-		r[RTC_H + RTC_LATCHED] = regs[11] & 0x1F;
-		r[RTC_M + RTC_LATCHED] = regs[12] & 0x3F;
-		r[RTC_S + RTC_LATCHED] = regs[13] & 0x3F;
-		unsigned long long const saved = get64(s->rtcFile + RTC_SAVED);
-		if (saved >= SANE_TIME && now >= saved) {
-			runClock(r, now - saved);
+	bool const ours = !std::memcmp(file + RTC_MAGIC, "aGBm", 4), older = !std::memcmp(file + RTC_MAGIC, "aGBc", 4);
+	s->clockMoved = s->clockShort = 0;
+	if (older) {
+		const unsigned char* const regs = file + RTC_REGS;
+		for (int i = 0; i < 5; ++i) {
+			r[i] = regs[i];
+			r[i + RTC_LATCHED] = regs[9 + i];
+		}
+		r[RTC_C] = get32(regs + 5);
+		s->clockMoved = (long long) get64(file + OLD_OFFSET);
+	} else if (ours || mgbaFile(file, now)) {
+		static const int fields[5] = { RTC_S, RTC_M, RTC_H, RTC_DL, RTC_DH };
+		for (int i = 0; i < 5; ++i) {
+			r[fields[i]] = get32(file + MGBA_REGS + i * 4);
+			r[fields[i] + RTC_LATCHED] = ours ? file[RTC_LATCH + fields[i]] : r[fields[i]];
+		}
+		saved = get64(file + MGBA_SAVED);
+		if (ours) {
+			r[RTC_C] = get32(file + RTC_CYCLES);
+			s->clockMoved = (long long) get64(file + RTC_MOVED);
+			s->clockShort = (long long) get64(file + RTC_SHORT);
 		}
 	} else {
-		// gambatte-libretro's format: the clock shows the time since its start, unless that start
-		// is in the future.
-		unsigned long long const base = get64(s->rtcFile + RTC_BASE);
-		if (!base || base < SANE_TIME / 2 || now < SANE_TIME || base > now) {
-			return;
+		// gambatte-libretro's: the clock shows the time since its start, unless that start is in the
+		// future.
+		unsigned long long const base = get64(file + RTC_BASE);
+		if (base && base >= SANE_TIME / 2 && now >= SANE_TIME && base <= now) {
+			runClock(r, now - base);
+			for (int i = 0; i < 5; ++i) {
+				r[i + RTC_LATCHED] = r[i];
+			}
 		}
-		runClock(r, now - base);
-		for (int i = 0; i < 5; ++i) {
-			r[i + RTC_LATCHED] = r[i];
-		}
+		saved = 0;
 	}
+	r[RTC_DH] &= 0xC1;
+	r[RTC_DH + RTC_LATCHED] &= 0xC1;
+	for (int i = RTC_H; i <= RTC_S; ++i) {
+		r[i] &= i == RTC_H ? 0x1F : 0x3F;
+		r[i + RTC_LATCHED] &= i == RTC_H ? 0x1F : 0x3F;
+	}
+	r[RTC_C] %= RTC_SECOND;
+	if (!gameTime && saved >= SANE_TIME && now >= saved) {
+		runClock(r, now - saved);
+	}
+	moveBy(*s, r, clockOffset);
 	s->gb->setRtcRegs(r);
 }
 
 void writeRtcFile() {
+	unsigned char* const file = s->rtcFile;
+	unsigned long long const now = std::time(0);
+	put64(file + RTC_SAVED, now);
 	if (s->gb->hasHuC3()) {
-		unsigned long long const now = std::time(0);
-		put64(s->rtcFile + RTC_BASE, now);
-		std::memcpy(s->rtcFile + RTC_MAGIC, "aGBh", 4);
-		put64(s->rtcFile + RTC_SAVED, now);
-		s->gb->getHuC3Regs(s->rtcFile + RTC_REGS);
+		std::memcpy(file + RTC_MAGIC, "aGBh", 4);
+		unsigned char* const state = file + RTC_REGS;
+		s->gb->getHuC3Regs(state);
+		unsigned long long const cycles = (unsigned long long) state[0] << 24 | state[1] << 16 | state[2] << 8 | state[3];
+		unsigned long long const shown = getNibbles(state + HUC3_DAYS) * 86400ull + getNibbles(state + HUC3_MINUTES) * 60 + cycles / RTC_SECOND;
+		put64(file + RTC_BASE, now - shown);
 		return;
 	}
 	unsigned long r[11];
 	s->gb->getRtcRegs(r);
-	unsigned long long const now = std::time(0);
 	unsigned long long const shown = (((((r[RTC_DH] & 1) << 8 | r[RTC_DL]) * 24 + r[RTC_H]) * 60
 	                                  + r[RTC_M]) * 60 + r[RTC_S]);
-	put64(s->rtcFile + RTC_BASE, now - shown);
-	std::memcpy(s->rtcFile + RTC_MAGIC, "aGBc", 4);
-	put64(s->rtcFile + RTC_SAVED, now);
-	unsigned char* const regs = s->rtcFile + RTC_REGS;
+	put64(file + RTC_BASE, now - shown);
+	std::memcpy(file + RTC_MAGIC, "aGBm", 4);
+	static const int fields[5] = { RTC_S, RTC_M, RTC_H, RTC_DL, RTC_DH };
 	for (int i = 0; i < 5; ++i) {
-		regs[i] = r[i];
-		regs[9 + i] = r[i + RTC_LATCHED];
+		put32(file + MGBA_REGS + i * 4, r[fields[i]]);
+		file[RTC_LATCH + fields[i]] = r[fields[i] + RTC_LATCHED];
 	}
-	for (int i = 0; i < 4; ++i) {
-		regs[5 + i] = r[RTC_C] >> i * 8;
-	}
+	put64(file + MGBA_SAVED, now);
+	put32(file + RTC_CYCLES, r[RTC_C]);
+	put64(file + RTC_MOVED, s->clockMoved);
+	put64(file + RTC_SHORT, s->clockShort);
 }
 
 unsigned input(void* console) {
@@ -619,6 +726,7 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	if (!s->gb) {
 		s->gb = new gambatte::GB;
 		s->gb->setCpuQuarters(cpuQuarters);
+		s->gb->setRtcSpeed(clockPercent);
 	}
 	s->gb->setLinkCallback(players > 1 ? 0 : linkClocked);
 	s->linked = false;
@@ -1081,6 +1189,46 @@ void* libretroGbSaveRam(size_t* size) {
 void* libretroGbRtc(size_t* size) {
 	*size = rtcSize();
 	return *size ? s->rtcFile : 0;
+}
+
+LibretroGbClock libretroGbClock(void) {
+	return !s->gb ? LIBRETRO_GB_NO_CLOCK : s->gb->hasMbc3Rtc() ? LIBRETRO_GB_MBC3_CLOCK : s->gb->hasHuC3() ? LIBRETRO_GB_HUC3_CLOCK : LIBRETRO_GB_NO_CLOCK;
+}
+
+void libretroGbSetClock(bool timeOfGame, unsigned percent, long long offset) {
+	gameTime = timeOfGame;
+	clockPercent = gameTime ? percent : 100;
+	clockOffset = offset;
+	for (int i = 0; i < MAX_PLAYERS; ++i) {
+		Console& c = consoles[i];
+		if (!c.gb) {
+			continue;
+		}
+		c.gb->setRtcSpeed(clockPercent);
+		if (c.gb->hasMbc3Rtc() && !c.rtcPending && c.clockMoved != offset) {
+			unsigned long r[11];
+			c.gb->getRtcRegs(r);
+			moveBy(c, r, offset);
+			c.gb->setRtcRegs(r);
+		}
+	}
+}
+
+bool libretroGbResetClock(void) {
+	bool reset = false;
+	for (int i = 0; i < MAX_PLAYERS; ++i) {
+		Console& c = consoles[i];
+		if (c.gb && c.gb->hasMbc3Rtc()) {
+			unsigned long r[11] = { 0 };
+			r[RTC_DH] = r[RTC_DH + RTC_LATCHED] = 0x40;
+			c.gb->setRtcRegs(r);
+			c.rtcPending = false;
+			c.clockMoved = clockOffset;
+			c.clockShort = 0;
+			reset = true;
+		}
+	}
+	return reset;
 }
 
 // Converts a stick position into the tilt sensor's reading.

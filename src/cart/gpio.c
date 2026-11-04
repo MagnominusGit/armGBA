@@ -60,14 +60,24 @@ static unsigned bcd(unsigned value) {
 	return counter;
 }
 
-// Latches the host's time into the clock's registers, minus the offset a game has set.
+// Latches the time into the clock's registers: the frontend's, or else the host's.
 static void rtcUpdateClock(struct GBA* gba) {
 	struct Gpio* hw = &gba->gpio;
-	time_t t = hw->clock ? (time_t) hw->clock(hw->clockContext) : time(NULL);
+	time_t t = hw->rtc.kept ? (time_t) (hw->rtc.kept >> 24) : hw->clock ? (time_t) hw->clock(hw->clockContext) : time(NULL);
 	hw->rtc.lastLatch = t;
-	t -= hw->rtc.offset;
 	struct tm date;
 	localtime_r(&t, &date);
+	// The chip counts from 2000 to 2099. A host clock never set counts from 1970, so a time before
+	// 2000 counts on from 2000 instead; a time after 2099 stays at its last second.
+	if (date.tm_year < 100) {
+		t += 946684800;
+		localtime_r(&t, &date);
+	}
+	if (date.tm_year < 100) {
+		date = (struct tm) { .tm_year = 100, .tm_mday = 1, .tm_wday = 6 };
+	} else if (date.tm_year > 199) {
+		date = (struct tm) { .tm_year = 199, .tm_mon = 11, .tm_mday = 31, .tm_wday = 4, .tm_hour = 23, .tm_min = 59, .tm_sec = 59 };
+	}
 	hw->rtc.time[0] = bcd(date.tm_year - 100);
 	hw->rtc.time[1] = bcd(date.tm_mon + 1);
 	hw->rtc.time[2] = bcd(date.tm_mday);

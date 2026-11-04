@@ -475,7 +475,9 @@ struct Gpio {
 		uint8_t control;
 		uint8_t time[7];
 		int64_t lastLatch;
-		int64_t offset;
+		// The time when the frontend keeps the clock, in 1/16777216 seconds since 1970 (console
+		// cycles); 0 for the host's.
+		int64_t kept;
 	} rtc;
 	// Returns seconds since the epoch; the system clock when not set.
 	HOST_POINTER(int64_t (*clock)(void* context), clock);
