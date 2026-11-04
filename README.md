@@ -93,7 +93,7 @@ the Tilt and Solar Sensors only for cartridges with one, the link options only w
 | Link: Screens and Controllers | Screen Layout | Both | Side by Side, Top and Bottom, Player 1 Only to Player 4 Only (Together) |
 | | L2 Button | Both | Fast-Forward, Previous Layout (Together; outside netplay) |
 | | Screen Layout Control | Both | Auto, Player 1 to Player 4 (Together) |
-| | Switch Controller Combo | Both | L + R + A + B, L3 + R3, Start + L2 + R2, Start + L3, Start + R3, Off; stick clicks it uses only switch |
+| | Switch Controller Combo | Both | Start + L2 + R2, L + R + A + B, L3 + R3, Start + L3, Start + R3, Off; while Start is held, L2 and R2 only switch, and the stick clicks it uses always do |
 | | Show Player Numbers | Both | Off, On (default) (Together) |
 | Saves | Back Up Save | Both | Off, then each player |
 | | Load Save | Both | Off, then each player's current save (with two or more) and backups |
@@ -311,7 +311,7 @@ player's buttons do nothing, armGBA says so.
 | --- | --- |
 | Play alone | Link Mode Off |
 | Play one game with everyone's buttons at once, on one device or over netplay | Link Mode Off, Shared Controls: Everyone |
-| Take turns on one game, each player taking over with the Switch Controller Combo (L + R + A + B) | Link Mode Off, Shared Controls: Pass Around |
+| Take turns on one game, each player taking over with the Switch Controller Combo (Start + L2 + R2) | Link Mode Off, Shared Controls: Pass Around |
 | Play together on one device, or smooth netplay | Together |
 | Link with someone who has only their own game, or whose device is too slow for two consoles | Separate |
 | Trade or battle in Pokemon FireRed, LeafGreen or Emerald over Wi-Fi | Separate with the Wireless Adapter |

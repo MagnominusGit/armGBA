@@ -231,7 +231,7 @@ bool netplaySeen;
 // The Switch Controller Combo buttons move controller 1 to the next console here; controllerFocus
 // is the console it plays, the other controllers moving along with it.
 enum { SWITCH_OFF, SWITCH_L_R_A_B, SWITCH_L3_R3, SWITCH_START_L2_R2, SWITCH_START_L3, SWITCH_START_R3 };
-static int switchController = SWITCH_L_R_A_B;
+static int switchController = SWITCH_START_L2_R2;
 static int controllerFocus;
 // A session this device joined ended and the game plays on, controller 1 on this device's
 // player's console, as without netplay.
@@ -653,13 +653,14 @@ static void readOptions(void) {
 		}
 	}
 	static const struct Choice switchChoices[] = {
+		{ "l r a b", SWITCH_L_R_A_B },
 		{ "l3 r3", SWITCH_L3_R3 },
 		{ "start l2 r2", SWITCH_START_L2_R2 },
 		{ "start l3", SWITCH_START_L3 },
 		{ "start r3", SWITCH_START_R3 },
 		{ "off", SWITCH_OFF },
 	};
-	switchController = optionChoice("armgba_switch_controller", switchChoices, COUNT(switchChoices), SWITCH_L_R_A_B);
+	switchController = optionChoice("armgba_switch_controller", switchChoices, COUNT(switchChoices), SWITCH_START_L2_R2);
 	static const struct Choice sharedChoices[] = {
 		{ "everyone", SHARED_EVERYONE },
 		{ "pass around", SHARED_PASS },
