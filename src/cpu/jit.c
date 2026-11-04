@@ -807,9 +807,8 @@ static int32_t fetchGap(struct GBA* gba) {
 	return (cpu->cpsr & PSR_T) ? gba->waitN16[region] - gba->waitS16[region] : gba->waitN32[region] - gba->waitS32[region];
 }
 
-// Called when the cartridge shows other contents: all compiled code goes before any more cartridge
-// code runs.
-void jitRomChanged(struct GBA* gba) {
+// All compiled code goes before any more of it runs.
+static void flushSoon(struct GBA* gba) {
 	if (!gba->jit) {
 		return;
 	}
@@ -819,6 +818,17 @@ void jitRomChanged(struct GBA* gba) {
 	} else {
 		jitFlush(gba);
 	}
+}
+
+// Called when the cartridge shows other contents.
+void jitRomChanged(struct GBA* gba) {
+	flushSoon(gba);
+}
+
+// Called when work RAM's wait states change: compiled code has them in its costs wherever it runs
+// from work RAM or moves blocks of data there.
+void jitWorkRamWaitsChanged(struct GBA* gba) {
+	flushSoon(gba);
 }
 
 // gap: jitFetchGap from before the change.
@@ -1266,7 +1276,9 @@ static void linkExit(struct Jit* jit, struct Link* link, struct Block* target) {
 // word-aligned. The prefetch buffer's bookkeeping in compiled code assumes whole words, so that
 // code goes to the exact CPU.
 static bool compilable(struct GBA* gba, uint32_t pc, bool thumb) {
-	if (!thumb && (pc & 2) && inRom(pc) && gba->prefetchEnabled) {
+	// ARM code at a halfword address only runs compiled from the cartridge without the prefetch
+	// buffer; anywhere else it is a game running astray, which the exact CPU follows.
+	if (!thumb && (pc & 2) && (!inRom(pc) || gba->prefetchEnabled)) {
 		return false;
 	}
 	// The third cartridge region's power-on wait states make a sequential access the slower one.

@@ -30,6 +30,7 @@ int32_t jitFetchGap(struct GBA*);
 void jitWaitstatesChanged(struct GBA*, int32_t gap);
 void jitFlush(struct GBA*);
 void jitRomChanged(struct GBA*);
+void jitWorkRamWaitsChanged(struct GBA*);
 // Forgets which code the game rewrites, and starts learning again.
 void jitForgetRewrites(struct GBA*);
 void jitStateLoaded(struct GBA*, bool codeChanged);

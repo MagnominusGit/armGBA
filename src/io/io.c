@@ -307,7 +307,7 @@ void ioWrite(struct GBA* gba, uint32_t address, uint16_t value) {
 		value &= 0xFF00;
 		memoryAdjustEwramWaitstates(gba, value);
 		if (value != gba->io[IO(REG_INTERNAL_EXWAITCNT_HI)]) {
-			jitWaitstatesChanged(gba, -1);
+			jitWorkRamWaitsChanged(gba);
 		}
 		break;
 	default:

@@ -59,6 +59,9 @@ void jitFlush(struct GBA* gba) {
 void jitRomChanged(struct GBA* gba) {
 }
 
+void jitWorkRamWaitsChanged(struct GBA* gba) {
+}
+
 void jitForgetRewrites(struct GBA* gba) {
 }
 
