@@ -126,8 +126,8 @@ Clock During Boot at 100% keeps the BIOS intro and boot ROMs as on the console.
 Low Memory has the frontend leave the game to the core, which maps it from its file instead of
 keeping a copy in memory, so the host reads the parts the game uses as it plays and can drop them
 again. Games with a soft patch beside them and files over 32 MiB are read in as with Low Memory
-off. A zipped game runs without its soft patch: RetroArch unpacks it to a temporary folder first,
-away from the patch.
+off. It works best with unzipped games: RetroArch unpacks a zipped one to a temporary folder first,
+away from its soft patch, so it runs unpatched.
 
 LCD Grid draws the gaps between the console screen's pixels into a picture as many times larger,
 with the shadow a first Game Boy's or a Pocket's pixels cast: pick the largest that fits the screen,

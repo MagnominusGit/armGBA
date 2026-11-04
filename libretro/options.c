@@ -73,7 +73,7 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  NULL, "system",
 	  { { "stock", "100%" }, { "clock", "CPU Clock" }, { NULL, NULL } }, "stock" },
 	{ "armgba_low_memory", "Low Memory", NULL,
-	  "Reads the game from storage as it plays. Applies when a game is opened; zipped games run unpatched.",
+	  "Best with unzipped games: a zipped one is unpacked first and runs unpatched. Applies when a game is opened.",
 	  NULL, "system",
 	  { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
 	{ "armgba_gb_model", "Game Boy Model", NULL,
