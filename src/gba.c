@@ -28,8 +28,11 @@ static void freeChange(void* context) {
 	((struct IrqChange*) context)->busy = false;
 }
 
-// Schedules a stage's change in a free slot of its pool.
-static void scheduleChange(struct GBA* gba, struct IrqChange* slots, bool value, int32_t when) {
+// Schedules a stage's change in a free slot of its pool, cycles from now on the bus the CPU runs on
+// (timingScheduleCpu): with the CPU Clock away from 100%, an interrupt handler can still acknowledge
+// IF and let interrupts nest a few instructions later, as on the console, without the one it
+// acknowledged coming back.
+static void scheduleChange(struct GBA* gba, struct IrqChange* slots, bool value, int32_t cycles, int32_t late) {
 	struct IrqChange* change = &slots[0];
 	while (change->busy && change < &slots[3]) {
 		++change;
@@ -40,7 +43,7 @@ static void scheduleChange(struct GBA* gba, struct IrqChange* slots, bool value,
 	}
 	change->value = value;
 	change->busy = true;
-	timingSchedule(gba, &change->event, when);
+	timingScheduleCpu(gba, &change->event, cycles, late);
 }
 
 // The second stage: IE & IF as the halt logic sees it.
@@ -68,12 +71,12 @@ static void applyIrq(struct GBA* gba, void* context, uint32_t late) {
 	gba->io[IO(REG_IME)] = irq->ime;
 	bool available = irq->ie & irq->iflags;
 	if (available != irq->available) {
-		scheduleChange(gba, irq->availableChange, available, 1 - (int32_t) late);
+		scheduleChange(gba, irq->availableChange, available, 1, (int32_t) late);
 	}
 	bool line = irq->ime && available;
 	if (line != irq->lineDriven) {
 		irq->lineDriven = line;
-		scheduleChange(gba, irq->lineChange, line, 2 - (int32_t) late);
+		scheduleChange(gba, irq->lineChange, line, 2, (int32_t) late);
 	}
 }
 
@@ -395,7 +398,7 @@ void gbaSetKeys(struct GBA* gba, uint16_t keys) {
 // A request from a device: sets its IF bit, by way of the pipeline.
 void gbaRaiseIrq(struct GBA* gba, int irq, uint32_t late) {
 	gba->irq.iflags |= 1 << irq;
-	scheduleChange(gba, gba->irq.apply, false, 1 - (int32_t) late);
+	scheduleChange(gba, gba->irq.apply, false, 1, (int32_t) late);
 }
 
 // An H-blank IRQ request that IE leaves out only sets IF, one cycle after H-blank, and the register
@@ -457,7 +460,7 @@ void gbaIrqQuietChanged(struct GBA* gba, bool wasQuiet) {
 			timingDeschedule(gba, &gba->video.irqEvent[1]);
 			timingSchedule(gba, &gba->video.irqEvent[1], 1);
 		} else if ((int32_t) (now - hblank) > 0 && (int32_t) (now - (hblank + 2)) < 0) {
-			scheduleChange(gba, irq->apply, false, hblank + 2 - now);
+			scheduleChange(gba, irq->apply, false, 0, (int32_t) (now - (hblank + 2)));
 		}
 	}
 	irq->quietPending = false;
@@ -471,7 +474,7 @@ void gbaWriteIe(struct GBA* gba, uint16_t value) {
 	bool wasQuiet = gbaQuietHblank(gba);
 	uint16_t old = gba->irq.ie;
 	gba->irq.ie = value & 0x3FFF;
-	scheduleChange(gba, gba->irq.apply, false, 1);
+	scheduleChange(gba, gba->irq.apply, false, 1, 0);
 	if ((old ^ gba->irq.ie) & (1 << IRQ_HBLANK)) {
 		gbaIrqQuietChanged(gba, wasQuiet);
 		// H-blank events on every line, or not.
@@ -483,7 +486,7 @@ void gbaWriteIe(struct GBA* gba, uint16_t value) {
 void gbaWriteIf(struct GBA* gba, uint16_t value) {
 	gbaIrqSync(gba);
 	gba->irq.iflags &= ~value;
-	scheduleChange(gba, gba->irq.apply, false, 1);
+	scheduleChange(gba, gba->irq.apply, false, 1, 0);
 	if ((value & (1 << IRQ_HBLANK)) && gbaQuietHblank(gba)) {
 		// An H-blank that just happened asks after the write.
 		startQuiet(gba, timingCurrentTime(gba));
@@ -492,7 +495,7 @@ void gbaWriteIf(struct GBA* gba, uint16_t value) {
 
 void gbaWriteIme(struct GBA* gba, uint16_t value) {
 	gba->irq.ime = value & 1;
-	scheduleChange(gba, gba->irq.apply, false, 1);
+	scheduleChange(gba, gba->irq.apply, false, 1, 0);
 }
 
 // The key interrupt: any of the chosen keys, or all of them at once, as KEYCNT says. It is checked

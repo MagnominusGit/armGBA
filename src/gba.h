@@ -903,6 +903,7 @@ uint16_t memoryView16(struct GBA*, uint32_t address);
 void timingClear(struct GBA*);
 void timingSchedule(struct GBA*, struct Event*, int32_t when);
 void timingScheduleAbsolute(struct GBA*, struct Event*, int32_t when);
+void timingScheduleCpu(struct GBA*, struct Event*, int32_t cycles, int32_t late);
 void timingDeschedule(struct GBA*, struct Event*);
 bool timingIsScheduled(struct GBA*, struct Event*);
 int32_t timingTick(struct GBA*, int32_t cycles);

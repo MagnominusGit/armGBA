@@ -80,11 +80,13 @@ static void started(struct GBA* gba, void* context, uint32_t late) {
 	gba->dmaRunnable |= 1 << i;
 }
 
-// DMA starts two cycles after what asks for it.
+// DMA starts two cycles after what asks for it, on the bus the CPU runs on: games start one and
+// then run the code it copies, or let an interrupt push onto what it copies from, safe only once it
+// has.
 static void request(struct GBA* gba, int i, uint32_t late) {
 	struct Dma* dma = &gba->dma[i];
 	timingDeschedule(gba, &dma->start);
-	timingSchedule(gba, &dma->start, 2 - (int32_t) late);
+	timingScheduleCpu(gba, &dma->start, 2, (int32_t) late);
 }
 
 void dmaInit(struct GBA* gba) {

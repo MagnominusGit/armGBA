@@ -107,6 +107,18 @@ void timingScheduleAbsolute(struct GBA* gba, struct Event* event, int32_t when) 
 	timingSchedule(gba, event, when - timingCurrentTime(gba));
 }
 
+// The same, cycles of the CPU's clock from now, late of the console's already gone: with the CPU Clock
+// away from 100%, at the last of the console's cycles not after them, for what is on the bus the CPU
+// runs on (DMA's start, the interrupt controller) and so must not come later than it would.
+void timingScheduleCpu(struct GBA* gba, struct Event* event, int32_t cycles, int32_t late) {
+	if (!gba->cpu.overclock) {
+		timingSchedule(gba, event, cycles - late);
+		return;
+	}
+	uint64_t const cpu = gba->timing.globalCycles + gba->cpu.cycles;
+	timingSchedule(gba, event, (int32_t) (consoleAt(gba, cpu + cycles) - consoleAt(gba, cpu)) - late);
+}
+
 // Takes an event off the list if it is on it.
 void timingDeschedule(struct GBA* gba, struct Event* event) {
 	struct Timing* timing = &gba->timing;
