@@ -19,9 +19,29 @@ static int quarters(struct GBA* gba) {
 	return 4 + gba->cpu.overclock;
 }
 
-// The console's time at a CPU time, and the first CPU time at or after a console time.
+// The high bits of a 64 by 64-bit product, from bit 58 up.
+static inline uint64_t productAbove58(uint64_t a, uint64_t b) {
+#if defined(__SIZEOF_INT128__)
+	return (uint64_t) ((unsigned __int128) a * b >> 58);
+#else
+	uint64_t const low = (uint64_t) (uint32_t) a * (uint32_t) b, across = (uint64_t) (uint32_t) a * (b >> 32);
+	uint64_t const down = (a >> 32) * (uint32_t) b, high = (a >> 32) * (b >> 32);
+	uint64_t const middle = (low >> 32) + (uint32_t) across + (uint32_t) down;
+	return (high + (across >> 32) + (down >> 32) + (middle >> 32)) << 6 | (uint32_t) middle >> 26;
+#endif
+}
+
+// The console's time at a CPU time, and the first CPU time at or after a console time. Dividing by
+// the CPU Clock's quarters is a multiply by the reciprocal, 2^58 / quarters rounded up, which gives
+// the quotient exactly for up to 2^54 (the error stays under a sixteenth): a 64-bit divide is slow
+// on a 32-bit ARM, done in software.
 static uint64_t consoleAt(struct GBA* gba, uint64_t cpu) {
-	return cpu * 4 / quarters(gba);
+	static uint64_t reciprocals[17];
+	int const q = quarters(gba);
+	if (!reciprocals[q]) {
+		reciprocals[q] = ((1ull << 58) + q - 1) / q;
+	}
+	return productAbove58(cpu * 4, reciprocals[q]);
 }
 
 static uint64_t cpuAt(struct GBA* gba, uint64_t console) {
