@@ -64,17 +64,20 @@ the Tilt and Solar Sensors only for cartridges with one, the link options only w
 | | Game Boy Model (applies on restart) | Game Boy | Auto, Game Boy, Game Boy Pocket / Light, Game Boy Color, Game Boy Advance |
 | | Game Boy Boot ROM (applies on restart) | Game Boy | Nintendo's (System Folder), armGBA's (Built In), Off |
 | Video | Threaded Video | Game Boy Advance | Off, On, One Frame Late |
+| | Frame Skip | Both | Off, Auto, 1, 2, 3 (not in netplay) |
 | | GBA Color Correction | Game Boy Advance | Off, On |
 | | Game Boy Color Correction | Game Boy | Off, On |
 | | Game Boy Screen | Game Boy | Grayscale, Game Boy, Game Boy Pocket (both measured from real ones), Game Boy Light (Backlit) |
 | | Game Boy Contrast | Game Boy | 0% to 100% of the wheel in tenths, 50% by default (original Game Boy screens) |
 | | Game Boy on GBA: Border | Game Boy | Cropped, Shown (Game Boy Advance model) |
 | | Game Boy on GBA: Screen | Game Boy | Game Boy Advance, Game Boy Color (Game Boy Advance model) |
-| Video: LCD Effects | LCD Ghosting | Both | Off, 25%, 50%, 75%, 100% (always on the CPU) |
-| | Interlaced Rows | Both | Off, On |
-| | LCD Grid Scale | Both | Off, 2x to 8x in steps of 0.5x |
-| | LCD Subpixels | Both | Off, 10% to 100% in tenths (Color's and Advance's screens, with LCD Grid) |
-| | Game Boy Pixel Shadow | Game Boy | Off, Up, Up Right, Right, Down Right (default), Down, Down Left, Left, Up Left, Tilt (Android: follows the device's tilt) |
+| Video: LCD Effects | CPU LCD Effects | Both | Off, On (each effect below keeps its setting) |
+| | LCD Ghosting | Both | Off, 25%, 50%, 75%, 100% (always on the CPU) |
+| | Interlaced Rows | Both | Off, On (Color's and Advance's screens) |
+| | LCD Scale | Both | Off, 2x to 8x in steps of 0.5x |
+| | Pixel Gaps | Both | Off, On (with LCD Scale) |
+| | LCD Subpixels | Both | Off, 10% to 100% in tenths (Color's and Advance's screens, with LCD Scale) |
+| | Game Boy Pixel Shadow | Game Boy | Off, Up, Up Right, Right, Down Right, Down, Down Left, Left, Up Left, Tilt (Android: follows the device's tilt) |
 | | Game Boy Pixel Shadow Distance | Game Boy | 0.5 to 2.5 dots in halves, 1.5 by default; how far Tilt reaches in the app |
 | | LCD Effect Threads | Both | Auto, 1, 2, 3, 4 |
 | Audio | Low-Pass Filter | Both | Off, 20%, 40%, 60%, 80% |
@@ -112,9 +115,21 @@ the Tilt and Solar Sensors only for cartridges with one, the link options only w
 On the Game Boy Advance model, a Game Boy game is shown at its own size. With Game Boy on GBA:
 Border set to Shown, the black around it shows too, as on that console's screen. Game Boy on GBA:
 Screen shows it on the Advance's panel or the Color's: their colors with color correction on, their
-LCD Grid and their ghosting. Interlaced Rows, on the Color's and Advance's panels with LCD Ghosting
-on, drives alternate rows harder each frame, so pictures that alternate each frame show in stripes,
-as on the consoles.
+LCD Grid and their ghosting. Interlaced Rows, on the Color's and Advance's panels, updates alternate
+rows each frame, so pictures that alternate each frame show in stripes, as on the consoles: alone,
+the rows not updated keep what they showed; with LCD Ghosting, all rows fade, the ones updated
+faster.
+
+CPU LCD Effects turns every effect the core draws on the CPU off or on at once, keeping each one's
+setting. Each is independent of the others, but Pixel Gaps, LCD Subpixels and the Game Boy pixel
+shadow need LCD Scale, the room in a larger picture to draw inside each pixel.
+
+Frame Skip leaves frames out of the picture when the host can't keep up: Auto while RetroArch's
+sound buffer is a third full or less, no more than three in a row; 1, 2 or 3 after every frame
+shown. The game still runs every frame, so it plays, sounds and saves the same; a frame left out
+isn't drawn by the Game Boy Advance's renderer or the LCD effects, and RetroArch shows the last
+picture again. LCD Ghosting catches up on the next frame shown. It stays off in netplay, where every
+device's state must match.
 
 CPU Clock runs the CPU faster or slower than the rest of the console. On the Game Boy Advance, as
 MAME's CPU overclock does, the CPU, its bus and DMA run on the new clock; on the Game Boy and Game
@@ -134,9 +149,9 @@ again. Games with a soft patch beside them and files over 32 MiB are read in as 
 off. It works best with unzipped games: RetroArch unpacks a zipped one to a temporary folder first,
 away from its soft patch, so it runs unpatched.
 
-LCD Grid draws the gaps between the console screen's pixels into a picture as many times larger,
-with the shadow a first Game Boy's or a Pocket's pixels cast: pick the largest that fits the screen,
-with RetroArch's integer scaling on. At a half step, such as 2.5x, each two by two block of pixels
+LCD Scale makes the picture as many times larger, with Pixel Gaps the gaps between the console
+screen's pixels drawn in and the shadow a first Game Boy's or a Pocket's pixels cast: pick the
+largest that fits the screen, with RetroArch's integer scaling on. At a half step, such as 2.5x, each two by two block of pixels
 makes a whole number of output pixels, five by five, so the gaps repeat every two pixels. It works on the CPU, in vectors (NEON, SSE or AVX), its rows
 shared out among the cores, as LCD Ghosting's are: LCD Effect Threads says how many, Auto leaving
 one core for the rest, or two with Threaded Video. Its shadow is one shade for each pixel's square,

@@ -565,6 +565,8 @@ static void showButtons(void) {
 	environment(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, shown);
 }
 
+static void readFrameSkip(void);
+
 static void readOptions(void) {
 	static const struct Choice threadedChoices[] = { { "enabled", THREADED_ON }, { "one frame late", THREADED_LATE } };
 	static const struct Choice modelChoices[] = {
@@ -612,18 +614,21 @@ static void readOptions(void) {
 	}
 	threadedVideo = threaded;
 	colorCorrection = optionIs("armgba_color_correction", "enabled") && buildCorrectedColors();
+	// CPU LCD Effects off leaves each effect's setting as it is, and off.
+	bool const effects = optionIs("armgba_lcd_effects", "enabled");
 	static const struct Choice ghostingChoices[] = { { "25", 1 }, { "half", 2 }, { "75", 3 }, { "enabled", 4 } };
-	ghosting = optionChoice("armgba_lcd_ghosting", ghostingChoices, COUNT(ghostingChoices), 0);
+	ghosting = effects ? optionChoice("armgba_lcd_ghosting", ghostingChoices, COUNT(ghostingChoices), 0) : 0;
 	static const struct Choice gridChoices[] = {
 		{ "2", 4 }, { "2.5", 5 }, { "3", 6 }, { "3.5", 7 }, { "4", 8 }, { "4.5", 9 }, { "5", 10 }, { "5.5", 11 }, { "6", 12 }, { "6.5", 13 }, { "7", 14 }, { "7.5", 15 }, { "8", 16 },
 	};
-	int const grid = optionChoice("armgba_lcd_grid", gridChoices, COUNT(gridChoices), 2);
+	int const grid = effects ? optionChoice("armgba_lcd_grid", gridChoices, COUNT(gridChoices), 2) : 2;
 	gridAnnounce |= grid != gridHalves;
 	gridHalves = grid;
 	static const struct Choice wayChoices[] = {
 		{ "up", 1 }, { "up right", 2 }, { "right", 3 }, { "down right", 4 }, { "down", 5 }, { "down left", 6 }, { "left", 7 }, { "up left", 8 },
 	};
 	gridWay = optionChoice("armgba_lcd_shadow", wayChoices, COUNT(wayChoices), 0);
+	gridGaps = optionIs("armgba_lcd_gaps", "enabled");
 	// "0.5" to "2.5", read in halves so the locale's decimal point doesn't matter.
 	const char* const distance = option("armgba_lcd_shadow_distance");
 	const char* const point = distance ? strchr(distance, '.') : NULL;
@@ -633,6 +638,7 @@ static void readOptions(void) {
 	libretroLcdSubpixelMix = subpixels ? fminf(fmaxf(atoi(subpixels) / 100.0f, 0), 1) : 0;
 	static const struct Choice threadChoices[] = { { "1", 1 }, { "2", 2 }, { "3", 3 }, { "4", 4 } };
 	lcdThreads = optionChoice("armgba_lcd_threads", threadChoices, COUNT(threadChoices), 0);
+	readFrameSkip();
 	const char* const filter = option("armgba_low_pass_filter");
 	lowPass = filter ? atoi(filter) * 0x10000 / 100 : 0;
 	gbModel = optionChoice("armgba_gb_model", modelChoices, COUNT(modelChoices), LIBRETRO_GB_AUTO);
@@ -643,7 +649,7 @@ static void readOptions(void) {
 	gbContrast = contrast ? atoi(contrast) : 0;
 	gbColorCorrection = optionIs("armgba_gb_color_correction", "enabled");
 	gbColorPanel = optionIs("armgba_gb_advance_panel", "color");
-	interleaved = optionIs("armgba_lcd_interleave", "enabled");
+	interleaved = effects && optionIs("armgba_lcd_interleave", "enabled");
 	for (int i = gameBoy ? playersHere - 1 : 0; i >= 0; --i) {
 		libretroGbSelect(i);
 		libretroGbSetContrast(gbContrast);
@@ -1702,6 +1708,47 @@ static void readStretch(uint16_t keys) {
 	held = now;
 }
 
+// Frame Skip: 0 off, -1 Auto, else how many frames are left out after each one shown; for Auto,
+// how full the frontend's sound buffer is, as it reports it.
+static int frameSkip;
+static bool soundActive, soundShort;
+static unsigned soundFull;
+bool frameSkipped;
+int framesSkipped;
+
+static void soundBufferStatus(bool active, unsigned occupancy, bool underrunLikely) {
+	soundActive = active;
+	soundFull = occupancy;
+	soundShort = underrunLikely;
+}
+
+static void readFrameSkip(void) {
+	static const struct Choice choices[] = { { "auto", -1 }, { "1", 1 }, { "2", 2 }, { "3", 3 } };
+	frameSkip = optionChoice("armgba_frame_skip", choices, COUNT(choices), 0);
+	struct retro_audio_buffer_status_callback status = { frameSkip < 0 ? soundBufferStatus : NULL };
+	if (!environment(RETRO_ENVIRONMENT_SET_AUDIO_BUFFER_STATUS_CALLBACK, &status) || frameSkip >= 0) {
+		soundActive = false;
+	}
+}
+
+// Whether this frame is left out: with Auto while the sound is about to run short, a third full or
+// less, and no more than three in a row; otherwise the set count after each one shown. Never in
+// netplay, where every device's state must match, nor for a frame RetroArch runs again.
+static bool skipThisFrame(void) {
+	static int run;
+	bool skip = false;
+	if (frameSkip && !netplaySeen && !rerunning()) {
+		skip = frameSkip < 0 ? soundActive && (soundShort || soundFull <= 33) && run < 3 : run < frameSkip;
+	}
+	if (!skip) {
+		framesSkipped = run;
+		run = 0;
+	} else {
+		++run;
+	}
+	return skip;
+}
+
 // Whether RetroArch is running this frame again, for a netplay rollback or runahead, rather than
 // for the first time.
 bool rerunning(void) {
@@ -2518,7 +2565,7 @@ static void runOneAdvance(void) {
 	if (cheats.count || cheats.patchCount) {
 		cheatsApply(&cheats, gba);
 	}
-	if (colorCorrection) {
+	if (colorCorrection && !frameSkipped) {
 		const uint16_t* picture = (const uint16_t*) gba->renderer.frame;
 		for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; ++i) {
 			correctedFrame[i] = corrected(picture[i]);
@@ -2575,6 +2622,9 @@ void retro_run(void) {
 		applyCpuClock();
 	}
 	checkBooted();
+	frameSkipped = skipThisFrame();
+	// One Frame Late shows the frame before, so its lines are still drawn.
+	videoDrawSkipped = frameSkipped && threadedVideo != THREADED_LATE;
 	// A new LCD Grid size changes the picture's largest size too, which only a new AV info can say.
 	if (gridAnnounce) {
 		struct retro_system_av_info av;

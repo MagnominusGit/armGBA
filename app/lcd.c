@@ -440,7 +440,7 @@ const char* lcdOptionRead(const struct Option* option) {
 	return lcdSettings.onGpu && !strcmp(option->key, "armgba_lcd_grid") ? "disabled" : NULL;
 }
 
-// The core's LCD grid and pixel shadow show only with LCD Rendering on the CPU; the shadow's
+// The core's LCD Scale, Pixel Gaps and pixel shadow show only with LCD Rendering on the CPU; the shadow's
 // distance, on the GPU, with the app's own shadow on, and LCD Subpixels with its grid on the Color's
 // and Advance's screens.
 bool lcdOptionShown(const struct Option* option, bool shown) {
@@ -451,7 +451,8 @@ bool lcdOptionShown(const struct Option* option, bool shown) {
 		uint32_t gap;
 		return lcdSettings.grid && libretroLcdHasSubpixels(libretroLcd(&gap));
 	}
-	return shown && !(lcdSettings.onGpu && (!strcmp(option->key, "armgba_lcd_grid") || !strcmp(option->key, "armgba_lcd_shadow")));
+	return shown && !(lcdSettings.onGpu && (!strcmp(option->key, "armgba_lcd_grid") || !strcmp(option->key, "armgba_lcd_gaps") ||
+	                                       !strcmp(option->key, "armgba_lcd_shadow")));
 }
 
 enum {
@@ -514,7 +515,7 @@ void lcdShaderRows(void) {
 void lcdSettingsDefaults(void) {
 	lcdSettings.onGpu = true;
 	lcdSettings.grid = false;
-	lcdSettings.shadow = 4;
+	lcdSettings.shadow = 0;
 }
 
 bool lcdSettingRead(const char* key, const char* value, int n, bool yes) {
@@ -529,7 +530,7 @@ bool lcdSettingRead(const char* key, const char* value, int n, bool yes) {
 	} else if (!strcmp(key, "gpu_lcd_grid")) {
 		lcdSettings.grid = yes;
 	} else if (!strcmp(key, "lcd_shadow")) {
-		lcdSettings.shadow = n >= 0 && n <= SHADOW_TILT ? n : 4;
+		lcdSettings.shadow = n >= 0 && n <= SHADOW_TILT ? n : 0;
 	} else {
 		return false;
 	}

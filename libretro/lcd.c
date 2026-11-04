@@ -26,6 +26,7 @@ int ghosting;
 bool interleaved;
 int gridHalves = 2;
 int gridWay;
+bool gridGaps;
 float libretroLcdShadowDistance = 1.5f;
 float libretroLcdSubpixelMix;
 int lcdThreads;
@@ -508,6 +509,7 @@ enum { GRID_SHARES_MAX = 256, GRID_BLOCK_MAX = 16 };
 // rows alike share a template.
 static struct {
 	int halves, lcd, period, block, shareCount;
+	bool gaps;
 	float mix;
 	uint8_t shares[GRID_SHARES_MAX];
 	uint16_t channels[GRID_SHARES_MAX][3];
@@ -522,7 +524,7 @@ static struct {
 static void gridLay(int halves, enum LibretroLcd lcd) {
 	float const pitch = halves / 2.0f;
 	float const mix = libretroLcdHasSubpixels(lcd) ? libretroLcdSubpixelMix * libretroLcdSubpixelFade(pitch) : 0;
-	if (gridLayout.halves == halves && gridLayout.lcd == (int) lcd && gridLayout.mix == mix) {
+	if (gridLayout.halves == halves && gridLayout.lcd == (int) lcd && gridLayout.gaps == gridGaps && gridLayout.mix == mix) {
 		return;
 	}
 	int const period = halves % 2 ? 2 : 1, block = halves * period / 2;
@@ -530,7 +532,7 @@ static void gridLay(int halves, enum LibretroLcd lcd) {
 	int across[GRID_BLOCK_MAX], down[GRID_BLOCK_MAX];
 	uint16_t columns[GRID_BLOCK_MAX][3];
 	for (int i = 0; i < block; ++i) {
-		float const covered = libretroLcdGapCoverage(i, pitch, look->share * pitch);
+		float const covered = gridGaps ? libretroLcdGapCoverage(i, pitch, look->share * pitch) : 0;
 		across[i] = (int) lroundf(covered * look->across * 255);
 		down[i] = (int) lroundf(covered * look->down * 255);
 		gridLayout.source[i] = (uint8_t) ((i + 0.5f) / pitch);
@@ -582,6 +584,7 @@ static void gridLay(int halves, enum LibretroLcd lcd) {
 	}
 	gridLayout.halves = halves;
 	gridLayout.lcd = lcd;
+	gridLayout.gaps = gridGaps;
 	gridLayout.period = period;
 	gridLayout.block = block;
 	gridLayout.mix = mix;
@@ -706,6 +709,7 @@ bool libretroLcdKeep(struct LibretroLcdKeep* keep) {
 // The CPU grid's, for the scale and screen its shares are from.
 static struct LibretroLcdKeep gridKept;
 static int keptHalves, keptLcd = -1;
+static bool keptGaps;
 
 // The frame the threads draw.
 static struct GridFrame {
@@ -990,14 +994,14 @@ void sendPicture(const void* picture, unsigned width, unsigned height, size_t pi
 	// A half step needs whole blocks of two pixels.
 	int const halves = gridHalves % 2 && (width | height) & 1 ? gridHalves - 1 : gridHalves;
 	if (halves <= 2) {
-		videoRefresh(picture, width, height, pitch);
+		videoRefresh(frameSkipped ? NULL : picture, width, height, pitch);
 		return;
 	}
 	size_t const bytes = pitch / width;
 	unsigned const outWidth = width * (unsigned) halves / 2, outHeight = height * (unsigned) halves / 2;
 	size_t const outPitch = (size_t) outWidth * bytes;
-	// A frame RetroArch runs again and doesn't show isn't drawn.
-	if (!picture || rerunning()) {
+	// A frame RetroArch runs again and doesn't show, or Frame Skip leaves out, isn't drawn.
+	if (!picture || frameSkipped || rerunning()) {
 		videoRefresh(NULL, outWidth, outHeight, outPitch);
 		return;
 	}
@@ -1018,7 +1022,7 @@ void sendPicture(const void* picture, unsigned width, unsigned height, size_t pi
 		return;
 	}
 	startJobs();
-	if (keptHalves != halves || keptLcd != (int) lcd) {
+	if (keptHalves != halves || keptLcd != (int) lcd || keptGaps != gridGaps) {
 		int const block = gridLayout.block;
 		gridKept.count = block * block;
 		for (int i = 0; i < gridKept.count; ++i) {
@@ -1028,6 +1032,7 @@ void sendPicture(const void* picture, unsigned width, unsigned height, size_t pi
 		gridKept.stale = true;
 		keptHalves = halves;
 		keptLcd = (int) lcd;
+		keptGaps = gridGaps;
 	}
 	bool const kept = libretroLcdKeep(&gridKept);
 	gridFrame = (struct GridFrame) { .picture = picture, .width = width, .height = height, .pitch = pitch, .bytes = bytes,
@@ -1174,10 +1179,45 @@ static void ghostJob(int job) {
 	}
 }
 
+// Interlaced Rows without LCD Ghosting: each frame one set of alternate rows takes the new picture
+// and the others keep what they showed, as the Color's and Advance's screens drive alternate rows.
+static struct GridBuffer interlacedShown;
+static unsigned interlacedWidth, interlacedHeight, interlacedFrames;
+static size_t interlacedPitch;
+
+static void showInterlaced(const void* picture, unsigned width, unsigned height, size_t pitch) {
+	if (!gridReserve(&interlacedShown, pitch * height)) {
+		sendPicture(picture, width, height, pitch);
+		return;
+	}
+	if (width != interlacedWidth || height != interlacedHeight || pitch != interlacedPitch) {
+		memcpy(interlacedShown.data, picture, pitch * height);
+		interlacedWidth = width;
+		interlacedHeight = height;
+		interlacedPitch = pitch;
+	} else {
+		++interlacedFrames;
+		// Rows of both sets were driven in frames left out.
+		for (unsigned y = framesSkipped ? 0 : interlacedFrames & 1; y < height; y += framesSkipped ? 1 : 2) {
+			memcpy(interlacedShown.data + y * pitch, (const uint8_t*) picture + y * pitch, pitch);
+		}
+	}
+	sendPicture(interlacedShown.data, width, height, pitch);
+}
+
 void showPicture(const void* picture, unsigned width, unsigned height, size_t pitch) {
-	if (!ghosting || !picture || rerunning()) {
+	bool const alone = !ghosting && interleaved && screenKind() == SCREEN_TFT;
+	if (!alone) {
+		// Turned off, it starts again from the picture when it's turned on.
+		interlacedWidth = 0;
+	}
+	if (!ghosting || !picture || frameSkipped || rerunning()) {
 		// Turned off, the screen starts again from the picture when it's turned on.
 		ghost.width = ghosting ? ghost.width : 0;
+		if (alone && picture && !frameSkipped && !rerunning()) {
+			showInterlaced(picture, width, height, pitch);
+			return;
+		}
 		sendPicture(picture, width, height, pitch);
 		return;
 	}
@@ -1243,5 +1283,10 @@ void showPicture(const void* picture, unsigned width, unsigned height, size_t pi
 	ghost.alternate = alternate;
 	startJobs();
 	runJobs(ghostJob);
+	// Frames left out moved the screen on too, towards a picture taken to be this one; up to three.
+	for (int step = 0; step < framesSkipped && step < 3; ++step) {
+		++ghost.frames;
+		runJobs(ghostJob);
+	}
 	sendPicture(ghost.shown, width, height, pitch);
 }

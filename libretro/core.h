@@ -155,14 +155,19 @@ bool adapterWanted(int count);
 bool showOptions(void);
 void setOptions(void);
 
-// lcd.c: LCD Ghosting (0 off, then 1 to 4 quarters) and Interlaced Rows; LCD Grid's scale in halves (2
-// when off) and its shadow's way (0 none, then up and on clockwise); the threads they share rows among (0
-// chooses). showPicture sends the picture on through them both, sendPicture through LCD Grid alone.
+// lcd.c: LCD Ghosting (0 off, then 1 to 4 quarters) and Interlaced Rows; LCD Scale in halves (2 when
+// off), whether it draws Pixel Gaps, and the pixel shadow's way (0 none, then up and on clockwise);
+// the threads they share rows among (0 chooses). showPicture sends the picture on through them all,
+// sendPicture through LCD Scale's alone.
 extern int ghosting;
 extern bool interleaved;
 extern int gridHalves;
 extern int gridWay;
+extern bool gridGaps;
 extern int lcdThreads;
+// Frame Skip: whether this frame is left out of the picture, and how many before it were.
+extern bool frameSkipped;
+extern int framesSkipped;
 void showPicture(const void* picture, unsigned width, unsigned height, size_t pitch);
 void sendPicture(const void* picture, unsigned width, unsigned height, size_t pitch);
 // Whether the screen is the first Game Boy's or the Pocket's, whose pixels cast a shadow.

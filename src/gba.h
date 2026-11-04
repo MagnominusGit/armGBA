@@ -864,6 +864,9 @@ void gbaWriteIme(struct GBA*, uint16_t value);
 void gbaTestKeypadIrq(struct GBA*, uint32_t late);
 void gbaHalt(struct GBA*);
 void gbaSetOverclock(struct GBA*, int8_t overclock);
+// Set by the frontend for a frame it won't show (Frame Skip): its lines aren't drawn. Kept out of
+// struct GBA, whose state it isn't.
+extern bool videoDrawSkipped;
 void gbaStop(struct GBA*);
 void gbaInterrupt(struct GBA*);
 void gbaFrameStarted(struct GBA*, uint32_t late);
