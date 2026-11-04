@@ -113,7 +113,7 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_lcd_interleave", "Interlaced Rows", NULL,
 	  "The Color's and Advance's screens update alternate rows each frame. Needs LCD Ghosting; on the CPU.",
 	  NULL, "video_lcd", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
-	{ "armgba_lcd_grid", "LCD Grid", NULL,
+	{ "armgba_lcd_grid", "LCD Grid Scale", NULL,
 	  "Draws the gaps between pixels on the CPU, this many times larger; pick the largest that fits. Off with armGBA's LCD shaders.",
 	  NULL, "video_lcd",
 	  { { "disabled", "Off" }, { "2", "2x" }, { "2.5", "2.5x" }, { "3", "3x" }, { "3.5", "3.5x" }, { "4", "4x" }, { "4.5", "4.5x" }, { "5", "5x" },
