@@ -72,7 +72,8 @@ the Tilt and Solar Sensors only for cartridges with one, the link options only w
 | | Game Boy on GBA: Screen | Game Boy | Game Boy Advance, Game Boy Color (Game Boy Advance model) |
 | Video: LCD Effects | LCD Ghosting | Both | Off, 25%, 50%, 75%, 100% (always on the CPU) |
 | | Interlaced Rows | Both | Off, On |
-| | LCD Grid | Both | Off, 2x to 8x |
+| | LCD Grid | Both | Off, 2x to 8x in steps of 0.5x |
+| | LCD Subpixels | Both | Off, 10% to 100% in tenths (Color's and Advance's screens, with LCD Grid) |
 | | Game Boy Pixel Shadow | Game Boy | Off, Up, Up Right, Right, Down Right (default), Down, Down Left, Left, Up Left, Tilt (Android: follows the device's tilt) |
 | | Game Boy Pixel Shadow Distance | Game Boy | 0.5 to 2.5 dots in halves, 1.5 by default; how far Tilt reaches in the app |
 | | LCD Effect Threads | Both | Auto, 1, 2, 3, 4 |
@@ -131,18 +132,35 @@ away from its soft patch, so it runs unpatched.
 
 LCD Grid draws the gaps between the console screen's pixels into a picture as many times larger,
 with the shadow a first Game Boy's or a Pocket's pixels cast: pick the largest that fits the screen,
-with RetroArch's integer scaling on. It works on the CPU, in vectors (NEON, SSE or AVX), its rows
+with RetroArch's integer scaling on. At a half step, such as 2.5x, each two by two block of pixels
+makes a whole number of output pixels, five by five, so the gaps repeat every two pixels. It works on the CPU, in vectors (NEON, SSE or AVX), its rows
 shared out among the cores, as LCD Ghosting's are: LCD Effect Threads says how many, Auto leaving
 one core for the rest, or two with Threaded Video. Its shadow is one shade for each pixel's square,
 a close likeness of the smooth one the shaders and the standalone frontend draw, at a fraction of
 the cost. At 6x, a Game Boy game's grid adds about 1.5 ms a frame on an RG353M and its shadow 0.1 ms
-more; on a Core i7-9700F, 0.07 ms and 0.02 ms. On a small screen, such as a 640x480 handheld's, 2x
-with integer scaling looks cleanest. `shaders/` holds RetroArch shader presets, `.slangp` and
+more; on a Core i7-9700F, 0.07 ms and 0.02 ms. On a 640x480 handheld, 2.5x (600x400) fills the most
+of the screen with a Game Boy Advance game. The core can't pick the size itself: RetroArch doesn't
+tell a core the screen's resolution. For a grid that fits any screen on its own, use the shader
+presets or the standalone frontend's GPU grid, which draw at the size shown. `shaders/` holds RetroArch shader presets, `.slangp` and
 `.glslp`, that draw the same on the GPU at any size instead, one for each screen: `gb`,
 `gb-pocket`, `gb-light` and `gb-gray` (with the shadow), `gbc` and `gba`. The standalone frontend
 draws its own on the GPU or the core's, never both: its LCD Rendering setting picks one. Drawn at
 any size, the grid shows a tenth of the photos' darkness for each time larger the picture is, all of
 it from 10x: small, its gaps would land unevenly and read too heavy.
+
+LCD Subpixels draws the Color's and Advance's red, green and blue stripes inside each pixel: red,
+green and blue from the left on the Color, blue, green and red on the Advance, as photos of the two
+screens show. It mixes them over each pixel's color in linear light, (1 - mix) * color + mix *
+stripes, a stripe lighting only its own channel, so at 100% a pixel is its stripes alone and a third
+as bright. Each pixel's stripes are laid across the output columns it takes, as bands, as many as
+the narrowest pixel has columns: from 3x, at a whole size, a stripe is a column or more; at 2x two
+bands, a cyan-ish one and an orange-ish one; at 2.5x, where pixels take two columns and three in
+turn, the same two bands in every pixel, the three-column ones with their mix between, so that
+neighbors match and each pixel still averages its color. The core draws them with LCD Grid; the
+`gbc` and `gba` shader presets have it as Subpixels, with Subpixel Order, and the standalone frontend
+with its GPU grid, at any size, so no integer scaling is needed. The stripes fade in from one output
+pixel a dot to two. At 100% they add about 0.25 ms a frame to the core's grid on one Raspberry Pi 5
+core at 3x or 6x.
 
 ## Building
 

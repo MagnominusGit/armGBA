@@ -60,6 +60,53 @@ static const struct LibretroLcdLook libretroLcdLooks[] = {
 	[LIBRETRO_LCD_ADVANCE] = { 0.15f, 0.75f, 0.75f },
 };
 
+// LCD Subpixels: the Color's and Advance's pixels are each three stripes side by side, red, green and
+// blue left to right on the Color, blue, green and red on the Advance (the GBCC emulator's and the
+// gba-tutorial's write-ups, from photos). Each output pixel is mixed between the pixel's own color and
+// its stripes, in linear light: (1 - mix) * color + mix * stripes, a stripe lighting only its own
+// channel. At 100% a pixel is its stripes alone, a third as bright on average. They fade in from one
+// output pixel a dot to two; below three, a pixel's columns show them blended (lcd.c's gridLay).
+extern float libretroLcdSubpixelMix;
+
+static inline bool libretroLcdHasSubpixels(enum LibretroLcd lcd) {
+	return lcd == LIBRETRO_LCD_COLOR || lcd == LIBRETRO_LCD_ADVANCE;
+}
+
+static inline float libretroLcdSubpixelFade(float pitch) {
+	return fminf(fmaxf(pitch - 1, 0), 1);
+}
+
+// The stripe, from the left, that lights channel (0 red, 1 green, 2 blue).
+static inline int libretroLcdStripeOf(enum LibretroLcd lcd, int channel) {
+	return lcd == LIBRETRO_LCD_ADVANCE ? 2 - channel : channel;
+}
+
+// How much of the span from to to, in dots from a pixel's left edge, stripe (0 to 2) covers.
+static inline float libretroLcdStripeBelow(float u, int stripe) {
+	return floorf(u) / 3 + fminf(fmaxf(u - floorf(u) - stripe / 3.0f, 0), 1 / 3.0f);
+}
+
+static inline float libretroLcdStripeShare(float from, float to, int stripe) {
+	return (libretroLcdStripeBelow(to, stripe) - libretroLcdStripeBelow(from, stripe)) / (to - from);
+}
+
+// A pixel's stripes as bands, as many as the narrowest pixel has output columns, so that every pixel
+// shows them in the same colors (at 2.5x, two bands, a two-column pixel's, which a three-column pixel
+// shows with their mix between): stripe's share of the span from to to of the pixel, 0 to 1.
+static inline float libretroLcdBandShare(float from, float to, int bands, int stripe) {
+	float share = 0;
+	for (int b = 0; b < bands; ++b) {
+		float const overlap = fminf(to, (float) (b + 1) / bands) - fmaxf(from, (float) b / bands);
+		share += overlap > 0 ? overlap * libretroLcdStripeShare((float) b / bands, (float) (b + 1) / bands, stripe) : 0;
+	}
+	return share / (to - from);
+}
+
+// The factor, in linear light, on a channel whose stripe covers share of the output pixel.
+static inline float libretroLcdStripeFactor(float share, float mix) {
+	return 1 - mix + mix * share;
+}
+
 // The first Game Boy's and the Pocket's pixels' shadow on the reflector behind them: a pixel as dark
 // as the screen goes darkens it by a fifth (51 of 255), 1.4 dots away the way chosen (1 dot each way
 // on a diagonal), from a Reddit photo of a first Game Boy's screen and Brick Boy's model of it (a

@@ -15,7 +15,7 @@ bool lcdPictureCame(void);
 void lcdPictureUpload(void);
 void lcdPictureDraw(SDL_Rect to);
 void lcdRendererGoing(void);
-int lcdCoreScale(void);
+float lcdCoreScale(void);
 const char* lcdOptionRead(const struct Option* option);
 bool lcdOptionShown(const struct Option* option, bool shown);
 void lcdGroupRows(const char* category);

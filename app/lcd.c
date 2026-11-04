@@ -33,7 +33,10 @@ static SDL_Texture* overlay;
 // rest of each pixel's, to multiply by, a picture of each pixel's gap color, and where its gaps are
 // made at the size shown.
 static SDL_Texture *gapMask, *insideMask, *gapLayer, *gapsPicture;
+// LCD Subpixels: each column's factor for red, green and blue, multiplied in over the picture.
+static SDL_Texture* stripes;
 static int overlayWidth, overlayHeight, overlayShownWidth, overlayShownHeight, overlayLcd = -1;
+static float overlayMix;
 // The overlay's shares of gap, for keeping a Game Boy screen's brightness under it; whether the game's
 // texture holds the picture darkened through its tables, from which solve, and whether a newer
 // picture waits.
@@ -44,14 +47,14 @@ static uint8_t *keptPicture, *keptGaps;
 static size_t keptSize;
 static SDL_Texture* shadow;
 static bool shadowStale;
-// The core's LCD grid: how many times larger it makes the picture, 1 when it's off or LCD Rendering
-// is on the GPU.
-int lcdCoreScale(void) {
+// The core's LCD grid: how many times larger it makes the picture, in halves, 1 when it's off or LCD
+// Rendering is on the GPU.
+float lcdCoreScale(void) {
 	if (lcdSettings.onGpu) {
 		return 1;
 	}
 	struct Option* const o = optionFind("armgba_lcd_grid");
-	int const scale = o ? atoi(o->value) : 0;
+	float const scale = o ? atoi(o->value) + (strchr(o->value, '.') ? 0.5f : 0) : 0;
 	return scale > 1 ? scale : 1;
 }
 
@@ -64,7 +67,7 @@ int lcdCoreScale(void) {
 // the same. It is white, tinted the gap's color as it's drawn, and how many of its pixels take each
 // alpha goes to overlayKeep.
 static void dropOverlay(void) {
-	SDL_Texture** const all[] = { &overlay, &gapMask, &insideMask, &gapLayer };
+	SDL_Texture** const all[] = { &overlay, &gapMask, &insideMask, &gapLayer, &stripes };
 	for (size_t i = 0; i < sizeof(all) / sizeof(*all); ++i) {
 		if (*all[i]) {
 			SDL_DestroyTexture(*all[i]);
@@ -87,8 +90,10 @@ static void makeOverlay(SDL_Rect to) {
 	uint32_t gap = 0;
 	enum LibretroLcd const lcd = libretroLcd(&gap);
 	bool const grid = lcdSettings.onGpu && lcdSettings.grid;
+	float const pitchX = app.gameWidth ? (float) to.w / app.gameWidth : 0;
+	float const mix = libretroLcdHasSubpixels(lcd) ? libretroLcdSubpixelMix * libretroLcdSubpixelFade(pitchX) : 0;
 	if (overlay && grid && overlayWidth == app.gameWidth && overlayHeight == app.gameHeight && overlayShownWidth == to.w &&
-	    overlayShownHeight == to.h && overlayLcd == (int) lcd) {
+	    overlayShownHeight == to.h && overlayLcd == (int) lcd && overlayMix == mix) {
 		return;
 	}
 	dropOverlay();
@@ -97,6 +102,7 @@ static void makeOverlay(SDL_Rect to) {
 	overlayShownWidth = to.w;
 	overlayShownHeight = to.h;
 	overlayLcd = (int) lcd;
+	overlayMix = mix;
 	if (!grid || !app.gameWidth || to.w <= 0 || to.h <= 0) {
 		return;
 	}
@@ -114,7 +120,7 @@ static void makeOverlay(SDL_Rect to) {
 	}
 	const struct LibretroLcdLook* const look = &libretroLcdLooks[lcd];
 	// Each column's and row's share of gap as an alpha, 0 to 255; a pixel takes either's.
-	float const pitchX = (float) w / app.gameWidth, pitchY = (float) h / app.gameHeight;
+	float const pitchY = (float) h / app.gameHeight;
 	float const fade = libretroLcdFade(fminf(pitchX, pitchY));
 	for (int x = 0; x < w; ++x) {
 		across[x] = (int) lroundf(libretroLcdGapSpread(x, pitchX, look->share * pitchX) * look->across * fade * 255);
@@ -146,6 +152,37 @@ static void makeOverlay(SDL_Rect to) {
 	gapLayer = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, w, h);
 	if (gapLayer) {
 		SDL_SetTextureBlendMode(gapLayer, SDL_BLENDMODE_ADD);
+	}
+	if (mix > 0) {
+		// One row, stretched down the picture; each factor in linear light, gamma encoded to multiply by.
+		// Each pixel's stripes across the columns whose middles fall in it, as bands
+		// (libretroLcdBandShare), as many as the narrowest pixel's columns.
+		int* const first = across;
+		for (int x = 0; x < w; ++x) {
+			first[x] = x > 0 && (int) ((x + 0.5f) / pitchX) == (int) ((x - 0.5f) / pitchX) ? first[x - 1] : x;
+		}
+		// The narrowest pixel, leaving out the picture's first and last, which rounding may trim.
+		int bands = (int) pitchX;
+		for (int x = 0; x + 1 < w; ++x) {
+			if (first[x + 1] != first[x] && first[x]) {
+				bands = x - first[x] + 1 < bands ? x - first[x] + 1 : bands;
+			}
+		}
+		bands = bands > 0 ? bands : 1;
+		for (int x = 0; x < w; ++x) {
+			int last = x;
+			while (last + 1 < w && first[last + 1] == first[x]) {
+				++last;
+			}
+			float const taken = (float) (last - first[x] + 1), from = (x - first[x]) / taken, to = (x - first[x] + 1) / taken;
+			uint32_t c = 0xFF000000;
+			for (int k = 0; k < 3; ++k) {
+				float const share = libretroLcdBandShare(from, to, bands, libretroLcdStripeOf(lcd, k));
+				c |= (uint32_t) lroundf(powf(libretroLcdStripeFactor(share, mix), 1 / 2.2f) * 255) << (16 - 8 * k);
+			}
+			pixels[x] = c;
+		}
+		stripes = makeMask(pixels, w, 1, SDL_BLENDMODE_MOD);
 	}
 	free(pixels);
 	free(across);
@@ -376,6 +413,9 @@ void lcdPictureDraw(SDL_Rect to) {
 		SDL_SetTextureColorMod(overlay, gap >> 16 & 0xFF, gap >> 8 & 0xFF, gap & 0xFF);
 		SDL_RenderCopy(app.renderer, overlay, NULL, &to);
 	}
+	if (stripes) {
+		SDL_RenderCopy(app.renderer, stripes, NULL, &to);
+	}
 	bool const shadowed = overlay && lcdSettings.shadow && app.picture && app.format == RETRO_PIXEL_FORMAT_XRGB8888 && libretroLcdShadow();
 	followTilt(shadowed && lcdSettings.shadow == SHADOW_TILT);
 	if (shadowed) {
@@ -401,10 +441,15 @@ const char* lcdOptionRead(const struct Option* option) {
 }
 
 // The core's LCD grid and pixel shadow show only with LCD Rendering on the CPU; the shadow's
-// distance, on the GPU, with the app's own shadow on.
+// distance, on the GPU, with the app's own shadow on, and LCD Subpixels with its grid on the Color's
+// and Advance's screens.
 bool lcdOptionShown(const struct Option* option, bool shown) {
 	if (lcdSettings.onGpu && !strcmp(option->key, "armgba_lcd_shadow_distance")) {
 		return lcdSettings.grid && lcdSettings.shadow && libretroLcdShadow();
+	}
+	if (lcdSettings.onGpu && !strcmp(option->key, "armgba_lcd_subpixels")) {
+		uint32_t gap;
+		return lcdSettings.grid && libretroLcdHasSubpixels(libretroLcd(&gap));
 	}
 	return shown && !(lcdSettings.onGpu && (!strcmp(option->key, "armgba_lcd_grid") || !strcmp(option->key, "armgba_lcd_shadow")));
 }

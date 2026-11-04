@@ -19,6 +19,8 @@
 #pragma parameter SHADOW "Pixel Shadow" 0.0 0.0 0.5 0.01
 #pragma parameter SHADOW_WAY "Pixel Shadow Way (Up, then Clockwise)" 4.0 1.0 8.0 1.0
 #pragma parameter SHADOW_DISTANCE "Pixel Shadow Distance (Dots)" 1.5 0.5 2.5 0.5
+#pragma parameter SUBPIXELS "Subpixels (Color and Advance)" 0.0 0.0 1.0 0.1
+#pragma parameter SUBPIXEL_ORDER "Subpixel Order (0 RGB, 1 BGR)" 0.0 0.0 1.0 1.0
 
 #if defined(VERTEX)
 
@@ -90,6 +92,8 @@ uniform COMPAT_PRECISION float UNLIT_BLUE;
 uniform COMPAT_PRECISION float SHADOW;
 uniform COMPAT_PRECISION float SHADOW_WAY;
 uniform COMPAT_PRECISION float SHADOW_DISTANCE;
+uniform COMPAT_PRECISION float SUBPIXELS;
+uniform COMPAT_PRECISION float SUBPIXEL_ORDER;
 #else
 #define GAP_SHARE 0.15
 #define GAP_ACROSS 0.75
@@ -104,6 +108,8 @@ uniform COMPAT_PRECISION float SHADOW_DISTANCE;
 #define SHADOW 0.0
 #define SHADOW_WAY 4.0
 #define SHADOW_DISTANCE 1.5
+#define SUBPIXELS 0.0
+#define SUBPIXEL_ORDER 0.0
 #endif
 
 // The share of a tent two output pixels wide, centered on 0, that lies below u output pixels.
@@ -130,6 +136,11 @@ float gridFade(float pitch) {
 	return clamp(pitch * 0.1, 0.0, 1.0);
 }
 
+// How much of the span from 0 to u dots stripe (0 to 2, from a pixel's left) covers.
+float stripeBelow(float u, float stripe) {
+	return floor(u) / 3.0 + clamp(fract(u) - stripe / 3.0, 0.0, 1.0 / 3.0);
+}
+
 // sRGB to linear light, and back.
 vec3 toLinear(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
@@ -147,7 +158,11 @@ float level(vec3 c) {
 void main() {
 	vec2 at = TEX0.xy * TextureSize;
 	vec2 size = InputSize / OutputSize;
-	vec3 color = COMPAT_TEXTURE(Texture, (floor(at) + 0.5) / TextureSize).rgb;
+	// The pixel shown: the one the output pixel's middle falls in, from the output pixel's column and
+	// row, so that a middle on the edge between two goes to the right or lower one, the one LCD
+	// Subpixels lays its stripes over.
+	vec2 shown = floor((floor(at / size) + 0.5) * size + 0.001);
+	vec3 color = COMPAT_TEXTURE(Texture, (shown + 0.5) / TextureSize).rgb;
 	vec3 gap = vec3(GAP_RED, GAP_GREEN, GAP_BLUE) / 255.0;
 	float fade = gridFade(1.0 / max(size.x, size.y));
 	float across = gapCoverage(at.x, size.x) * GAP_ACROSS * fade;
@@ -170,6 +185,36 @@ void main() {
 		color = fromLinear(mix(clamp(inside, 0.0, 1.0), clamp(lit, 0.0, 1.0), covered));
 	} else {
 		color = mix(color, gap, covered);
+	}
+	if (SUBPIXELS > 0.0) {
+		// LCD Subpixels (libretro/lcd.h): each pixel's stripes across the output columns whose middles
+		// fall in it, as bands, as many as the narrowest pixel's columns, so that every pixel shows them
+		// in the same colors; mixed over the color in linear light. They fade in from one output pixel
+		// a dot to two.
+		float pitch = 1.0 / size.x;
+		float mixed = SUBPIXELS * clamp(pitch - 1.0, 0.0, 1.0);
+		float first = ceil(shown.x * pitch - 0.501);
+		float taken = max(ceil((shown.x + 1.0) * pitch - 0.501) - first, 1.0);
+		float column = floor(at.x * pitch) - first;
+		float from = column / taken, to = (column + 1.0) / taken;
+		float bands = clamp(floor(pitch + 0.001), 1.0, 16.0);
+		vec3 stripes = SUBPIXEL_ORDER > 0.5 ? vec3(2.0, 1.0, 0.0) : vec3(0.0, 1.0, 2.0);
+		vec3 share = vec3(0.0);
+		for (int i = 0; i < 16; ++i) {
+			float b = float(i);
+			if (b >= bands) {
+				break;
+			}
+			float lo = b / bands, hi = (b + 1.0) / bands;
+			float overlap = min(to, hi) - max(from, lo);
+			if (overlap > 0.0) {
+				vec3 below = vec3(stripeBelow(lo, stripes.r), stripeBelow(lo, stripes.g), stripeBelow(lo, stripes.b));
+				vec3 above = vec3(stripeBelow(hi, stripes.r), stripeBelow(hi, stripes.g), stripeBelow(hi, stripes.b));
+				share += overlap * bands * (above - below);
+			}
+		}
+		share /= to - from;
+		color = fromLinear(toLinear(color) * (1.0 - mixed + mixed * share));
 	}
 	if (SHADOW > 0.0) {
 		float way = (SHADOW_WAY - 1.0) * 0.785398;

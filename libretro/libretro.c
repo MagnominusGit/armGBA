@@ -418,10 +418,10 @@ static void geometry(struct retro_game_geometry* geometry) {
 		geometry->aspect_ratio = (float) geometry->base_width / geometry->base_height;
 	}
 	// The LCD Grid's larger picture.
-	geometry->base_width *= gridScale;
-	geometry->base_height *= gridScale;
-	geometry->max_width *= gridScale;
-	geometry->max_height *= gridScale;
+	geometry->base_width = geometry->base_width * (unsigned) gridHalves / 2;
+	geometry->base_height = geometry->base_height * (unsigned) gridHalves / 2;
+	geometry->max_width = geometry->max_width * (unsigned) gridHalves / 2;
+	geometry->max_height = geometry->max_height * (unsigned) gridHalves / 2;
 }
 
 static void announceGeometry(void) {
@@ -614,10 +614,12 @@ static void readOptions(void) {
 	colorCorrection = optionIs("armgba_color_correction", "enabled") && buildCorrectedColors();
 	static const struct Choice ghostingChoices[] = { { "25", 1 }, { "half", 2 }, { "75", 3 }, { "enabled", 4 } };
 	ghosting = optionChoice("armgba_lcd_ghosting", ghostingChoices, COUNT(ghostingChoices), 0);
-	static const struct Choice gridChoices[] = { { "2", 2 }, { "3", 3 }, { "4", 4 }, { "5", 5 }, { "6", 6 }, { "7", 7 }, { "8", 8 } };
-	int const scale = optionChoice("armgba_lcd_grid", gridChoices, COUNT(gridChoices), 1);
-	gridAnnounce |= scale != gridScale;
-	gridScale = scale;
+	static const struct Choice gridChoices[] = {
+		{ "2", 4 }, { "2.5", 5 }, { "3", 6 }, { "3.5", 7 }, { "4", 8 }, { "4.5", 9 }, { "5", 10 }, { "5.5", 11 }, { "6", 12 }, { "6.5", 13 }, { "7", 14 }, { "7.5", 15 }, { "8", 16 },
+	};
+	int const grid = optionChoice("armgba_lcd_grid", gridChoices, COUNT(gridChoices), 2);
+	gridAnnounce |= grid != gridHalves;
+	gridHalves = grid;
 	static const struct Choice wayChoices[] = {
 		{ "up", 1 }, { "up right", 2 }, { "right", 3 }, { "down right", 4 }, { "down", 5 }, { "down left", 6 }, { "left", 7 }, { "up left", 8 },
 	};
@@ -627,6 +629,8 @@ static void readOptions(void) {
 	const char* const point = distance ? strchr(distance, '.') : NULL;
 	int const halves = distance ? atoi(distance) * 2 + (point && point[1] == '5') : 3;
 	libretroLcdShadowDistance = (halves >= 1 && halves <= 5 ? halves : 3) / 2.0f;
+	const char* const subpixels = option("armgba_lcd_subpixels");
+	libretroLcdSubpixelMix = subpixels ? fminf(fmaxf(atoi(subpixels) / 100.0f, 0), 1) : 0;
 	static const struct Choice threadChoices[] = { { "1", 1 }, { "2", 2 }, { "3", 3 }, { "4", 4 } };
 	lcdThreads = optionChoice("armgba_lcd_threads", threadChoices, COUNT(threadChoices), 0);
 	const char* const filter = option("armgba_low_pass_filter");

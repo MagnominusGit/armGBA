@@ -155,17 +155,19 @@ bool adapterWanted(int count);
 bool showOptions(void);
 void setOptions(void);
 
-// lcd.c: LCD Ghosting (0 off, then 1 to 4 quarters) and Interlaced Rows; LCD Grid's scale (1 when off)
-// and its shadow's way (0 none, then up and on clockwise); the threads they share rows among (0
+// lcd.c: LCD Ghosting (0 off, then 1 to 4 quarters) and Interlaced Rows; LCD Grid's scale in halves (2
+// when off) and its shadow's way (0 none, then up and on clockwise); the threads they share rows among (0
 // chooses). showPicture sends the picture on through them both, sendPicture through LCD Grid alone.
 extern int ghosting;
 extern bool interleaved;
-extern int gridScale;
+extern int gridHalves;
 extern int gridWay;
 extern int lcdThreads;
 void showPicture(const void* picture, unsigned width, unsigned height, size_t pitch);
 void sendPicture(const void* picture, unsigned width, unsigned height, size_t pitch);
 // Whether the screen is the first Game Boy's or the Pocket's, whose pixels cast a shadow.
 bool lcdCastsShadow(void);
+// Whether the screen is the Color's or the Advance's, whose pixels are colored stripes.
+bool lcdHasSubpixels(void);
 
 #endif
