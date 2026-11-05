@@ -18,11 +18,13 @@
 // by Shadow times how far the pixel's luminance in linear light is below the unlit screen's, black
 // all the way; each preset's Shadow makes its darkest shade cast a fifth. The presets beside this
 // hold each screen's values, measured from photos of the consoles (see libretro/lcd.h). Subpixels
-// mixes the Color's and Advance's red, green and blue stripes over each pixel, as LCD Subpixels does.
+// mixes the Color's and Advance's red, green and blue stripes over each pixel, as LCD Subpixels does,
+// and Pixel Gaps turns the gaps off, as on the CPU. armgba-lcd-fade.slang runs before it.
 
 layout(push_constant) uniform Push {
 	vec4 SourceSize;
 	vec4 OutputSize;
+	float PIXEL_GAPS;
 	float GAP_SHARE;
 	float GAP_ACROSS;
 	float GAP_DOWN;
@@ -40,6 +42,7 @@ layout(push_constant) uniform Push {
 	float SUBPIXEL_ORDER;
 } params;
 
+#pragma parameter PIXEL_GAPS "Pixel Gaps" 1.0 0.0 1.0 1.0
 #pragma parameter GAP_SHARE "Gap Width (Share of a Pixel)" 0.15 0.0 0.5 0.01
 #pragma parameter GAP_ACROSS "Gap Strength Between Columns" 0.75 0.0 1.0 0.05
 #pragma parameter GAP_DOWN "Gap Strength Between Rows" 0.75 0.0 1.0 0.05
@@ -127,16 +130,17 @@ void main() {
 	vec2 shown = floor((floor(at / size) + 0.5) * size + 0.001);
 	vec3 color = texture(Source, (shown + 0.5) * params.SourceSize.zw).rgb;
 	vec3 gap = vec3(params.GAP_RED, params.GAP_GREEN, params.GAP_BLUE) / 255.0;
+	float gapAcross = params.GAP_ACROSS * params.PIXEL_GAPS, gapDown = params.GAP_DOWN * params.PIXEL_GAPS;
 	float fade = gridFade(1.0 / max(size.x, size.y));
-	float across = gapCoverage(at.x, size.x) * params.GAP_ACROSS * fade;
-	float down = gapCoverage(at.y, size.y) * params.GAP_DOWN * fade;
+	float across = gapCoverage(at.x, size.x) * gapAcross * fade;
+	float down = gapCoverage(at.y, size.y) * gapDown * fade;
 	float covered = across + down - across * down;
 	vec3 unlit = vec3(params.UNLIT_RED, params.UNLIT_GREEN, params.UNLIT_BLUE) / 255.0;
 	if (params.KEEP_BRIGHTNESS > 0.5) {
 		// The pixel set, in linear light, so its square with the gaps around it averages the color it
 		// had: the Game Boy screens' colors are measured that way. Beside a pixel too dark for the gap,
 		// the gaps darken; on a black matrix, beside one too bright, they lighten.
-		float acrossAll = params.GAP_SHARE * params.GAP_ACROSS * fade, downAll = params.GAP_SHARE * params.GAP_DOWN * fade;
+		float acrossAll = params.GAP_SHARE * gapAcross * fade, downAll = params.GAP_SHARE * gapDown * fade;
 		float shown = max(acrossAll + downAll - acrossAll * downAll, 0.0001);
 		vec3 want = toLinear(color);
 		vec3 lit = toLinear(gap);

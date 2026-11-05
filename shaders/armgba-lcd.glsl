@@ -6,6 +6,7 @@
 
 // armGBA's LCD Grid for RetroArch's gl driver; armgba-lcd.slang says what it draws.
 
+#pragma parameter PIXEL_GAPS "Pixel Gaps" 1.0 0.0 1.0 1.0
 #pragma parameter GAP_SHARE "Gap Width (Share of a Pixel)" 0.15 0.0 0.5 0.01
 #pragma parameter GAP_ACROSS "Gap Strength Between Columns" 0.75 0.0 1.0 0.05
 #pragma parameter GAP_DOWN "Gap Strength Between Rows" 0.75 0.0 1.0 0.05
@@ -79,6 +80,7 @@ uniform sampler2D Texture;
 COMPAT_VARYING vec4 TEX0;
 
 #ifdef PARAMETER_UNIFORM
+uniform COMPAT_PRECISION float PIXEL_GAPS;
 uniform COMPAT_PRECISION float GAP_SHARE;
 uniform COMPAT_PRECISION float GAP_ACROSS;
 uniform COMPAT_PRECISION float GAP_DOWN;
@@ -95,6 +97,7 @@ uniform COMPAT_PRECISION float SHADOW_DISTANCE;
 uniform COMPAT_PRECISION float SUBPIXELS;
 uniform COMPAT_PRECISION float SUBPIXEL_ORDER;
 #else
+#define PIXEL_GAPS 1.0
 #define GAP_SHARE 0.15
 #define GAP_ACROSS 0.75
 #define GAP_DOWN 0.75
@@ -164,16 +167,17 @@ void main() {
 	vec2 shown = floor((floor(at / size) + 0.5) * size + 0.001);
 	vec3 color = COMPAT_TEXTURE(Texture, (shown + 0.5) / TextureSize).rgb;
 	vec3 gap = vec3(GAP_RED, GAP_GREEN, GAP_BLUE) / 255.0;
+	float gapAcross = GAP_ACROSS * PIXEL_GAPS, gapDown = GAP_DOWN * PIXEL_GAPS;
 	float fade = gridFade(1.0 / max(size.x, size.y));
-	float across = gapCoverage(at.x, size.x) * GAP_ACROSS * fade;
-	float down = gapCoverage(at.y, size.y) * GAP_DOWN * fade;
+	float across = gapCoverage(at.x, size.x) * gapAcross * fade;
+	float down = gapCoverage(at.y, size.y) * gapDown * fade;
 	float covered = across + down - across * down;
 	vec3 unlit = vec3(UNLIT_RED, UNLIT_GREEN, UNLIT_BLUE) / 255.0;
 	if (KEEP_BRIGHTNESS > 0.5) {
 		// The pixel set, in linear light, so its square with the gaps around it averages the color it
 		// had: the Game Boy screens' colors are measured that way. Beside a pixel too dark for the gap,
 		// the gaps darken; on a black matrix, beside one too bright, they lighten.
-		float acrossAll = GAP_SHARE * GAP_ACROSS * fade, downAll = GAP_SHARE * GAP_DOWN * fade;
+		float acrossAll = GAP_SHARE * gapAcross * fade, downAll = GAP_SHARE * gapDown * fade;
 		float shown = max(acrossAll + downAll - acrossAll * downAll, 0.0001);
 		vec3 want = toLinear(color);
 		vec3 lit = toLinear(gap);
