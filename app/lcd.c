@@ -180,7 +180,7 @@ static void fillLook(struct LcdGlLook* look, SDL_Rect to) {
 	look->unlit = off;
 	look->subpixels = tft ? libretroLcdSubpixelMix : 0;
 	look->bgr = lcd == LIBRETRO_LCD_ADVANCE;
-	look->smooth = app.gameSmooth;
+	look->smooth = settings.filter;
 	bool const shadowed = lcdSettings.shadow && app.format == RETRO_PIXEL_FORMAT_XRGB8888 && libretroLcdShadow();
 	followTilt(shadowed && lcdSettings.shadow == SHADOW_TILT);
 	if (shadowed) {
@@ -230,7 +230,7 @@ void lcdPictureDraw(SDL_Rect to) {
 	} else {
 		followTilt(false);
 	}
-	SDL_RenderCopy(app.renderer, app.game, NULL, &to);
+	drawPicture(to);
 }
 
 void lcdRendererGoing(void) {
@@ -355,13 +355,7 @@ void lcdSettingsDefaults(void) {
 }
 
 bool lcdSettingRead(const char* key, const char* value, int n, bool yes) {
-	// The GPU LCD grid was once the third filter; the filter is the app's still.
-	if (!strcmp(key, "filter")) {
-		if (n == 2) {
-			lcdSettings.grid = true;
-		}
-		return false;
-	} else if (!strcmp(key, "lcd_rendering")) {
+	if (!strcmp(key, "lcd_rendering")) {
 		lcdSettings.effects = !strcmp(value, "off") ? LCD_OFF : !strcmp(value, "cpu") ? LCD_CPU : LCD_GPU;
 	} else if (!strcmp(key, "gpu_lcd_grid")) {
 		lcdSettings.grid = yes;

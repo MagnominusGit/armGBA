@@ -328,9 +328,11 @@ The menu has four tabs, which L and R move between (Q and E, or Tab, on the keyb
 also work on a row without a value). It opens again where it was left.
 
 - **General:** the recent games, Load Game, the app's settings and Quit. The settings cover Video
-  (window, scaling, vsync, and the frame rate and messages on screen), Shaders (Sharp or Smooth), the
-  sound's volume and latency, Controls, Fast-Forward and Rewind (with Run-Ahead), Saves and Folders,
-  the menus' look (accent color, size, background), and Reset All Settings.
+  (window, scaling, vsync, the filter, and the frame rate and messages on screen), the sound's
+  volume and latency, Controls, Fast-Forward and Rewind (with Run-Ahead), Saves and Folders, the
+  menus' look (accent color, size, background), and Reset All Settings. The filter is Sharp,
+  Smooth, or Sharp Smooth, which scales by whole pixels and blends only their edges, so pixels stay
+  even on a screen the game doesn't fill a whole number of times.
   - Controls has Players, which picks the controller for each player, as RetroArch's Device Index
     does, and remembers it for when the controller connects again. A ROCKNIX handheld's own controls
     show as Built-In Controls.

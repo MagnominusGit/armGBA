@@ -146,8 +146,8 @@ static const char fadeSource[] =
 	"	gl_FragColor = vec4(next / 255.0, 1.0);\n"
 	"}\n";
 
-// armgba-lcd.slang, with the screen's values from lcd.h; smooth draws the picture filtered where
-// there's no grid.
+// armgba-lcd.slang, with the screen's values from lcd.h; where there's no grid, u_smooth is the
+// filter: 1 Smooth, 2 Sharp Smooth (whole pixels, blended only across their edges).
 static const char gridSource[] =
 	"uniform sampler2D u_picture;\n"
 	"uniform vec2 u_size, u_shown;\n"
@@ -200,7 +200,12 @@ static const char gridSource[] =
 	"	vec2 size = u_size / u_shown;\n"
 	"	vec2 shown = floor((floor(at / size) + 0.5) * size + 0.001);\n"
 	"	vec3 color = texture2D(u_picture, (shown + 0.5) / u_size).rgb;\n"
-	"	if (u_smooth > 0.5) {\n"
+	"	if (u_smooth > 1.5) {\n"
+	"		vec2 scale = max(floor(u_shown / u_size), 1.0);\n"
+	"		vec2 middle = fract(at) - 0.5;\n"
+	"		vec2 edge = (middle - clamp(middle, -0.5 + 0.5 / scale, 0.5 - 0.5 / scale)) * scale + 0.5;\n"
+	"		color = texture2D(u_picture, (floor(at) + edge) / u_size).rgb;\n"
+	"	} else if (u_smooth > 0.5) {\n"
 	"		color = texture2D(u_picture, v_at).rgb;\n"
 	"	}\n"
 	"	float fade = clamp((1.0 / max(size.x, size.y) - 1.0) * 0.5, 0.0, 1.0);\n"
@@ -543,7 +548,7 @@ bool lcdGlDraw(SDL_Rect to, const struct LcdGlLook* look) {
 	uniform1(p, "u_share", look->gaps ? look->share : 0);
 	uniform1(p, "u_across", look->across);
 	uniform1(p, "u_down", look->down);
-	uniform1(p, "u_smooth", look->smooth && !look->gaps && !look->subpixels && !look->shadowScale);
+	uniform1(p, "u_smooth", look->gaps || look->subpixels || look->shadowScale ? FILTER_SHARP : look->smooth);
 	uniformColor(p, "u_gap", look->gap);
 	uniformColor(p, "u_unlit", look->unlit);
 	uniform1(p, "u_shadowStart", look->shadowStart);

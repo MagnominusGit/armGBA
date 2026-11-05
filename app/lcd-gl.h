@@ -17,7 +17,7 @@
 // gaps (their width as a share of a pixel, how much shows across and down) in their color, which
 // keeps the screen's brightness; the unlit screen's color; the pixel shadow (scale 0 for none), where
 // it starts and how dark it gets per luminance, cast x and y dots away; LCD Subpixels' mix, red first
-// unless bgr; and whether the picture is drawn smooth where nothing else is.
+// unless bgr; and the filter (frontend.h's) the picture is drawn with where nothing else is.
 struct LcdGlLook {
 	int ghosting;
 	bool interlaced;
@@ -28,7 +28,7 @@ struct LcdGlLook {
 	float shadowStart, shadowScale, shadowX, shadowY;
 	float subpixels;
 	bool bgr;
-	bool smooth;
+	int smooth;
 };
 
 // Whether the renderer draws with GL, so the effects can run, and they haven't failed on it.

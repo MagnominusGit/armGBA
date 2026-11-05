@@ -33,4 +33,3 @@ set(APP_SYSTEM_gba "Game Boy Advance" gameboyadvance "game boy advance")
 set(APP_KEYS Z C BACKSPACE RETURN UP DOWN LEFT RIGHT X V A S 1 2 3 4)
 # Help texts that name the console's buttons and what the app draws over its picture.
 set(APP_HELP_SWAP "Off: A is the right button, as on a Game Boy. On: A and B swap, and X and Y.")
-set(APP_HELP_SHADERS "The filter.")
