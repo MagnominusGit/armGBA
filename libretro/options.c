@@ -214,16 +214,16 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "Custom's height: the hundreds and tens above plus these. Screens are an even number of pixels tall.", NULL, "video_lcd",
 	  { { "0", "+0" }, { "2", "+2" }, { "4", "+4" }, { "6", "+6" }, { "8", "+8" }, { NULL, NULL } }, "0" },
 	{ "armgba_lcd_gaps", "Pixel Gaps", NULL,
-	  "The gaps between the screen's pixels. Needs LCD Scale. Leave off with armGBA's LCD shaders.",
+	  "The gaps between the screen's pixels. Leave off with armGBA's LCD shaders.",
 	  NULL, "video_lcd", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
 	{ "armgba_lcd_subpixels", "LCD Subpixels", NULL,
-	  "The red, green and blue stripes in each pixel of the Color's and Advance's screens. 100% is the stripes alone. Needs LCD Scale.",
+	  "The red, green and blue stripes in each pixel of the Color's and Advance's screens. 100% is the stripes alone.",
 	  NULL, "video_lcd",
 	  { { "0", "Off" }, { "10", "10%" }, { "20", "20%" }, { "30", "30%" }, { "40", "40%" }, { "50", "50%" }, { "60", "60%" }, { "70", "70%" },
 	    { "80", "80%" }, { "90", "90%" }, { "100", "100%" }, { NULL, NULL } },
 	  "0" },
 	{ "armgba_lcd_shadow", "Game Boy Pixel Shadow", NULL,
-	  "Which way the Game Boy's and Pocket's pixels cast a shadow, or Off. Needs LCD Scale.",
+	  "Which way the Game Boy's and Pocket's pixels cast a shadow, or Off.",
 	  NULL, "video_lcd",
 	  { { "off", "Off" }, { "up", "Up" }, { "up right", "Up Right" }, { "right", "Right" }, { "down right", "Down Right" }, { "down", "Down" },
 	    { "down left", "Down Left" }, { "left", "Left" }, { "up left", "Up Left" }, { NULL, NULL } },
@@ -421,6 +421,7 @@ bool showOptions(void) {
 	bool const together = togetherWanted();
 	bool const linked = together || separateWanted();
 	bool const effects = optionIs("armgba_lcd_effects", "enabled");
+	bool const scaled = effects && !optionIs("armgba_lcd_grid", "disabled");
 	enum LibretroGbClock const gbClock = gameBoy ? libretroGbClock() : LIBRETRO_GB_NO_CLOCK;
 	bool const clock = devices & HW_RTC || gbClock;
 	bool const gameTime = optionIs("armgba_clock_source", "game");
@@ -449,10 +450,10 @@ bool showOptions(void) {
 		{ "armgba_lcd_height_hundreds", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
 		{ "armgba_lcd_height_tens", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
 		{ "armgba_lcd_height_ones", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
-		{ "armgba_lcd_gaps", effects },
-		{ "armgba_lcd_subpixels", effects && lcdHasSubpixels() },
-		{ "armgba_lcd_shadow", effects && libretroLcdShadow() },
-		{ "armgba_lcd_shadow_distance", effects && libretroLcdShadow() && !optionIs("armgba_lcd_shadow", "off") },
+		{ "armgba_lcd_gaps", scaled },
+		{ "armgba_lcd_subpixels", scaled && lcdHasSubpixels() },
+		{ "armgba_lcd_shadow", scaled && libretroLcdShadow() },
+		{ "armgba_lcd_shadow_distance", scaled && libretroLcdShadow() && !optionIs("armgba_lcd_shadow", "off") },
 		{ "armgba_color_correction", !gameBoy },
 		{ "armgba_solar_sensor", !gameBoy && (!advance || devices & HW_LIGHT_SENSOR) },
 		{ "armgba_gb_tilt", (!gameBoy && !advance) || devices & (HW_TILT | HW_GYRO) || (gameBoy && tiltCartridge) },

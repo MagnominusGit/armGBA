@@ -339,12 +339,8 @@ static void addGpuRows(void) {
 }
 
 // On LCD Effects, the GPU's rows come where the CPU's Pixel Gaps does: after Interlaced Rows on the
-// Color's and Advance's screens, else after LCD Ghosting. On the GPU, LCD Subpixels doesn't need LCD
-// Scale, so its help is the GPU's.
+// Color's and Advance's screens, else after LCD Ghosting.
 void lcdOptionRows(const struct Option* option) {
-	if (gpuOn() && !strcmp(option->key, "armgba_lcd_subpixels")) {
-		helpFor("The red, green and blue stripes in each pixel of the Color's and Advance's screens. 100% is the stripes alone.");
-	}
 	uint32_t gap;
 	bool const tft = libretroLcdHasSubpixels(libretroLcd(&gap));
 	if (!strcmp(option->key, tft ? "armgba_lcd_interleave" : "armgba_lcd_ghosting")) {

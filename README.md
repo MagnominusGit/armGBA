@@ -89,7 +89,7 @@ standalone frontend shows as one page with headers.
 | | Custom Width, Custom Height (with Custom) | Both | Hundreds (100 to 4000), tens (+0 to +90) and even ones (+0 to +8), 1280x720 by default |
 | | Pixel Gaps | Both | Off, On (with LCD Scale) |
 | | LCD Subpixels | Both | Off, 10% to 100% in tenths (Color's and Advance's screens, with LCD Scale) |
-| | Game Boy Pixel Shadow | Game Boy | Off, Up, Up Right, Right, Down Right, Down, Down Left, Left, Up Left, Tilt (Android: follows the device's tilt) |
+| | Game Boy Pixel Shadow | Game Boy | Off, Up, Up Right, Right, Down Right, Down, Down Left, Left, Up Left (with LCD Scale); in the app's GPU mode also Tilt (Android: follows the device's tilt) |
 | | Game Boy Pixel Shadow Distance | Game Boy | 0.5 to 2.5 dots in halves, 1.5 by default; how far Tilt reaches in the app |
 | | LCD Effect Threads | Both | Auto, 1, 2, 3, 4 |
 | Audio | Low-Pass Filter | Both | Off, 20%, 40%, 60%, 80% |
@@ -168,7 +168,8 @@ correction on), its LCD grid and its ghosting.
 
 CPU LCD Effects turns every effect the core draws on the CPU off or on at once, and each effect
 keeps its own setting. The effects work independently, except that Pixel Gaps, LCD Subpixels and the
-Game Boy pixel shadow draw inside each pixel, so they need LCD Scale's larger picture.
+Game Boy pixel shadow draw inside each pixel, so they need LCD Scale's larger picture and show only
+with it.
 
 Interlaced Rows, for the Color's and Advance's panels, updates every other row each frame. A picture
 that changes every frame then shows in stripes, as it does on those consoles. On its own, the rows
