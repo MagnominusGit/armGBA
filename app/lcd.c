@@ -35,15 +35,10 @@ static bool gpuOn(void) {
 	return lcdSettings.onGpu && lcdGlUsable();
 }
 
-// The core's LCD grid: how many times larger it makes the picture, in halves, 1 when it's off or the
-// effects are on the GPU.
+// How many times larger the core makes the picture, by LCD Scale or Fit Screen; 1 with the effects on
+// the GPU.
 float lcdCoreScale(void) {
-	if (gpuOn()) {
-		return 1;
-	}
-	struct Option* const o = optionFind("armgba_lcd_grid");
-	float const scale = o ? atoi(o->value) + (strchr(o->value, '.') ? 0.5f : 0) : 0;
-	return scale > 1 ? scale : 1;
+	return gpuOn() || libretroLcdShownScale < 1 ? 1 : libretroLcdShownScale;
 }
 
 // Tilt: the shadow falls the way gravity pulls across the screen, its Distance with the screen
@@ -139,11 +134,11 @@ static uint32_t keptGap(enum LibretroLcd lcd, uint32_t off, int w, int h) {
 			return off;
 		}
 		for (int x = 0; x < w; ++x) {
-			across[x] = (int) lroundf(libretroLcdGapSpread(x, pitchX, look->share * pitchX) * look->across * fade * 255);
+			across[x] = (int) lroundf(libretroLcdEdgeGap(x, pitchX, look->share * pitchX) * look->across * fade * 255);
 		}
 		memset(keep.weights, 0, sizeof(keep.weights));
 		for (int y = 0; y < h; ++y) {
-			int const down = (int) lroundf(libretroLcdGapSpread(y, pitchY, look->share * pitchY) * look->down * fade * 255);
+			int const down = (int) lroundf(libretroLcdEdgeGap(y, pitchY, look->share * pitchY) * look->down * fade * 255);
 			for (int x = 0; x < w; ++x) {
 				++keep.weights[linear[across[x] + down - (across[x] * down + 127) / 255]];
 			}

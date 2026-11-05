@@ -34,6 +34,10 @@ enum LibretroLcd libretroLcd(uint32_t* gap);
 // whether the screen's brightness is kept.
 struct LibretroLcdKeep {
 	float shares[256], weights[256];
+	// With LCD Subpixels, each channel's weights instead: the pixels' counts times their stripe factor
+	// for the channel, in linear light.
+	float channelWeights[3][256];
+	bool perChannel;
 	int count;
 	bool stale;
 	int lcd;
@@ -142,15 +146,17 @@ static inline float libretroLcdReach(int way) {
 	return libretroLcdWays[way][0] && libretroLcdWays[way][1] ? libretroLcdShadowDistance * 0.70710678f : libretroLcdShadowDistance;
 }
 
-// How strongly a grid drawn at any size shows when a source pixel is pitch output pixels wide: a
-// tenth of the photos' darkness for each, all of it from 10 on. Small, a gap is under a pixel wide
-// and lands unevenly; fainter, it reads as the screen's texture rather than as lines.
+// LCD Scale's Fit Screen: the size a width by height picture is drawn at, as large as fits the screen.
+void libretroLcdFitSize(unsigned width, unsigned height, unsigned* outWidth, unsigned* outHeight);
+// How many times larger than the console's the picture the core sends is, by LCD Scale or Fit Screen.
+extern float libretroLcdShownScale;
+
+// How strongly a grid drawn at any size shows when a source pixel is pitch output pixels wide: none at
+// 1x, all of it from 3x on. Smaller, a gap is under a pixel wide and reads as heavy lines.
 static inline float libretroLcdFade(float pitch) {
-	return fminf(fmaxf(pitch * 0.1f, 0), 1);
+	return fminf(fmaxf((pitch - 1) / 2, 0), 1);
 }
 
-// How much of output pixel at, from 0 to 1, falls in the gaps along one direction: each gap is gap
-// wide, centered on the edge between two source pixels, which are pitch apart.
 static inline float libretroLcdGapCoverage(int at, float pitch, float gap) {
 	float covered = 0;
 	for (int edge = (int) ceilf((at - gap / 2) / pitch); edge * pitch - gap / 2 < at + 1; ++edge) {
@@ -160,21 +166,14 @@ static inline float libretroLcdGapCoverage(int at, float pitch, float gap) {
 	return fminf(covered, 1);
 }
 
-// The share of a tent two output pixels wide, centered on 0, that lies below u output pixels.
-static inline float libretroLcdTentBelow(float u) {
-	u = fminf(fmaxf(u, -1), 1);
-	return u < 0 ? (u + 1) * (u + 1) / 2 : 1 - (1 - u) * (1 - u) / 2;
-}
-
-// libretroLcdGapCoverage seen through a tent two output pixels wide: each gap spreads over the same
-// two pixels wherever it lands, so lines under a pixel wide stay even instead of some looking darker.
-static inline float libretroLcdGapSpread(int at, float pitch, float gap) {
-	float const center = at + 0.5f;
-	float covered = 0;
-	for (int edge = (int) floorf((center - 1 - gap / 2) / pitch); edge * pitch - gap / 2 < center + 1; ++edge) {
-		covered += libretroLcdTentBelow(edge * pitch + gap / 2 - center) - libretroLcdTentBelow(edge * pitch - gap / 2 - center);
-	}
-	return fminf(covered, 1);
+// How much of the gaps either side output pixel at shows, along one way: each gap gap output pixels
+// wide, centered on the output pixel edge where one source pixel gives way to the next, the picture's
+// edges too, source pixels pitch output pixels apart. Every gap is drawn alike however the pixels fall,
+// as the core's Fit Screen and the GPU's grid draw them.
+static inline float libretroLcdEdgeGap(int at, float pitch, float gap) {
+	int const s = (int) ((at + 0.5f) / pitch);
+	float const first = ceilf(s * pitch - 0.5f), next = ceilf((s + 1) * pitch - 0.5f);
+	return fminf(fminf(fmaxf(gap / 2 - (at - first), 0), 1) + fminf(fmaxf(gap / 2 - (next - at - 1), 0), 1), 1);
 }
 
 #endif

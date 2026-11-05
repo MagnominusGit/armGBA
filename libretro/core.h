@@ -172,6 +172,9 @@ extern bool interleaved;
 extern int gridHalves;
 extern int gridWay;
 extern bool gridGaps;
+// LCD Scale's Fit Screen, and the screen size it fits.
+extern bool gridFit;
+extern unsigned gridFitWidth, gridFitHeight;
 extern int lcdThreads;
 // Frame Skip: whether this frame is left out of the picture, and how many before it were.
 extern bool frameSkipped;

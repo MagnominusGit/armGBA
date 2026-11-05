@@ -19,7 +19,7 @@
 
 struct retro_core_options_v2* coreOptions;
 // Which options were last shown, once set.
-static bool optionsShown[64];
+static bool optionsShown[80];
 static bool optionsShownSet;
 
 static void fillTurboPeriods(struct retro_core_option_v2_definition* definitions) {
@@ -31,6 +31,26 @@ static void fillTurboPeriods(struct retro_core_option_v2_definition* definitions
 		snprintf(periods[i], sizeof(periods[i]), "%d", TURBO_FEWEST + (int) i);
 		snprintf(labels[i], sizeof(labels[i]), "%d frames", TURBO_FEWEST + (int) i);
 		definitions->values[i] = (struct retro_core_option_value) { periods[i], labels[i] };
+	}
+}
+
+// Custom Screen Size's choices: 1 to 40 hundreds, and 0 to 99 for the rest.
+static void fillScreenSizes(struct retro_core_option_v2_definition* definitions) {
+	static char values[40 + 100][4];
+	static char labels[40 + 100][8];
+	for (; definitions->key; ++definitions) {
+		bool const hundreds = strstr(definitions->key, "_hundreds") != NULL;
+		if (strncmp(definitions->key, "armgba_lcd_width_", 17) && strncmp(definitions->key, "armgba_lcd_height_", 18)) {
+			continue;
+		}
+		int const first = hundreds ? 1 : 0, last = hundreds ? 40 : 99;
+		for (int v = first; v <= last; ++v) {
+			int const n = hundreds ? v - 1 : 40 + v;
+			snprintf(values[n], sizeof(values[n]), "%d", v);
+			snprintf(labels[n], sizeof(labels[n]), hundreds ? "%d00" : "+%02d", v);
+			definitions->values[v - first] = (struct retro_core_option_value) { values[n], labels[n] };
+		}
+		definitions->values[last - first + 1] = (struct retro_core_option_value) { NULL, NULL };
 	}
 }
 
@@ -58,10 +78,10 @@ static void fillClockOffsets(struct retro_core_option_v2_definition* definitions
 // Older frontends take each option as "Label; value|value", the default first, made here from the
 // definitions.
 static void setVariables(retro_environment_t callback, const struct retro_core_option_v2_definition* definitions) {
-	static struct retro_variable variables[64];
-	static char text[64][1024];
+	static struct retro_variable variables[96];
+	static char text[96][1024];
 	int n = 0;
-	for (; definitions->key && n < 63; ++definitions, ++n) {
+	for (; definitions->key && n < 95; ++definitions, ++n) {
 		size_t at = snprintf(text[n], sizeof(text[n]), "%s; %s", definitions->desc, definitions->default_value);
 		for (int i = 0; definitions->values[i].value && at < sizeof(text[n]); ++i) {
 			if (strcmp(definitions->values[i].value, definitions->default_value)) {
@@ -167,9 +187,27 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_lcd_grid", "LCD Scale", NULL,
 	  "Draws the picture this many times larger, with room for Pixel Gaps, LCD Subpixels and the pixel shadow. Pick the largest that fits.",
 	  NULL, "video_lcd",
-	  { { "disabled", "Off" }, { "2", "2x" }, { "2.5", "2.5x" }, { "3", "3x" }, { "3.5", "3.5x" }, { "4", "4x" }, { "4.5", "4.5x" }, { "5", "5x" },
-	    { "5.5", "5.5x" }, { "6", "6x" }, { "6.5", "6.5x" }, { "7", "7x" }, { "7.5", "7.5x" }, { "8", "8x" }, { NULL, NULL } },
+	  { { "disabled", "Off" }, { "fit", "Fit Screen" }, { "2", "2x" }, { "2.5", "2.5x" }, { "3", "3x" }, { "3.5", "3.5x" }, { "4", "4x" }, { "4.5", "4.5x" },
+	    { "5", "5x" }, { "5.5", "5.5x" }, { "6", "6x" }, { "6.5", "6.5x" }, { "7", "7x" }, { "7.5", "7.5x" }, { "8", "8x" }, { NULL, NULL } },
 	  "disabled" },
+	{ "armgba_lcd_screen", "Screen Size", NULL,
+	  "The size Fit Screen draws at, to show it pixel for pixel. Auto reads the display's size where it can, else 1280x720.",
+	  NULL, "video_lcd",
+	  { { "auto", "Auto" }, { "480x320", "480x320" }, { "640x480", "640x480" }, { "720x480", "720x480" }, { "720x720", "720x720" },
+	    { "800x480", "800x480" }, { "854x480", "854x480" }, { "960x544", "960x544" }, { "960x640", "960x640" }, { "1024x600", "1024x600" },
+	    { "1024x768", "1024x768" }, { "1240x1080", "1240x1080" }, { "1280x720", "1280x720" }, { "1280x800", "1280x800" },
+	    { "1280x960", "1280x960" }, { "1334x750", "1334x750" }, { "1600x900", "1600x900" }, { "1920x1080", "1920x1080" },
+	    { "1920x1152", "1920x1152" }, { "1920x1200", "1920x1200" }, { "2400x1080", "2400x1080" }, { "2560x1440", "2560x1440" },
+	    { "3840x2160", "3840x2160" }, { "custom", "Custom" }, { NULL, NULL } },
+	  "auto" },
+	{ "armgba_lcd_width_hundreds", "Custom Width (Hundreds)", NULL,
+	  "Custom's width: these hundreds plus the tens and ones below.", NULL, "video_lcd", { { NULL, NULL } }, "12" },
+	{ "armgba_lcd_width_rest", "Custom Width (Tens and Ones)", NULL,
+	  "Custom's width: the hundreds above plus these.", NULL, "video_lcd", { { NULL, NULL } }, "80" },
+	{ "armgba_lcd_height_hundreds", "Custom Height (Hundreds)", NULL,
+	  "Custom's height: these hundreds plus the tens and ones below.", NULL, "video_lcd", { { NULL, NULL } }, "7" },
+	{ "armgba_lcd_height_rest", "Custom Height (Tens and Ones)", NULL,
+	  "Custom's height: the hundreds above plus these.", NULL, "video_lcd", { { NULL, NULL } }, "20" },
 	{ "armgba_lcd_gaps", "Pixel Gaps", NULL,
 	  "The gaps between the screen's pixels. Needs LCD Scale. Leave off with armGBA's LCD shaders.",
 	  NULL, "video_lcd", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
@@ -399,6 +437,11 @@ bool showOptions(void) {
 		{ "armgba_threaded_video", !gameBoy },
 		{ "armgba_lcd_ghosting", effects },
 		{ "armgba_lcd_grid", effects },
+		{ "armgba_lcd_screen", effects && optionIs("armgba_lcd_grid", "fit") },
+		{ "armgba_lcd_width_hundreds", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
+		{ "armgba_lcd_width_rest", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
+		{ "armgba_lcd_height_hundreds", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
+		{ "armgba_lcd_height_rest", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
 		{ "armgba_lcd_gaps", effects },
 		{ "armgba_lcd_subpixels", effects && lcdHasSubpixels() },
 		{ "armgba_lcd_shadow", effects && libretroLcdShadow() },
@@ -466,6 +509,7 @@ void setOptions(void) {
 bool optionsGive(retro_environment_t callback) {
 	fillTurboPeriods(optionDefinitions);
 	fillClockOffsets(optionDefinitions);
+	fillScreenSizes(optionDefinitions);
 	unsigned version = 0;
 	if (callback(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2) {
 		callback(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, &optionsV2);

@@ -21,6 +21,7 @@
 #include "patch.h"
 #include "workers.h"
 
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -380,10 +381,22 @@ unsigned retro_api_version(void) {
 void retro_get_system_info(struct retro_system_info* info) {
 	memset(info, 0, sizeof(*info));
 	info->library_name = "armGBA";
-	info->library_version = "1.3.1";
+	info->library_version = "1.4";
 	info->valid_extensions = "gba|bin|gb|gbc|gb2|gba2";
 	info->need_fullpath = false;
 	info->block_extract = false;
+}
+
+// The largest picture told to the frontend since the game started. It never shrinks: RetroArch makes
+// its video again for a new largest size, and its threaded video then copies the last picture, still
+// the larger one, into a buffer only as large as the new size.
+static unsigned largestWidth, largestHeight;
+
+static void keepLargest(struct retro_game_geometry* geometry) {
+	largestWidth = geometry->max_width > largestWidth ? geometry->max_width : largestWidth;
+	largestHeight = geometry->max_height > largestHeight ? geometry->max_height : largestHeight;
+	geometry->max_width = largestWidth;
+	geometry->max_height = largestHeight;
 }
 
 // The picture size: 240x160, or 160x144 for a Game Boy game, or the linked consoles' screens. On the Game
@@ -421,11 +434,26 @@ static void geometry(struct retro_game_geometry* geometry) {
 		geometry->base_height *= shown == SCREENS_STACKED || grid ? 2 : 1;
 		geometry->aspect_ratio = (float) geometry->base_width / geometry->base_height;
 	}
+	// Fit Screen's picture, as large as fits the screen, and never larger than it unless the picture
+	// is.
+	if (gridFit) {
+		unsigned w, h;
+		libretroLcdFitSize(geometry->base_width, geometry->base_height, &w, &h);
+		libretroLcdShownScale = (float) w / geometry->base_width;
+		geometry->base_width = w;
+		geometry->base_height = h;
+		geometry->max_width = geometry->max_width > gridFitWidth ? geometry->max_width : gridFitWidth;
+		geometry->max_height = geometry->max_height > gridFitHeight ? geometry->max_height : gridFitHeight;
+		keepLargest(geometry);
+		return;
+	}
 	// The LCD Grid's larger picture.
+	libretroLcdShownScale = gridHalves / 2.0f;
 	geometry->base_width = geometry->base_width * (unsigned) gridHalves / 2;
 	geometry->base_height = geometry->base_height * (unsigned) gridHalves / 2;
 	geometry->max_width = geometry->max_width * (unsigned) gridHalves / 2;
 	geometry->max_height = geometry->max_height * (unsigned) gridHalves / 2;
+	keepLargest(geometry);
 }
 
 static void announceGeometry(void) {
@@ -571,6 +599,60 @@ static void showButtons(void) {
 
 static void readFrameSkip(void);
 
+// The display's size, where the system says it (Linux's DRM: the first connected screen's first mode),
+// wider than it is tall, as a handheld is held to play.
+static bool displaySize(unsigned* width, unsigned* height) {
+	DIR* const drm = opendir("/sys/class/drm");
+	if (!drm) {
+		return false;
+	}
+	bool found = false;
+	for (struct dirent* e; !found && (e = readdir(drm));) {
+		if (!strchr(e->d_name, '-')) {
+			continue;
+		}
+		char path[300], line[64] = "";
+		snprintf(path, sizeof(path), "/sys/class/drm/%s/status", e->d_name);
+		FILE* f = fopen(path, "r");
+		bool const connected = f && fgets(line, sizeof(line), f) && !strncmp(line, "connected", 9);
+		if (f) {
+			fclose(f);
+		}
+		snprintf(path, sizeof(path), "/sys/class/drm/%s/modes", e->d_name);
+		f = connected ? fopen(path, "r") : NULL;
+		unsigned w = 0, h = 0;
+		found = f && fgets(line, sizeof(line), f) && sscanf(line, "%ux%u", &w, &h) == 2 && w && h;
+		if (f) {
+			fclose(f);
+		}
+		if (found) {
+			*width = w > h ? w : h;
+			*height = w > h ? h : w;
+		}
+	}
+	closedir(drm);
+	return found;
+}
+
+// Screen Size for Fit Screen: the display's own (else 1280x720), one listed, or Custom's, set as
+// hundreds and the rest so any size can be picked from short lists.
+static void readScreenSize(unsigned* width, unsigned* height) {
+	const char* const size = option("armgba_lcd_screen");
+	unsigned w = 1280, h = 720;
+	if (!size || !strcmp(size, "auto")) {
+		displaySize(&w, &h);
+	} else if (!strcmp(size, "custom")) {
+		const char* const parts[4] = { option("armgba_lcd_width_hundreds"), option("armgba_lcd_width_rest"), option("armgba_lcd_height_hundreds"),
+			                           option("armgba_lcd_height_rest") };
+		w = (parts[0] ? (unsigned) atoi(parts[0]) : 12) * 100 + (parts[1] ? (unsigned) atoi(parts[1]) : 80);
+		h = (parts[2] ? (unsigned) atoi(parts[2]) : 7) * 100 + (parts[3] ? (unsigned) atoi(parts[3]) : 20);
+	} else {
+		sscanf(size, "%ux%u", &w, &h);
+	}
+	*width = w >= 160 && w <= 4096 ? w : 1280;
+	*height = h >= 144 && h <= 4096 ? h : 720;
+}
+
 static void readOptions(void) {
 	static const struct Choice threadedChoices[] = { { "enabled", THREADED_ON }, { "one frame late", THREADED_LATE } };
 	static const struct Choice modelChoices[] = {
@@ -628,6 +710,15 @@ static void readOptions(void) {
 	int const grid = effects ? optionChoice("armgba_lcd_grid", gridChoices, COUNT(gridChoices), 2) : 2;
 	gridAnnounce |= grid != gridHalves;
 	gridHalves = grid;
+	bool const fitting = effects && optionIs("armgba_lcd_grid", "fit");
+	unsigned fitWidth = gridFitWidth, fitHeight = gridFitHeight;
+	if (fitting) {
+		readScreenSize(&fitWidth, &fitHeight);
+	}
+	gridAnnounce |= fitting != gridFit || fitWidth != gridFitWidth || fitHeight != gridFitHeight;
+	gridFit = fitting;
+	gridFitWidth = fitWidth;
+	gridFitHeight = fitHeight;
 	static const struct Choice wayChoices[] = {
 		{ "up", 1 }, { "up right", 2 }, { "right", 3 }, { "down right", 4 }, { "down", 5 }, { "down left", 6 }, { "left", 7 }, { "up left", 8 },
 	};
@@ -1442,6 +1533,7 @@ void retro_unload_game(void) {
 	writeCoreSaves(true);
 	forgetSaves();
 	clockForget();
+	largestWidth = largestHeight = 0;
 	pairFile = false;
 	secondFromFrontend = false;
 	secondPath[0] = '\0';

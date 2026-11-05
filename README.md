@@ -84,7 +84,9 @@ standalone frontend shows as one page with headers.
 | Video: LCD Effects | CPU LCD Effects | Both | Off, On (each effect below keeps its setting) |
 | | LCD Ghosting | Both | Off, 25%, 50%, 75%, 100% |
 | | Interlaced Rows | Both | Off, On (Color's and Advance's screens) |
-| | LCD Scale | Both | Off, 2x to 8x in steps of 0.5x |
+| | LCD Scale | Both | Off, Fit Screen, 2x to 8x in steps of 0.5x |
+| | Screen Size (with Fit Screen) | Both | Auto, 480x320 to 3840x2160 (23 sizes), Custom |
+| | Custom Width, Custom Height (with Custom) | Both | Hundreds (100 to 4000) and tens and ones (+00 to +99), 1280x720 by default |
 | | Pixel Gaps | Both | Off, On (with LCD Scale) |
 | | LCD Subpixels | Both | Off, 10% to 100% in tenths (Color's and Advance's screens, with LCD Scale) |
 | | Game Boy Pixel Shadow | Game Boy | Off, Up, Up Right, Right, Down Right, Down, Down Left, Left, Up Left, Tilt (Android: follows the device's tilt) |
@@ -177,8 +179,17 @@ between the screen's pixels) and for the shadow that the original Game Boy's and
 cast. Pick the largest size that fits the screen, with RetroArch's integer scaling on. At a half
 step such as 2.5x, each 2x2 block of pixels becomes a whole number of output pixels (5x5), so the
 gaps repeat every two pixels. On a 640x480 handheld, 2.5x (600x400) fills most of the screen with a
-Game Boy Advance game. The core can't pick the size itself, because RetroArch doesn't tell a core
-the screen's resolution.
+Game Boy Advance game.
+
+Fit Screen draws the picture as large as fits a screen size, to the output pixel, so the frontend
+shows it pixel for pixel with no stretching: on a 1240x1080 screen a Game Boy Advance game is drawn
+at 1240x827. RetroArch doesn't tell a core the screen's resolution, so Screen Size says it: Auto
+reads the display's size where the system gives it (Linux's DRM, as on ROCKNIX), else 1280x720; a
+listed size; or Custom, set as hundreds and the rest, to the pixel. At such a size no block of
+pixels repeats, so each output column and row has its own source pixel, share of gap and stripes,
+worked out once for the size. Use it with RetroArch's aspect ratio set to the core's and integer
+scaling either way. Stretched by RetroArch instead, a picture's columns land unevenly, and stripes
+and gaps show as uneven bands.
 
 LCD Scale runs on the CPU in vector code (NEON, SSE or AVX). LCD Scale and LCD Ghosting split their
 rows among the CPU's cores. LCD Effect Threads sets how many cores; Auto leaves one free, or uses
@@ -199,7 +210,10 @@ bands, one cyan-ish and one orange-ish. At 2.5x, pixels alternate between two an
 every pixel gets the same two bands, and the three-column pixels blend them in the middle column, so
 neighbors match and each pixel still averages to its own color. The stripes fade in as a dot grows
 from one output pixel to two. At 100% they add about 0.25 ms a frame to the core's grid on one
-Raspberry Pi 5 core, at 3x or 6x.
+Raspberry Pi 5 core, at 3x or 6x. With Pixel Gaps on, the brightness keeping is worked out for each
+channel through its own stripes: the blue and red stripes sit at a pixel's edges, under the gaps,
+and the green one between them, so each channel is made up for as far as its own stripe is covered
+and the colors stay true.
 
 RetroArch's shader presets in `shaders/` draw every one of these effects on the GPU instead, at any
 size and without integer scaling, so turn CPU LCD Effects off when using them. There is one preset
@@ -209,8 +223,9 @@ the console's resolution from the last frame shown, with the same math as the CP
 times; Interlaced Rows may fall on the other set of rows, as RetroArch counts frames its own way.
 The second draws the grid, with Pixel Gaps, Subpixels (and Subpixel Order) and the pixel shadow.
 
-At small sizes the full darkness of the gaps would land unevenly and look too heavy, so the GPU grid
-shows a tenth of the darkness in the photos for each step of scale, all of it from 10x.
+The GPU grid puts each gap on the output pixel edge where one pixel gives way to the next, as Fit
+Screen does, so every gap is drawn alike at any size. It is at full strength from 3x, and fades out
+towards 1x, where a gap is under a pixel wide.
 
 The standalone frontend draws the same effects on the GPU itself, with the same shaders. Its LCD
 Rendering setting has either the core draw every effect on the CPU, or the app draw every effect on
