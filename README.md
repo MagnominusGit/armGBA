@@ -734,7 +734,7 @@ The test tools also need an mGBA source tree with `tests/mgba-oracle.patch` appl
 
 Code taken from other projects, each under its own license (see License):
 
-- **mGBA** (Jeffrey Pfau and contributors, MPL-2.0): the software renderer, bus and I/O behaviour,
+- **mGBA** (Jeffrey Pfau and contributors, MPL-2.0): the software renderer, bus and I/O behavior,
   save chips, the GPIO clock, the light sensor, gyro, tilt sensor and rumble, the Matrix and Vast
   Fame cartridge mappers, the save override list, the GBA sound channels, the cheat code decoders
   and engine, the unlicensed Game Boy mapper tables, and its MBC3 `.rtc` layout, which armGBA's

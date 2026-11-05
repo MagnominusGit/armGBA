@@ -541,7 +541,7 @@ void psgSample(struct GBA* gba, int16_t* left, int16_t* right) {
 }
 
 // A square channel's frequency high bits, length enable and trigger. The length counter's extra
-// clock when enabled at certain frame steps is the hardware's behaviour.
+// clock when enabled at certain frame steps is the hardware's behavior.
 static void writeControlSquare(struct GBA* gba, struct PsgSquare* ch, bool* playing, int channel, uint8_t value, bool sweep) {
 	struct Psg* psg = &gba->audio.psg;
 	ch->control.frequency &= 0xFF;
