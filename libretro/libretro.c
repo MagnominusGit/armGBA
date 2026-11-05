@@ -634,8 +634,8 @@ static bool displaySize(unsigned* width, unsigned* height) {
 	return found;
 }
 
-// Screen Size for Fit Screen: the frontend's, else the display's own (else 1280x720), one listed, or Custom's, set as
-// hundreds and the rest so any size can be picked from short lists.
+// Screen Size for Fit Screen: the frontend's, else the display's own (else 1280x720), one listed, or
+// Custom's, set as hundreds, tens and even ones so any size can be picked from short lists.
 static void readScreenSize(unsigned* width, unsigned* height) {
 	const char* const size = option("armgba_lcd_screen");
 	unsigned w = 1280, h = 720;
@@ -645,10 +645,10 @@ static void readScreenSize(unsigned* width, unsigned* height) {
 	} else if (!size || !strcmp(size, "auto")) {
 		displaySize(&w, &h);
 	} else if (!strcmp(size, "custom")) {
-		const char* const parts[4] = { option("armgba_lcd_width_hundreds"), option("armgba_lcd_width_rest"), option("armgba_lcd_height_hundreds"),
-			                           option("armgba_lcd_height_rest") };
-		w = (parts[0] ? (unsigned) atoi(parts[0]) : 12) * 100 + (parts[1] ? (unsigned) atoi(parts[1]) : 80);
-		h = (parts[2] ? (unsigned) atoi(parts[2]) : 7) * 100 + (parts[3] ? (unsigned) atoi(parts[3]) : 20);
+		const char* const width[3] = { option("armgba_lcd_width_hundreds"), option("armgba_lcd_width_tens"), option("armgba_lcd_width_ones") };
+		const char* const height[3] = { option("armgba_lcd_height_hundreds"), option("armgba_lcd_height_tens"), option("armgba_lcd_height_ones") };
+		w = (width[0] ? (unsigned) atoi(width[0]) : 12) * 100 + (width[1] ? (unsigned) atoi(width[1]) : 80) + (width[2] ? (unsigned) atoi(width[2]) : 0);
+		h = (height[0] ? (unsigned) atoi(height[0]) : 7) * 100 + (height[1] ? (unsigned) atoi(height[1]) : 20) + (height[2] ? (unsigned) atoi(height[2]) : 0);
 	} else {
 		sscanf(size, "%ux%u", &w, &h);
 	}

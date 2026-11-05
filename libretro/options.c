@@ -34,23 +34,20 @@ static void fillTurboPeriods(struct retro_core_option_v2_definition* definitions
 	}
 }
 
-// Custom Screen Size's choices: 1 to 40 hundreds, and 0 to 99 for the rest.
+// Custom Screen Size's hundreds: 1 to 40.
 static void fillScreenSizes(struct retro_core_option_v2_definition* definitions) {
-	static char values[40 + 100][4];
-	static char labels[40 + 100][8];
+	static char values[40][4];
+	static char labels[40][8];
 	for (; definitions->key; ++definitions) {
-		bool const hundreds = strstr(definitions->key, "_hundreds") != NULL;
-		if (strncmp(definitions->key, "armgba_lcd_width_", 17) && strncmp(definitions->key, "armgba_lcd_height_", 18)) {
+		if (strcmp(definitions->key, "armgba_lcd_width_hundreds") && strcmp(definitions->key, "armgba_lcd_height_hundreds")) {
 			continue;
 		}
-		int const first = hundreds ? 1 : 0, last = hundreds ? 40 : 99;
-		for (int v = first; v <= last; ++v) {
-			int const n = hundreds ? v - 1 : 40 + v;
-			snprintf(values[n], sizeof(values[n]), "%d", v);
-			snprintf(labels[n], sizeof(labels[n]), hundreds ? "%d00" : "+%02d", v);
-			definitions->values[v - first] = (struct retro_core_option_value) { values[n], labels[n] };
+		for (int v = 1; v <= 40; ++v) {
+			snprintf(values[v - 1], sizeof(values[v - 1]), "%d", v);
+			snprintf(labels[v - 1], sizeof(labels[v - 1]), "%d00", v);
+			definitions->values[v - 1] = (struct retro_core_option_value) { values[v - 1], labels[v - 1] };
 		}
-		definitions->values[last - first + 1] = (struct retro_core_option_value) { NULL, NULL };
+		definitions->values[40] = (struct retro_core_option_value) { NULL, NULL };
 	}
 }
 
@@ -202,12 +199,20 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "auto" },
 	{ "armgba_lcd_width_hundreds", "Custom Width (Hundreds)", NULL,
 	  "Custom's width: these hundreds plus the tens and ones below.", NULL, "video_lcd", { { NULL, NULL } }, "12" },
-	{ "armgba_lcd_width_rest", "Custom Width (Tens and Ones)", NULL,
-	  "Custom's width: the hundreds above plus these.", NULL, "video_lcd", { { NULL, NULL } }, "80" },
+	{ "armgba_lcd_width_tens", "Custom Width (Tens)", NULL,
+	  "Custom's width: the hundreds above, these tens and the ones below.", NULL, "video_lcd",
+	  { { "0", "+0" }, { "10", "+10" }, { "20", "+20" }, { "30", "+30" }, { "40", "+40" }, { "50", "+50" }, { "60", "+60" }, { "70", "+70" }, { "80", "+80" }, { "90", "+90" }, { NULL, NULL } }, "80" },
+	{ "armgba_lcd_width_ones", "Custom Width (Ones)", NULL,
+	  "Custom's width: the hundreds and tens above plus these. Screens are an even number of pixels across.", NULL, "video_lcd",
+	  { { "0", "+0" }, { "2", "+2" }, { "4", "+4" }, { "6", "+6" }, { "8", "+8" }, { NULL, NULL } }, "0" },
 	{ "armgba_lcd_height_hundreds", "Custom Height (Hundreds)", NULL,
 	  "Custom's height: these hundreds plus the tens and ones below.", NULL, "video_lcd", { { NULL, NULL } }, "7" },
-	{ "armgba_lcd_height_rest", "Custom Height (Tens and Ones)", NULL,
-	  "Custom's height: the hundreds above plus these.", NULL, "video_lcd", { { NULL, NULL } }, "20" },
+	{ "armgba_lcd_height_tens", "Custom Height (Tens)", NULL,
+	  "Custom's height: the hundreds above, these tens and the ones below.", NULL, "video_lcd",
+	  { { "0", "+0" }, { "10", "+10" }, { "20", "+20" }, { "30", "+30" }, { "40", "+40" }, { "50", "+50" }, { "60", "+60" }, { "70", "+70" }, { "80", "+80" }, { "90", "+90" }, { NULL, NULL } }, "20" },
+	{ "armgba_lcd_height_ones", "Custom Height (Ones)", NULL,
+	  "Custom's height: the hundreds and tens above plus these. Screens are an even number of pixels tall.", NULL, "video_lcd",
+	  { { "0", "+0" }, { "2", "+2" }, { "4", "+4" }, { "6", "+6" }, { "8", "+8" }, { NULL, NULL } }, "0" },
 	{ "armgba_lcd_gaps", "Pixel Gaps", NULL,
 	  "The gaps between the screen's pixels. Needs LCD Scale. Leave off with armGBA's LCD shaders.",
 	  NULL, "video_lcd", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
@@ -439,9 +444,11 @@ bool showOptions(void) {
 		{ "armgba_lcd_grid", effects },
 		{ "armgba_lcd_screen", effects && optionIs("armgba_lcd_grid", "fit") },
 		{ "armgba_lcd_width_hundreds", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
-		{ "armgba_lcd_width_rest", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
+		{ "armgba_lcd_width_tens", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
+		{ "armgba_lcd_width_ones", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
 		{ "armgba_lcd_height_hundreds", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
-		{ "armgba_lcd_height_rest", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
+		{ "armgba_lcd_height_tens", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
+		{ "armgba_lcd_height_ones", effects && optionIs("armgba_lcd_grid", "fit") && optionIs("armgba_lcd_screen", "custom") },
 		{ "armgba_lcd_gaps", effects },
 		{ "armgba_lcd_subpixels", effects && lcdHasSubpixels() },
 		{ "armgba_lcd_shadow", effects && libretroLcdShadow() },

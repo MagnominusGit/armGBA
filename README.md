@@ -86,7 +86,7 @@ standalone frontend shows as one page with headers.
 | | Interlaced Rows | Both | Off, On (Color's and Advance's screens) |
 | | LCD Scale | Both | Off, Fit Screen, 2x to 8x in steps of 0.5x |
 | | Screen Size (with Fit Screen) | Both | Auto, 480x320 to 3840x2160 (23 sizes), Custom |
-| | Custom Width, Custom Height (with Custom) | Both | Hundreds (100 to 4000) and tens and ones (+00 to +99), 1280x720 by default |
+| | Custom Width, Custom Height (with Custom) | Both | Hundreds (100 to 4000), tens (+0 to +90) and even ones (+0 to +8), 1280x720 by default |
 | | Pixel Gaps | Both | Off, On (with LCD Scale) |
 | | LCD Subpixels | Both | Off, 10% to 100% in tenths (Color's and Advance's screens, with LCD Scale) |
 | | Game Boy Pixel Shadow | Game Boy | Off, Up, Up Right, Right, Down Right, Down, Down Left, Left, Up Left, Tilt (Android: follows the device's tilt) |
@@ -186,12 +186,11 @@ Fit Screen draws the picture as large as fits a screen size, to the output pixel
 shows it pixel for pixel with no stretching: on a 1240x1080 screen a Game Boy Advance game is drawn
 at 1240x827. RetroArch doesn't tell a core the screen's resolution, so Screen Size says it: Auto
 takes the standalone frontend's window size, else reads the display's where the system gives it
-(Linux's DRM, as on ROCKNIX), else 1280x720; a
-listed size; or Custom, set as hundreds and the rest, to the pixel. At such a size no block of
-pixels repeats, so each output column and row has its own source pixel, share of gap and stripes,
-worked out once for the size. Use it with RetroArch's aspect ratio set to the core's and integer
-scaling either way. Stretched by RetroArch instead, a picture's columns land unevenly, and stripes
-and gaps show as uneven bands.
+(Linux's DRM, as on ROCKNIX), else 1280x720; a listed size; or Custom, set as hundreds, tens and
+even ones, to the pixel. At such a size no block of pixels repeats, so each output column and row
+has its own source pixel, share of gap and stripes, worked out once for the size. Use it with
+RetroArch's aspect ratio set to the core's and integer scaling either way. Stretched by RetroArch
+instead, a picture's columns land unevenly, and stripes and gaps show as uneven bands.
 
 LCD Scale runs on the CPU in vector code (NEON, SSE or AVX). LCD Scale and LCD Ghosting split their
 rows among the CPU's cores. LCD Effect Threads sets how many cores; Auto leaves one free, or uses
