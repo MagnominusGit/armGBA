@@ -178,10 +178,10 @@ static void fillLook(struct LcdGlLook* look, SDL_Rect to) {
 	look->down = libretroLcdLooks[lcd].down;
 	look->gap = look->gaps ? keptGap(lcd, off, to.w, to.h) : off;
 	look->unlit = off;
-	look->subpixels = look->gaps && tft ? libretroLcdSubpixelMix : 0;
+	look->subpixels = tft ? libretroLcdSubpixelMix : 0;
 	look->bgr = lcd == LIBRETRO_LCD_ADVANCE;
 	look->smooth = app.gameSmooth;
-	bool const shadowed = look->gaps && lcdSettings.shadow && app.format == RETRO_PIXEL_FORMAT_XRGB8888 && libretroLcdShadow();
+	bool const shadowed = lcdSettings.shadow && app.format == RETRO_PIXEL_FORMAT_XRGB8888 && libretroLcdShadow();
 	followTilt(shadowed && lcdSettings.shadow == SHADOW_TILT);
 	if (shadowed) {
 		// A pixel's darkness as lcd.h has it: (start - luminance) * scale >> 16 of 255.
@@ -224,7 +224,7 @@ void lcdPictureDraw(SDL_Rect to) {
 	if (gpuOn()) {
 		struct LcdGlLook look;
 		fillLook(&look, to);
-		if ((look.ghosting || look.interlaced || look.gaps) && lcdGlDraw(to, &look)) {
+		if ((look.ghosting || look.interlaced || look.gaps || look.subpixels || look.shadowScale) && lcdGlDraw(to, &look)) {
 			return;
 		}
 	} else {
@@ -247,8 +247,8 @@ const char* lcdOptionRead(const struct Option* option) {
 
 // LCD Effects replaces CPU LCD Effects' row. With the effects on the GPU, the core's own rows go too
 // (LCD Scale, Pixel Gaps, its pixel shadow and LCD Effect Threads), and the settings the GPU shares
-// show as the screen has them: LCD Ghosting; Interlaced Rows on the Color's and Advance's screens,
-// LCD Subpixels there with the grid on; Pixel Shadow Distance with the GPU's shadow on.
+// show as the screen has them: LCD Ghosting; Interlaced Rows and LCD Subpixels on the Color's and
+// Advance's screens; Pixel Shadow Distance with the GPU's shadow on.
 bool lcdOptionShown(const struct Option* option, bool shown) {
 	if (!strcmp(option->key, "armgba_lcd_effects")) {
 		return false;
@@ -271,10 +271,10 @@ bool lcdOptionShown(const struct Option* option, bool shown) {
 		return tft;
 	}
 	if (!strcmp(option->key, "armgba_lcd_shadow_distance")) {
-		return lcdSettings.grid && lcdSettings.shadow && libretroLcdShadow();
+		return lcdSettings.shadow && libretroLcdShadow();
 	}
 	if (!strcmp(option->key, "armgba_lcd_subpixels")) {
-		return lcdSettings.grid && tft;
+		return tft;
 	}
 	return shown;
 }
@@ -329,8 +329,8 @@ static void addGpuRows(void) {
 		return;
 	}
 	addValue("Pixel Gaps", onOff(lcdSettings.grid), changeLcd, SET_GPU_GRID);
-	helpFor("The gaps between the screen's pixels, at any size, fainter when smaller. LCD Subpixels and the pixel shadow need them.");
-	if (lcdSettings.grid && (!app.loaded || libretroLcdShadow())) {
+	helpFor("The gaps between the screen's pixels, at any size, fainter when smaller.");
+	if (!app.loaded || libretroLcdShadow()) {
 		static const char* const shadows[SHADOW_TILT + 1] = { "Off", "Up", "Up Right", "Right", "Down Right", "Down", "Down Left", "Left", "Up Left", "Tilt" };
 		addValue("Game Boy Pixel Shadow", shadows[lcdSettings.shadow], changeLcd, SET_SHADOW);
 		helpFor(tiltAvailable() ? "Which way the Game Boy's and Pocket's pixels cast a shadow, or Off. Tilt follows the device."
@@ -339,8 +339,8 @@ static void addGpuRows(void) {
 }
 
 // On LCD Effects, the GPU's rows come where the CPU's Pixel Gaps does: after Interlaced Rows on the
-// Color's and Advance's screens, else after LCD Ghosting. On the GPU, LCD Subpixels needs Pixel Gaps,
-// not LCD Scale, so its help is the GPU's.
+// Color's and Advance's screens, else after LCD Ghosting. On the GPU, LCD Subpixels doesn't need LCD
+// Scale, so its help is the GPU's.
 void lcdOptionRows(const struct Option* option) {
 	if (gpuOn() && !strcmp(option->key, "armgba_lcd_subpixels")) {
 		helpFor("The red, green and blue stripes in each pixel of the Color's and Advance's screens. 100% is the stripes alone.");
