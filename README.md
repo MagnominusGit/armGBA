@@ -4,24 +4,25 @@ A Game Boy Advance, Game Boy and Game Boy Color libretro core for low-power hand
 
 armGBA builds on years of work by others. Parts of its Game Boy Advance side come from mGBA (Jeffrey
 Pfau and contributors), notably the renderer, cheat engine, sound channels and save chips, and mGBA
-is the reference it's tested against. Its Game Boy and Game Boy Color games run on Gambatte-Speedrun's
+is the reference it's tested against. Game Boy and Game Boy Color games run on Gambatte-Speedrun's
 core. See Credits for the full list.
 
-What armGBA adds is a recompiler for the Game Boy Advance's CPU, so games run with headroom on slow
-handheld chips such as the Cortex-A35 and Cortex-A55. It stays accurate wherever a game could notice:
+armGBA adds a recompiler for the Game Boy Advance's CPU, so games run with headroom on slow handheld
+chips such as the Cortex-A35 and Cortex-A55. It stays accurate wherever a game could notice:
 interrupts, DMA, timers and what's on screen all happen when they would on the hardware.
 
 ## Legal
 
 - **Your own games.** armGBA comes with no games and doesn't download any. Play only games you own,
   dumped from your own cartridges or bought legally. armGBA doesn't support or promote piracy.
-- **Nothing is shared in multiplayer.** Netplay never sends a game, a BIOS or a boot ROM. Each player
-  uses their own files. In Together and Off, every device runs every player's console, so every
-  player needs their own legally owned copy of every game in the session, both games when player 2
-  plays another. A host on Nintendo's BIOS or boot ROM needs joiners with their own copy of the same
-  file; armGBA's open-source BIOS and boot ROMs are built in. In Separate, only what the game itself
-  sends over the emulated link cable crosses the network, such as a single-pak game's program, as
-  on the real hardware.
+- **Nothing is shared in multiplayer.** Netplay never sends a game, a BIOS or a boot ROM; each
+  player uses their own files.
+  - In Together and Off, every device runs every player's console, so every player needs their own
+    legally owned copy of every game in the session, including player 2's game when it differs.
+  - A host on Nintendo's BIOS or boot ROM needs joiners with their own copy of the same file.
+    armGBA's open-source BIOS and boot ROMs are built in, so every device has those.
+  - In Separate, only what the game itself sends over the emulated link cable crosses the network,
+    such as a single-pak game's program, as on the real hardware.
 - **Not Nintendo.** armGBA is an independent project, not affiliated with or endorsed by Nintendo.
   Game Boy, Game Boy Pocket, Game Boy Light, Game Boy Color and Game Boy Advance are trademarks of
   Nintendo, and the consoles' BIOS and boot ROMs are Nintendo's copyright.
@@ -32,28 +33,30 @@ interrupts, DMA, timers and what's on screen all happen when they would on the h
 | --- | --- | --- |
 | L2, R2 (held) | Fast-forward, up to RetroArch's Maximum Run Speed | Same |
 | X, Y (held) | Turbo A, turbo B | Same |
-| L3, R3 (held) | Turbo L, turbo R | Click of the tilt stick: flick (motion sensor); R3 otherwise sets the contrast back to 50% |
+| L3, R3 (held) | Turbo L, turbo R | Clicking the tilt stick flicks (motion sensor); R3 otherwise sets the contrast back to 50% |
 | L, R | L, R | Stretch the picture (Game Boy Advance model) |
 | Tilt stick | Tilt and turn (motion sensor games) | Tilt (motion sensor games) |
 | Left stick, with Left Stick as D-Pad | D-pad, except while it tilts | Same |
 | Right stick up, down | Sunlight up, down (solar sensor games) | Contrast up, down (original Game Boy screens) |
 | L, R, Start (held 1 s) | Restart that player's console (the Restart Combo option) | Same |
 
-With the consoles of a link on one device, R2 changes how the screens are shown and L2
-fast-forwards, or changes them back as the L2 Button option says; in netplay, L2 changes
-them back. In netplay each device shows the screens its own way, changed by its own player's R2.
-RetroArch 1.22.2 and older don't say which player is on a device, so there the host follows player 1
-and other devices player 2, unless Screen Layout Control names the player (Show Player Numbers marks
-each player's screen). The tilt stick is the left stick by default. The Tilt Control option moves it
-to the right stick or the D-pad; with the D-pad, L is the flick.
+The tilt stick is the left stick by default. Tilt Control moves it to the right stick or the D-pad;
+with the D-pad, L is the flick.
+
+With the consoles of a link on one device, R2 changes how the screens are shown. L2 fast-forwards or
+changes the layout back, as the L2 Button option says; in netplay, L2 always changes it back. Each
+device in netplay shows the screens its own way, changed by its own player's R2. RetroArch 1.22.2
+and older don't tell the core which player is on a device, so there the host follows player 1 and
+other devices follow player 2, unless Screen Layout Control names the player. Show Player Numbers
+marks each player's screen.
 
 ## Options
 
-The options are in seven categories, Link's in four parts: Link (Link Mode), Link: Players, Link:
-Connection, and Link: Screens and Controllers; the standalone frontend shows Link's as one page with
-headers. The menu shows only those that do something for the game loaded and the Link Mode chosen:
-the Tilt and Solar Sensors and the Clock options only for cartridges with one, the link options
-only with Link Mode on.
+The menu shows only the options that do something for the game loaded and the Link Mode chosen. The
+Tilt and Solar Sensor options and the Clock options appear only for cartridges that have one, and
+the link options only with Link Mode on. There are seven categories. Link's options are split into
+four parts (Link, Link: Players, Link: Connection, and Link: Screens and Controllers), which the
+standalone frontend shows as one page with headers.
 
 | Category | Option | Console | Values (default first) |
 | --- | --- | --- | --- |
@@ -79,7 +82,7 @@ only with Link Mode on.
 | | Game Boy on GBA: Border | Game Boy | Cropped, Shown (Game Boy Advance model) |
 | | Game Boy on GBA: Screen | Game Boy | Game Boy Advance, Game Boy Color (Game Boy Advance model) |
 | Video: LCD Effects | CPU LCD Effects | Both | Off, On (each effect below keeps its setting) |
-| | LCD Ghosting | Both | Off, 25%, 50%, 75%, 100% (always on the CPU) |
+| | LCD Ghosting | Both | Off, 25%, 50%, 75%, 100% |
 | | Interlaced Rows | Both | Off, On (Color's and Advance's screens) |
 | | LCD Scale | Both | Off, 2x to 8x in steps of 0.5x |
 | | Pixel Gaps | Both | Off, On (with LCD Scale) |
@@ -119,74 +122,101 @@ only with Link Mode on.
 | | Backups Listed | Both | 10, 20, 40, 80, 126 |
 | | Safe Saves | Both | Off, On; On by default |
 
-On the Game Boy Advance model, a Game Boy game is shown at its own size. With Game Boy on GBA:
-Border set to Shown, the black around it shows too, as on that console's screen. Game Boy on GBA:
-Screen shows it on the Advance's panel or the Color's: their colors with color correction on, their
-LCD Grid and their ghosting. Interlaced Rows, on the Color's and Advance's panels, updates alternate
-rows each frame, so pictures that alternate each frame show in stripes, as on the consoles: alone,
-the rows not updated keep what they showed; with LCD Ghosting, all rows fade, the ones updated
-faster.
+### CPU Clock
 
-CPU LCD Effects turns every effect the core draws on the CPU off or on at once, keeping each one's
-setting. Each is independent of the others, but Pixel Gaps, LCD Subpixels and the Game Boy pixel
-shadow need LCD Scale, the room in a larger picture to draw inside each pixel.
+CPU Clock runs the CPU faster or slower than the rest of the console. On the Game Boy Advance, the
+CPU, its bus and DMA move to the new clock, as with MAME's CPU overclock. On the Game Boy and Game
+Boy Color, the CPU and OAM DMA do. The screen, timers and sound keep the console's clock, so games
+run at their normal speed, and games that slow down or draw fewer frames than the screen shows, such
+as 3D ones, run smoother. A faster clock uses more of the host's CPU while a game is busy.
 
-Frame Skip leaves frames out of the picture when the host can't keep up: Auto while RetroArch's
-sound buffer is a third full or less, no more than three in a row; 1, 2 or 3 after every frame
-shown. The game still runs every frame, so it plays, sounds and saves the same; a frame left out
-isn't drawn by the Game Boy Advance's renderer or the LCD effects, and RetroArch shows the last
-picture again. LCD Ghosting catches up on the next frame shown. It stays off in netplay, where every
-device's state must match.
+- Game Boy Color games in double speed go no faster than 200%, four times the first Game Boy's CPU.
+- CPU Clock During Boot at 100% keeps the BIOS intro and boot ROMs as they are on the console.
+- On the Game Boy and Game Boy Color, the CPU runs at the console's own pace for two lines after a
+  game reads STAT or LY, so code timed against the picture still lines up.
+- A few games depend on the CPU's speed in their own logic and misbehave above 100%, as they would
+  on an overclocked console. Set CPU Clock back to 100% for those.
 
-CPU Clock runs the CPU faster or slower than the rest of the console. On the Game Boy Advance, as
-MAME's CPU overclock does, the CPU, its bus and DMA run on the new clock; on the Game Boy and Game
-Boy Color, the CPU and OAM DMA. The screen, timers and sound keep the console's clock, so games run
-at their own speed. Games that slow down or draw fewer frames than the screen
-shows, such as 3D ones, run smoother. It takes more of the host's CPU while a game is busy. Game
-Boy Color games in double speed go no faster than 200%, four times the first Game Boy's CPU. CPU
-Clock During Boot at 100% keeps the BIOS intro and boot ROMs as on the console. On the Game Boy and
-Game Boy Color, the CPU keeps the console's pace for two lines after a game reads STAT or LY, so
-code timed against the picture still meets it. A few games depend on the CPU's speed in their own
-logic and misbehave above 100%, as they would on an overclocked console; set CPU Clock back to 100%
-for those.
+### Low Memory
 
-Low Memory has the frontend leave the game to the core, which maps it from its file instead of
-keeping a copy in memory, so the host reads the parts the game uses as it plays and can drop them
-again. Games with a soft patch beside them and files over 32 MiB are read in as with Low Memory
-off. It works best with unzipped games: RetroArch unpacks a zipped one to a temporary folder first,
-away from its soft patch, so it runs unpatched.
+With Low Memory on, RetroArch leaves loading the game to the core, which maps the file into memory
+instead of keeping a copy. The host then reads only the parts of the game in use and can drop them
+again. Games with a soft patch beside them, and files over 32 MiB, load as they do with Low Memory
+off. It works best with unzipped games: RetroArch unpacks a zipped game to a temporary folder away
+from its soft patch, so the game runs unpatched.
 
-LCD Scale makes the picture as many times larger, with Pixel Gaps the gaps between the console
-screen's pixels drawn in and the shadow a first Game Boy's or a Pocket's pixels cast: pick the
-largest that fits the screen, with RetroArch's integer scaling on. At a half step, such as 2.5x, each two by two block of pixels
-makes a whole number of output pixels, five by five, so the gaps repeat every two pixels. It works on the CPU, in vectors (NEON, SSE or AVX), its rows
-shared out among the cores, as LCD Ghosting's are: LCD Effect Threads says how many, Auto leaving
-one core for the rest, or two with Threaded Video. Its shadow is one shade for each pixel's square,
-a close likeness of the smooth one the shaders and the standalone frontend draw, at a fraction of
-the cost. At 6x, a Game Boy game's grid adds about 1.5 ms a frame on an RG353M and its shadow 0.1 ms
-more; on a Core i7-9700F, 0.07 ms and 0.02 ms. On a 640x480 handheld, 2.5x (600x400) fills the most
-of the screen with a Game Boy Advance game. The core can't pick the size itself: RetroArch doesn't
-tell a core the screen's resolution. For a grid that fits any screen on its own, use the shader
-presets or the standalone frontend's GPU grid, which draw at the size shown. `shaders/` holds RetroArch shader presets, `.slangp` and
-`.glslp`, that draw the same on the GPU at any size instead, one for each screen: `gb`,
-`gb-pocket`, `gb-light` and `gb-gray` (with the shadow), `gbc` and `gba`. The standalone frontend
-draws its own on the GPU or the core's, never both: its LCD Rendering setting picks one. Drawn at
-any size, the grid shows a tenth of the photos' darkness for each time larger the picture is, all of
-it from 10x: small, its gaps would land unevenly and read too heavy.
+### Frame Skip
 
-LCD Subpixels draws the Color's and Advance's red, green and blue stripes inside each pixel: red,
-green and blue from the left on the Color, blue, green and red on the Advance, as photos of the two
-screens show. It mixes them over each pixel's color in linear light, (1 - mix) * color + mix *
-stripes, a stripe lighting only its own channel, so at 100% a pixel is its stripes alone and a third
-as bright. Each pixel's stripes are laid across the output columns it takes, as bands, as many as
-the narrowest pixel has columns: from 3x, at a whole size, a stripe is a column or more; at 2x two
-bands, a cyan-ish one and an orange-ish one; at 2.5x, where pixels take two columns and three in
-turn, the same two bands in every pixel, the three-column ones with their mix between, so that
-neighbors match and each pixel still averages its color. The core draws them with LCD Grid; the
-`gbc` and `gba` shader presets have it as Subpixels, with Subpixel Order, and the standalone frontend
-with its GPU grid, at any size, so no integer scaling is needed. The stripes fade in from one output
-pixel a dot to two. At 100% they add about 0.25 ms a frame to the core's grid on one Raspberry Pi 5
-core at 3x or 6x.
+Frame Skip leaves frames out of the picture when the host can't keep up. Auto skips while
+RetroArch's sound buffer is a third full or less, never more than three frames in a row. 1, 2 or 3
+skip that many frames after each frame shown. The game still runs every frame, so it plays, sounds
+and saves the same. A skipped frame isn't drawn by the Game Boy Advance's renderer or by the LCD
+effects, and RetroArch shows the last picture again. LCD Ghosting catches up on the next frame
+shown. Frame Skip stays off in netplay, where every device's state must match.
+
+### Game Boy games on the Game Boy Advance model
+
+On the Game Boy Advance model, a Game Boy game is shown at its own size. Game Boy on GBA: Border set
+to Shown also shows the black around it, as that console's screen does. Game Boy on GBA: Screen
+picks the panel it's shown on, the Advance's or the Color's, which decides its colors (with color
+correction on), its LCD grid and its ghosting.
+
+### LCD effects
+
+CPU LCD Effects turns every effect the core draws on the CPU off or on at once, and each effect
+keeps its own setting. The effects work independently, except that Pixel Gaps, LCD Subpixels and the
+Game Boy pixel shadow draw inside each pixel, so they need LCD Scale's larger picture.
+
+Interlaced Rows, for the Color's and Advance's panels, updates every other row each frame. A picture
+that changes every frame then shows in stripes, as it does on those consoles. On its own, the rows
+not updated keep what they showed. With LCD Ghosting on as well, every row fades, and the updated
+rows fade faster.
+
+LCD Scale draws the picture 2x to 8x larger, with room inside each pixel for Pixel Gaps (the gaps
+between the screen's pixels) and for the shadow that the original Game Boy's and the Pocket's pixels
+cast. Pick the largest size that fits the screen, with RetroArch's integer scaling on. At a half
+step such as 2.5x, each 2x2 block of pixels becomes a whole number of output pixels (5x5), so the
+gaps repeat every two pixels. On a 640x480 handheld, 2.5x (600x400) fills the most of the screen
+with a Game Boy Advance game. The core can't pick the size itself, because RetroArch doesn't tell a
+core the screen's resolution.
+
+LCD Scale runs on the CPU in vector code (NEON, SSE or AVX). It and LCD Ghosting share their rows
+out among the CPU's cores: LCD Effect Threads sets how many, and Auto leaves one core free, or uses
+two with Threaded Video. The shadow is one shade for each pixel's square, close to the smooth shadow
+that the shaders and the standalone frontend draw, at a fraction of the cost. At 6x, a Game Boy
+game's grid adds about 1.5 ms a frame on an RG353M and its shadow 0.1 ms more; on a Core i7-9700F,
+0.07 ms and 0.02 ms.
+
+LCD Subpixels draws the red, green and blue stripes of the Color's and Advance's screens inside each
+pixel. Photos of the two screens show red, green and blue from the left on the Color, and blue,
+green and red on the Advance. The stripes are mixed over each pixel's color in linear light, as (1 -
+mix) * color + mix * stripes, with each stripe lighting only its own channel. At 100% a pixel is its
+stripes alone, a third as bright.
+
+The stripes are laid across the output columns each pixel covers, in as many bands as the narrowest
+pixel has columns. From 3x at whole sizes, each stripe is a column or more. At 2x there are two
+bands, one cyan-ish and one orange-ish. At 2.5x, pixels alternate between two and three columns:
+every pixel gets the same two bands, and the three-column pixels blend them in the middle column, so
+neighbors match and each pixel still averages to its own color. The stripes fade in as a dot grows
+from one output pixel to two. At 100% they add about 0.25 ms a frame to the core's grid on one
+Raspberry Pi 5 core, at 3x or 6x.
+
+RetroArch's shader presets in `shaders/` draw every one of these effects on the GPU instead, at any
+size and without integer scaling, so turn CPU LCD Effects off when using them. There is one preset
+for each screen, `.slangp` and `.glslp`: `gb`, `gb-pocket`, `gb-light` and `gb-gray` (with the
+shadow), `gbc` and `gba`. Each runs two passes. The first draws LCD Ghosting and Interlaced Rows at
+the console's resolution from the last frame shown, with the same math as the CPU and each screen's
+times; Interlaced Rows may fall on the other set of rows, as RetroArch counts frames its own way.
+The second draws the grid, with Pixel Gaps, Subpixels (and Subpixel Order) and the pixel shadow.
+
+At small sizes the full darkness of the gaps would land unevenly and look too heavy, so the GPU grid
+shows a tenth of the darkness in the photos for each step of scale, all of it from 10x.
+
+The standalone frontend draws the same effects on the GPU itself, with the same shaders. Its LCD
+Rendering setting has either the core draw every effect on the CPU, or the app draw every effect on
+the GPU, never some of each. On the GPU, LCD Ghosting moves on once for each picture the core sends,
+and the grid and pixel shadow are set on the Shaders page. The GPU needs SDL's GL or GLES renderer;
+with its software renderer, the core draws the effects.
 
 ## Building
 
@@ -196,8 +226,8 @@ core at 3x or 6x.
 This makes `armgba_libretro.so`. `libretro/armgba_libretro.info` goes in RetroArch's info directory.
 
 The recompiler has backends for x86-64, AArch64 and 32-bit ARM (ARMv7 with NEON). For a 32-bit ARM
-device such as the Miyoo Mini, cross-compile with that device's own toolchain, whose toolchain file
-sets `CMAKE_SYSTEM_PROCESSOR` to `arm`, and the ARMv7 flags:
+device such as the Miyoo Mini, cross-compile with that device's own toolchain file, which sets
+`CMAKE_SYSTEM_PROCESSOR` to `arm`, and the ARMv7 flags:
 
     cmake -S . -B build-armv7 -G Ninja -DCMAKE_TOOLCHAIN_FILE=<toolchain file> \
         -DCMAKE_C_FLAGS="-march=armv7-a -mfpu=neon -mfloat-abi=hard" \
@@ -206,102 +236,161 @@ sets `CMAKE_SYSTEM_PROCESSOR` to `arm`, and the ARMv7 flags:
 
 On any other CPU, or with `-DARMGBA_JIT=OFF`, the exact CPU runs everything.
 
-For RetroArch on Android, with the NDK, for `arm64-v8a`, `armeabi-v7a` or `x86_64`; the core is
+For RetroArch on Android, build with the NDK for `arm64-v8a`, `armeabi-v7a` or `x86_64`. The core is
 then named `armgba_libretro_android.so`:
 
     cmake -S . -B build-android -DCMAKE_TOOLCHAIN_FILE=<NDK>/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24
     cmake --build build-android
 
-### Standalone
+## Standalone frontend
 
-`armgba`, armGBA's own frontend, runs a game in a window with SDL2, without RetroArch. The frontend
-is Armulators' app (the `armulators` submodule), which armN64 shares; armGBA gives it its names and
-systems (`app.cmake`) and the Game Boy screens' LCD effects and netplay rules (`app/`):
+`armgba`, armGBA's own frontend, runs a game in a window with SDL2, without RetroArch. It is
+Armulators' app (the `armulators` submodule), which armN64 shares. armGBA gives it its names and
+systems (`app.cmake`), and the Game Boy screens' LCD effects and the netplay rules (`app/`):
 
     git submodule update --init
     cmake -S . -B build -G Ninja -DARMGBA_SDL=ON
     ninja -C build armgba-sdl
 
 `armulators/package/appimage/build.sh`, then `package.sh` beside it, make AppImages for x86-64 and
-64-bit ARM in a Debian 11 container (Docker), with SDL2 built in; they need only glibc 2.29 or
-later. `armulators/package/android/build.sh` makes the Android APK. Both put them in `build-appimage/`
-and `build-android/`.
+64-bit ARM in a Debian 11 container (Docker), with SDL2 built in. They need only glibc 2.29 or
+later. `armulators/package/android/build.sh` makes the Android APK. They put their output in
+`build-appimage/` and `build-android/`.
 
-Run `armgba game.gba` (or a `.gb`, `.gbc`, `.zip` or `.7z`), or drop a game on the window. Esc, a
-controller's Hotkey + X or a right-click opens the menu, which the keyboard, a controller or the
-mouse moves through. A controller's hotkeys are ROCKNIX's: the Hotkey (Home, or Select without it)
-with Start quits (pressed twice), A pauses, R and L save and load a state, R2 turns fast-forward on
-and off, L2 rewinds, Y shows the frame rate; and B takes a screenshot, as many RetroArch setups have
-it. Arrow keys, X = A, Z = B, A = L, S = R, Enter = Start, Backspace = Select, C and V turbo B and
-A; controllers work too, one per player. Tab fast-forwards while held, R rewinds, P pauses, F2
-restarts, F5 and F7 save and load a state, F6 and F8 change its slot, F12 takes a screenshot, F9
-starts and stops recording, F11 goes full screen, F3 shows the frame rate. While the game is paused,
-fast-forwarding or rewinding, a symbol shows at the top right. The menu changes all of these, and
-the Hotkey too. A controller's face buttons go by position, as RetroArch's RetroPad and a Game Boy
-have them: A on the right, B at the bottom, X at the top, Y on the left. Controls' Swap A/B and X/Y
-puts A at the bottom and B on the right on every controller. The controls name each button as it's
-printed on the controller, with where it is.
+### Running and controls
+
+Run `armgba game.gba` (or a `.gb`, `.gbc`, `.zip` or `.7z` file), or drop a game on the window. Esc,
+a controller's Hotkey + X or a right-click opens the menu. The menu changes all of the controls
+below, the Hotkey included.
+
+| Keyboard | Does |
+| --- | --- |
+| Arrow keys | D-pad |
+| X, Z | A, B |
+| A, S | L, R |
+| Enter, Backspace | Start, Select |
+| C, V | Turbo B, turbo A |
+| Tab (held) | Fast-forward |
+| R | Rewind |
+| P | Pause |
+| F2 | Restart |
+| F5, F7 | Save, load a state |
+| F6, F8 | Change the state slot |
+| F3 | Show the frame rate |
+| F9 | Start or stop recording |
+| F11 | Full screen |
+| F12 | Screenshot |
+
+Controllers work too, one per player. Their hotkeys are ROCKNIX's, held with the Hotkey (Home, or
+Select on a controller without one):
+
+| Hotkey + | Does |
+| --- | --- |
+| Start (pressed twice) | Quit |
+| A | Pause |
+| R, L | Save, load a state |
+| R2 | Fast-forward on or off |
+| L2 | Rewind |
+| X | Menu |
+| Y | Show the frame rate |
+| B | Screenshot, as many RetroArch setups have it |
+
+While the game is paused, fast-forwarding or rewinding, a symbol shows at the top right.
+
+A controller's face buttons go by position, as RetroArch's RetroPad and a Game Boy have them: A on
+the right, B at the bottom, X at the top, Y on the left. Controls' Swap A/B and X/Y puts A at the
+bottom and B on the right on every controller. The control settings name each button as it's printed
+on the controller, along with where it is.
+
+### Menu
 
 The menu has four tabs, which L and R move between (Q and E, or Tab, on the keyboard; left and right
-too on a row without a value), and it opens again where it was left. General has the recent games,
-Load Game, the AppImage's own settings and Quit: Video (window, scaling, vsync, and the frame rate
-and messages on screen), Shaders for what the GPU draws (Sharp, Smooth, and its LCD grid and Game
-Boy pixel shadow), the sound's volume and latency, controls (with Players, which controller plays
-each player, as RetroArch's Device Index, remembered for when they connect again; a ROCKNIX
-handheld's own controls show as Built-In Controls), Fast-Forward and Rewind (with Run-Ahead), Saves
-and Folders (Auto Save State, and where games, BIOS files, saves, states and
-screenshots are; the Games folder is found by itself, ROCKNIX's roms or a roms folder holding gb,
-gbc or gba, and Load Game opens there with those three first), the menus' look (accent color, size,
-background), and Reset All Settings. Game has the loaded game's state slots (0 to 99, each with a
-picture) with Undo Load State, its cheats (RetroArch's `.cht` files can be added), its saves (Core's
-Saves: backing up, loading and sending), Restart, Take
-Screenshot, recording and Close Game. Core has the core's options,
-in RetroArch's categories, with LCD Rendering in Video and on Shaders to pick the CPU's grid or the
-GPU's. Extras has netplay and RetroAchievements.
-Rows ending in "..." open a page; rows with a value step through it, except Back Up Save, Load Save
-and Send Save, which act once chosen from their list. The line under the menu says
-what the selected item does. With a controller, the buttons bound to A and B choose and go back, and
-in the game list L and R jump by letter; on the keyboard, typing a name's start finds it. Restart,
-Close Game, Quit (with a game running), Reset All Settings and Reset Controls and Hotkeys ask for a second
-press, said at the bottom left. Netplay is armgba to armgba. Its page has Link Mode and Shared
-Controls, as Core's Link page has them, and Create a Host Session links the devices as they say: Off is one console every player shares, as Shared Controls says
-(everyone's buttons at once if it's off), for up to four players; Together runs every player's
-console on every device, kept in step with rollback; Separate carries the link cable between two
-devices each running its own game. In Off and Together, each controller on a device is a player, in
-order, as far as the session's players go; Separate is a player a device. Off and Together need no
-game loaded to join: the host's game loads from your folders by its file name (beside your game, in
-the game list's folder, the Game Boy, Game Boy Color and Game Boy Advance folders, or the Games folder
-two levels down), if it's the same file as the host's, and if it isn't there by that name, the game
-list opens to choose your copy; Separate needs your own game, or Your
-Cartridge: Removed. Join's Scan for Local Hosts lists the sessions on the local network below it,
-found by a broadcast on the netplay port and updated while shown, with each host's Link Mode and
-players; choosing it again scans afresh. Join a Host... takes an address. The page puts hosting and joining
-first and its settings last, as RetroArch's does; Settings also has Keep My Netplay Progress, as
-Core has it. In a session it shows the players by name, and a host
-its own address for Join a Host... on another device. In Together, a player who
-joined can Send My Save: their own save of the game goes into their console, which restarts, and
-the host backs up the one it replaces; with Keep My Netplay Progress on, their progress becomes their
-save as they leave. A device that joined Off or Together plays on as the session ends,
-whether it leaves or the host does, the controller still on its player; the game it ran was the
-host's, so it keeps no state of it. In RetroArch the core does the same when RetroArch's netplay
-ends (RetroArch newer than 1.22.2, as ROCKNIX's is). Either way the session's saves are kept in armGBA/Remote. Start Save Manager closes the game for Save Manager (see Backups); `--host
---no-cartridge` starts it hosting. `--host` (as
-Link Mode says), `--host-off`, `--host-together`, `--host-separate` and `--connect ADDRESS` start it
-from the command line. Achievements need the system's libcurl, and recording its ffmpeg.
+also work on a row without a value). It opens again where it was left.
+
+- **General:** the recent games, Load Game, the app's settings and Quit. The settings cover Video
+  (window, scaling, vsync, and the frame rate and messages on screen), Shaders (Sharp, Smooth, and
+  the GPU's LCD grid and Game Boy pixel shadow), the sound's volume and latency, Controls,
+  Fast-Forward and Rewind (with Run-Ahead), Saves and Folders, the menus' look (accent color, size,
+  background), and Reset All Settings.
+  - Controls has Players, which picks the controller for each player, as RetroArch's Device Index
+    does, and remembers it for when the controller connects again. A ROCKNIX handheld's own controls
+    show as Built-In Controls.
+  - Saves and Folders has Auto Save State and the folders for games, BIOS files, saves, states and
+    screenshots. The Games folder is found by itself: ROCKNIX's roms folder, or a roms folder
+    holding gb, gbc or gba. Load Game opens there, with those three first.
+- **Game:** the loaded game's state slots (0 to 99, each with a picture) and Undo Load State, its
+  cheats (RetroArch's `.cht` files can be added), its saves (the core's Saves options: backing up,
+  loading and sending), Restart, Take Screenshot, recording and Close Game.
+- **Core:** the core's options, in RetroArch's categories, with LCD Rendering in Video and on
+  Shaders, which has the CPU or the GPU draw the LCD effects.
+- **Extras:** netplay and RetroAchievements.
+
+Rows ending in "..." open a page. Rows with a value step through it, except Back Up Save, Load Save
+and Send Save, which act once something is chosen from their list. The line under the menu says what
+the selected row does. With a controller, the buttons bound to A and B choose and go back, and in
+the game list L and R jump by letter; on the keyboard, typing the start of a name finds it. Restart,
+Close Game, Quit (with a game running), Reset All Settings and Reset Controls and Hotkeys ask for a
+second press, as the bottom left says.
+
+### Netplay
+
+The frontend's netplay connects armgba to armgba. Its page puts hosting and joining first and its
+settings last, as RetroArch's does. The settings include Link Mode and Shared Controls, as on Core's
+Link page, and Keep My Netplay Progress, as on Core's Saves page. Create a Host Session links the
+devices as Link Mode says:
+
+- **Off:** one console that every player shares, as Shared Controls says (everyone's buttons at once
+  if Shared Controls is off), for up to four players.
+- **Together:** every device runs every player's console, kept in step with rollback.
+- **Separate:** the link cable runs between two devices, each running its own game.
+
+In Off and Together, each controller on a device is a player, in order, up to the session's number
+of players. In Separate, each device is one player.
+
+Off and Together need no game loaded to join. The host's game loads from your folders by its file
+name, if your file is the same as the host's. armgba looks beside your game, in the game list's
+folder, in the Game Boy, Game Boy Color and Game Boy Advance folders, and in the Games folder two
+levels down. If no file by that name is found, the game list opens so you can pick your copy.
+Separate needs your own game, or Your Cartridge: Removed.
+
+Join's Scan for Local Hosts lists the sessions on the local network below it, with each host's Link
+Mode and players. It finds them by a broadcast on the netplay port and updates the list while it's
+shown; choosing it again scans afresh. Join a Host... takes an address. During a session the page
+shows the players by name, and on the host its own address, for Join a Host... on another device.
+
+In Together, a player who joined can Send My Save: their own save goes into their console, which
+restarts, and the host backs up the save it replaces. With Keep My Netplay Progress on, their
+progress becomes their save as they leave.
+
+A device that joined Off or Together plays on when the session ends, whether it left or the host
+did, with the controller still on its player. The game it ran was the host's, so it keeps no state
+of it. In RetroArch the core does the same when RetroArch's netplay ends (in RetroArch newer than
+1.22.2, as ROCKNIX ships). Either way, the session's saves are kept in armGBA/Remote.
+
+Start Save Manager closes the game for Save Manager (see Backups below). From the command line,
+`--host` (as Link Mode says), `--host-off`, `--host-together`, `--host-separate` and `--connect
+ADDRESS` start a session, and `--host --no-cartridge` starts hosting Save Manager. Achievements need
+the system's libcurl, and recording needs its ffmpeg.
+
+### Files
 
 The frontend's settings are in `~/.config/armgba/frontend.cfg`, the core's options in
 `~/.config/armgba/armgba.cfg` and the recent games in `~/.config/armgba/recent.txt`. BIOS and boot
 ROM files go in `~/.config/armgba/system`, and saves, states, screenshots and cheats in
-`~/.local/share/armgba`. On ROCKNIX, as its other standalone emulators do, BIOS files are read from
-`roms/bios`, saves kept beside the games, states in `roms/savestates` by console (`gba`, `gb`, `gbc`)
-and screenshots in `roms/screenshots`. General's Saves and Folders changes each, to armGBA's own, a
-folder typed in, or for saves In Game Folder, beside each game. The app never reads RetroArch's
-settings.
+`~/.local/share/armgba`.
+
+On ROCKNIX, the frontend follows ROCKNIX's other standalone emulators: BIOS files come from
+`roms/bios`, saves sit beside the games, states go in `roms/savestates` by console (`gba`, `gb`,
+`gbc`) and screenshots in `roms/screenshots`. General's Saves and Folders changes each of these to
+armGBA's own folder, a folder you type in, or, for saves, In Game Folder, beside each game. The app
+never reads RetroArch's settings.
+
+## BIOS and boot ROMs
 
 Game Boy Advance games run on Nintendo's `gba_bios.bin` from the system directory when it's there
-and BIOS is set to Nintendo's, and otherwise on armGBA's own open-source BIOS, built into the core.
-Its splash lasts as long as Nintendo's logo, and a game starts on the same cycle.
+and BIOS is set to Nintendo's. Otherwise they run on armGBA's own open-source BIOS, built into the
+core. Its splash lasts as long as Nintendo's logo, and a game starts on the same cycle.
 
 Game Boy boot ROMs are optional, looked for under these names in this order:
 
@@ -311,175 +400,203 @@ Game Boy boot ROMs are optional, looked for under these names in this order:
 - Game Boy Advance: `cgb_agb_boot.bin`, `cgb_agb0_boot.bin`, `agb_boot.bin`, then the Game Boy
   Color's (converted)
 
-With Boot ROM set to Nintendo's, the boot ROM is used under whichever of these names it has. A
-SameBoy boot ROM under one of them is used only where Nintendo's isn't there. With neither, armGBA's
-own starts the game.
+With Game Boy Boot ROM set to Nintendo's, the boot ROM is used under whichever of these names it
+has. A SameBoy boot ROM under one of them is used only where Nintendo's isn't there. With neither,
+armGBA's own starts the game.
 
-armGBA's own boot ROMs (`gbboot/`, built into the core) are the size of Nintendo's and run on the
-hardware: on the Game Boy and the Pocket, in 256 bytes, the cartridge's logo scrolls down as on
-Nintendo's; on the Game Boy Color and Game Boy Advance, in 2,304, "ARMGBC" comes in over the
-cartridge's logo, as Nintendo's title does. They last as long as Nintendo's, to the cycle, and leave
-the machine as Nintendo's do, and give original Game Boy games on a Game Boy Color the same colors,
-chosen the same ways. These were found from what Nintendo's boot ROMs leave and show
-(`tests/gbcheck/`), never from their code.
+armGBA's own boot ROMs (`gbboot/`, built into the core) are the same size as Nintendo's and run on
+the hardware. On the Game Boy and the Pocket, in 256 bytes, the cartridge's logo scrolls down as it
+does on Nintendo's. On the Game Boy Color and Game Boy Advance, in 2,304 bytes, "ARMGBC" comes in
+over the cartridge's logo where Nintendo's title would. They take as long as Nintendo's, to the
+cycle, and leave the machine as Nintendo's do. They give original Game Boy games on a Game Boy Color
+the same colors, chosen the same ways. All of this was worked out from what Nintendo's boot ROMs
+leave and show (`tests/gbcheck/`), never from their code.
 
 ## Features
 
-**Cheats and achievements.** The frontend's cheat codes work on both consoles. For the Game Boy
-Advance: GameShark, Action Replay and CodeBreaker codes, encrypted or not, decoded as mGBA decodes
-them and applied as each frame ends. For the Game Boy: Game Genie and GameShark codes. The memory is
-described to the frontend as mGBA's and gambatte-libretro's cores describe it, so achievements read
-the same addresses.
+### Cheats and achievements
 
-**Saves.** The save type is detected on first use, with mGBA's override list. Save files are
-interchangeable with mGBA's core. An EEPROM reports busy for about 7 ms after a write, and Flash for
-1.8 ms after a sector erase, as in mGBA.
+The frontend's cheat codes work on both consoles. For the Game Boy Advance, GameShark, Action Replay
+and CodeBreaker codes work, encrypted or not; they are decoded as mGBA decodes them and applied as
+each frame ends. For the Game Boy, Game Genie and GameShark codes work. The memory is described to
+the frontend as mGBA's and gambatte-libretro's cores describe it, so achievements read the same
+addresses.
 
-**Clocks.** A Game Boy cartridge's clock (MBC3 or HuC3) is kept in the `.rtc` file and moves on by
-the time the game was off. gambatte-libretro and mGBA read the same file: gambatte-libretro its
-first 8 bytes, mGBA the MBC3 registers after them. armGBA reads either core's own file too. A host
-clock that was never set, or that went back, adds no time. While a game runs, its clock counts
-emulated time, so fast-forward speeds it up. A Game Boy Advance cartridge's clock reads the device's
-time. The chip only counts from 2000 to 2099, so a host clock that was never set, which starts at
-1970, reads as 2000 and counts on from there. mGBA and gpSP keep no Game Boy Advance `.rtc` file,
-and the save file is the same in all three.
+### Saves
+
+The save type is detected on first use, with mGBA's override list. Save files are interchangeable
+with mGBA's core. An EEPROM reports busy for about 7 ms after a write, and Flash for 1.8 ms after a
+sector erase, as in mGBA.
+
+### Clocks
+
+A Game Boy cartridge's clock (MBC3 or HuC3) is kept in the `.rtc` file and moves on by the time the
+game was off. gambatte-libretro and mGBA read the same file: gambatte-libretro its first 8 bytes,
+and mGBA the MBC3 registers after them. armGBA reads either core's own file too. A host clock that
+was never set, or that went back, adds no time. While a game runs, its clock counts emulated time,
+so fast-forward speeds it up.
+
+A Game Boy Advance cartridge's clock reads the device's time. The chip only counts from 2000 to
+2099, so a host clock that was never set, which starts at 1970, reads as 2000 and counts on from
+there. mGBA and gpSP keep no Game Boy Advance `.rtc` file, and the save file is the same in all
+three.
 
 With Clock Source set to Game Time, the game has a clock of its own. It runs only while the game
 runs, at Clock Speed, and a Game Boy Advance game keeps it in a `.rtc` file too, starting from the
-device's time. A state loaded in Game Time brings its clock with it. The Clock Offsets move the
-clock forwards or back; a Game Boy clock stops at day 0, and moving forwards again first makes up
-what it couldn't go back. A game that counts days from its last save may hold its daily events,
-after the clock goes back, until the clock catches up. Reset Clock shows only once Allow Clock Reset
-is on, which goes back to Off after the reset, so a reset takes two steps. On a Game Boy cartridge
-it clears its MBC3 clock with the halt bit set, as a dead battery leaves it, and games that check
-ask for the time again as they start; the save is kept. On a Game Boy Advance cartridge it puts the
-clock back on the device's time: the Clock Offsets go back to 0, and Game Time starts again from
-now. It never sets the Game Boy Advance clock's power-loss flag, which games report as a dead
-battery. In netplay, a Game Boy Advance clock counts the console's time from the host's, so every
-device reads the same; every player needs the same Clock options.
+device's time. A state loaded in Game Time brings its clock with it.
 
-**Game Boy Advance cartridge hardware.** The Matrix mapper of the 64 MiB Game Boy Advance Video
-cartridges, the bank register of multi-game cartridges, Vast Fame's protection, and the mirrored ROM
-of the Classic NES Series. Also the sensors and motor some cartridges carry, as mGBA has them:
-Boktai's light sensor, WarioWare: Twisted!'s gyro, the tilt sensor of Yoshi Topsy-Turvy and
-Korokoro Puzzle, and the rumble of Drill Dozer and WarioWare: Twisted!. A stick moves them the way
-mGBA's SDL frontend scales a stick.
+The Clock Offsets move the clock forwards or back. A Game Boy clock stops at day 0, and moving
+forwards again first makes up what it couldn't go back. A game that counts days from its last save
+may hold its daily events after the clock goes back, until the clock catches up.
 
-**Game Boy and Game Boy Color.** Gambatte-Speedrun's core (`gambatte/`), plus mappers for unlicensed
-cartridges: Sachen, TAMA5, MBC6, MBC7, Vast Fame, and the BBD, Hitek, Sintax, Li Cheng, NT and Makon
-families. The Game Boy and Game Boy Pocket screens are BGB's measurements of real ones
-(bgb.bircd.org/reality); the Light's is the Pocket's lit by a cyan backlight, its color and contrast from photos
-of real ones; Grayscale is gambatte-libretro's. The Game Boy Color and Game Boy Advance color
-correction is SameBoy's. The boot ROMs built in are armGBA's own.
+Reset Clock appears only once Allow Clock Reset is on, and Allow Clock Reset goes back to Off after
+the reset, so a reset takes two steps.
 
-**Link play.** Link Mode picks how consoles link. Off, the default, is one console, with RetroArch's
-usual netplay; there, Shared Controls lets more players play it, and the first time another
-player's buttons do nothing, armGBA says so.
+- On a Game Boy cartridge, it clears the MBC3 clock with the halt bit set, as a dead battery leaves
+  it. Games that check ask for the time again as they start. The save is kept.
+- On a Game Boy Advance cartridge, it puts the clock back on the device's time: the Clock Offsets go
+  back to 0, and Game Time starts again from now. It never sets the clock's power-loss flag, which
+  games report as a dead battery.
 
-| You want to… | Use |
+In netplay, a Game Boy Advance clock counts the console's time from the host's, so every device
+reads the same. Every player needs the same Clock options.
+
+### Game Boy Advance cartridge hardware
+
+armGBA has the Matrix mapper of the 64 MiB Game Boy Advance Video cartridges, the bank register of
+multi-game cartridges, Vast Fame's protection, and the mirrored ROM of the Classic NES Series. It
+also has, as mGBA does, the light sensor, gyro, tilt sensor and rumble motor some cartridges carry.
+A stick moves them the way mGBA's SDL frontend scales a stick.
+
+### Game Boy and Game Boy Color
+
+These run on Gambatte-Speedrun's core (`gambatte/`), plus mappers for unlicensed cartridges: Sachen,
+TAMA5, MBC6, MBC7, Vast Fame, and the BBD, Hitek, Sintax, Li Cheng, NT and Makon families.
+
+- The Game Boy and Game Boy Pocket screens are BGB's measurements of real ones
+  (bgb.bircd.org/reality).
+- The Light's screen is the Pocket's lit by a cyan backlight, with its color and contrast taken from
+  photos of real ones.
+- Grayscale is gambatte-libretro's.
+- The Game Boy Color and Game Boy Advance color correction is SameBoy's.
+- The built-in boot ROMs are armGBA's own.
+
+### Link play
+
+Link Mode picks how consoles link. Off, the default, is one console, with RetroArch's usual netplay.
+There, Shared Controls lets more players play it, and the first time another player's buttons do
+nothing, armGBA says so.
+
+| You want to... | Use |
 | --- | --- |
 | Play alone | Link Mode Off |
 | Play one game with everyone's buttons at once, on one device or over netplay | Link Mode Off, Shared Controls: Everyone |
 | Take turns on one game, each player taking over with the Switch Controller Combo (Start + L2 + R2) | Link Mode Off, Shared Controls: Pass Around |
-| Play together on one device, or smooth netplay | Together |
+| Play together on one device, or with smooth netplay | Together |
 | Link with someone who has only their own game, or whose device is too slow for two consoles | Separate |
-| Trade or battle in Pokemon FireRed, LeafGreen or Emerald over Wi-Fi | Separate with the Wireless Adapter |
-| Play Kirby & The Amazing Mirror or another fast-linking game online | Together |
+| Trade or battle over the Wireless Adapter across the network | Separate with the Wireless Adapter |
+| Play a game that links every frame online | Together |
 | Fix a Game Boy game that errors in Separate | Game Boy Link Timing: Exact |
 | Be a Game Boy Advance plugged into a GameCube game in Dolphin | GameCube |
 
-The two ways to link:
+**Together:** every device runs every player's console, two to four of them with the Players option.
+That works for multiplayer on one device, with a controller each, or with RetroArch's rollback
+netplay, where the link never waits on the network. Every device needs every game.
 
-- Together: every device runs every player's console, two to four with the Players option, for
-  multiplayer on one device (a controller each) or with RetroArch's rollback netplay, where the
-  link never waits on the network. Every device needs every game. Three or four are shown in a
-  grid. Player 2's game is picked with Player 2's Game; players 3 and 4 play player 1's. A player on
-  player 1's game gets a save of their own, under the game's file name in the save folder's
-  armGBA/Player 2 to Player 4 folders; it starts new, or as a copy of player 1's, as New Players'
-  Saves says. In netplay the session runs the host's games and saves, and the host writes the
-  players' saves as the game closes. A device that joined keeps its own saves as they were, and
-  the session's in the save folder's armGBA/Remote folders (see Backups).
-- Separate: each device runs its own player's console, with their own game and save, and the cable
-  crosses RetroArch's netplay. Players can run different games, such as Red and Blue, or Yellow and
-  Crystal. It links two players; three or four play Together. Each transfer waits for the other
-  end, so a slow network stalls the cable. Game Boy Advances keep to the same cycles, as on a real
-  cable, which games that link every frame, such as Kirby & The Amazing Mirror, need; it wants a
-  short ping. Game Boys run at their own pace, the one waiting sending its next byte ahead, which
-  suits Wi-Fi and games that link in turns; Game Boy Link Timing set to Exact times them as Game
-  Boy Advances are. The Wireless Adapter needs neither: each device runs freely.
+- Three or four consoles are shown in a grid.
+- Player 2's game is picked with Player 2's Game; players 3 and 4 play player 1's.
+- A player on player 1's game gets a save of their own, under the game's file name in the save
+  folder's armGBA/Player 2 to Player 4 folders. It starts new, or as a copy of player 1's, as New
+  Players' Saves says.
+- In netplay the session runs the host's games and saves, and the host writes the players' saves as
+  the game closes. A device that joined keeps its own saves as they were, and the session's in the
+  save folder's armGBA/Remote folders (see Backups).
 
-Single-pak games, such as Super Mario Advance's Mario Bros., send a program over the cable to
-consoles with no cartridge, as the real ones do. In Separate the player without the game needs no
-game file: RetroArch's Start Core starts armGBA with no cartridge, then they join, or in the app
-Netplay's Your Cartridge: Removed (`--connect ADDRESS --no-cartridge`). Only what the game sends
-over the cable crosses the network; armGBA never sends a game file, and in Together, where every
-device runs every console, each device needs the game (Player 2's Game: No Cartridge starts player
-2's console empty).
+**Separate:** each device runs its own player's console, with their own game and save, and the cable
+crosses RetroArch's netplay. Players can run different games, such as two versions of a game that
+trade with each other. It links two players; three or four play Together. Each transfer waits for
+the other end, so a slow network stalls the cable.
+
+- Game Boy Advances stay on the same cycles, as on a real cable. Games that link every frame need
+  this, and it wants a short ping.
+- Game Boys run at their own pace, the one waiting sending its next byte ahead. That suits Wi-Fi and
+  games that link in turns. Game Boy Link Timing set to Exact times them as Game Boy Advances are.
+- The Wireless Adapter needs neither: each device runs freely.
+
+Single-pak games send a program over the cable to consoles with no cartridge, as on the real
+hardware. In Separate, the player without the game needs no game file: RetroArch's Start Core starts
+armGBA with no cartridge before they join, and in the app, Netplay's Your Cartridge: Removed does
+the same (`--connect ADDRESS --no-cartridge`). Only what the game sends over the cable crosses the
+network; armGBA never sends a game file. In Together, where every device runs every console, each
+device needs the game, and Player 2's Game: No Cartridge starts player 2's console empty.
 
 Together and Off also need the same BIOS or boot ROM on every device. In the app, a host on
-Nintendo's turns away a player who doesn't have the same file, and both are told why; switching to
-armGBA's in Core > System lets everyone join. RetroArch doesn't check, so set the same BIOS or
-boot ROM on every device, or armGBA's, which every device has.
+Nintendo's turns away a player who doesn't have the same file, and tells both why; switching to
+armGBA's in Core > System lets everyone join. RetroArch doesn't check, so set the same BIOS or boot
+ROM on every device, or use armGBA's, which every device has.
 
-**Backups.**
+The Game Boy Advance Wireless Adapter (GBA Link Port) works with Together and Separate, for games
+that use Nintendo's wireless library, including their Union Room trades. The Game Boy Four Player
+Adapter works with Together, and three or four Game Boys always use it.
 
-- Back Up Save copies a player's save, as it is, to a file named for the time, such as
-  `Game.20261018-153012.srm`, beside their save; player 1's goes in the save folder's
-  armGBA/Player 1 folder. The game carries on.
-- Load Save makes a backup a player's save again. With two players or more it can also give one
+### Backups
+
+- **Back Up Save** copies a player's save, as it is, to a file named for the time, such as
+  `Game.20261018-153012.srm`, beside their save. Player 1's goes in the save folder's armGBA/Player
+  1 folder. The game carries on.
+- **Load Save** makes a backup a player's save again. With two or more players it can also give one
   player another's current save or backup, as Load Save Into says. It backs up the save it replaces
-  first and restarts that player's console. Not during netplay.
-- A device that joined another's netplay session keeps that session's saves in armGBA/Remote/Player
-  1 to Player 4, by the session's players, and Load Save lists them as Remote Player 1 to 4. Each
-  goes to the other person unless Load Save Into names a player: Remote Player 1 (the host) to
-  player 2 here when there is one, Remote Player 2 to player 1. Hosting and joining in turn passes
-  both players' saves each way.
-- Keep My Netplay Progress, off unless chosen: on a device that joined Together netplay, when its
-  player's console in the session started from this device's own save (sent in with Save Manager,
-  or the app's Send My Save), that console's save becomes this device's own as the session ends,
-  the old one backed up. Otherwise this device's own save is never touched.
-- Save Manager moves saves between devices with no game loaded: start the core with no game
+  first, then restarts that player's console. It isn't available during netplay.
+- **Remote saves:** a device that joined another's netplay session keeps that session's saves in
+  armGBA/Remote/Player 1 to Player 4, by the session's players, and Load Save lists them as Remote
+  Player 1 to 4. Unless Load Save Into names a player, each goes to the other person: Remote Player
+  1 (the host) to player 2 here when there is one, and Remote Player 2 to player 1. Hosting and
+  joining in turn passes both players' saves each way.
+- **Keep My Netplay Progress**, off unless chosen, applies on a device that joined Together netplay.
+  If its player's console in the session started from this device's own save (sent in with Save
+  Manager, or the app's Send My Save), that console's save becomes this device's own as the session
+  ends, and the old one is backed up. Otherwise this device's own save is never touched.
+- **Save Manager** moves saves between devices with no game loaded. Start the core with no game
   (RetroArch's Start Core, or the app's Start Save Manager on the Netplay page), host or join, then
-  Send Save, in Saves, sends one of the saves found in RetroArch's saves folder and ROM folder, as
-  its `retroarch.cfg` names them, and their `gb`, `gbc` and `gba` folders (on ROCKNIX, `roms/gba`,
-  `gb` and `gbc`), with each folder's armGBA/Player 2 to 4 saves; in the app, its own Saves folder
-  and game folders instead, as Saves and Folders sets them. The other
-  device puts it where Receive Saves Into says, backing up the save it replaces. Auto takes a
-  save to player 2's on the host and to your own save on a device that joined, so before playing
-  Together, the joining player sends their save in, and afterwards the host sends Player 2's back,
-  or Keep My Netplay Progress brings it home by itself.
-- Backups Kept: 10 per player unless chosen. A save the same as its newest backup isn't backed up
-  again.
-- Player 1's Save Folder can keep player 1's save in armGBA/Player 1 too, beside the other players'.
-  When it changes, the newer save is used.
+  use Send Save, in Saves, to send one of the saves found. In RetroArch those are the saves in its
+  saves folder and ROM folder, as its `retroarch.cfg` names them, and in their `gb`, `gbc` and `gba`
+  folders (on ROCKNIX, `roms/gba`, `gb` and `gbc`), with each folder's armGBA/Player 2 to 4 saves.
+  In the app they are its own Saves folder and game folders, as Saves and Folders sets them. The
+  other device puts the save where Receive Saves Into says, backing up the save it replaces. Auto
+  takes a save to player 2's on the host, and to your own save on a device that joined. So before
+  playing Together, the joining player sends their save in, and afterwards the host sends Player 2's
+  back, or Keep My Netplay Progress brings it home by itself.
+- **Backups Kept:** 10 per player unless chosen. A save that matches its newest backup isn't backed
+  up again.
+- **Player 1's Save Folder** can keep player 1's save in armGBA/Player 1 too, beside the other
+  players'. When it changes, the newer save is used.
 
-The Game Boy Advance Wireless Adapter (GBA Link Port) works with either: the Union Room and trades
-of Pokemon FireRed, LeafGreen and Emerald, and other games using Nintendo's wireless library. The
-Game Boy Four Player Adapter works with Together, and three or four Game Boys always use it: Wario
-Blast, F-1 Race, Yoshi's Cookie and other four-player games.
+### GameCube
 
-**GameCube.** With Link Mode on GameCube, this Game Boy Advance is plugged into a controller port of
-Dolphin set to GBA (TCP), on the same device or another on the local network, and plays its part in
-the GameCube game, as Four Swords Adventures' players do. For a program the GameCube sends, set
-Cartridge to Removed; either BIOS takes it. Dolphin Address finds Dolphin by itself;
-This Device looks only here. The console keeps to Dolphin's time while the game talks to it, so the
+With Link Mode on GameCube, this Game Boy Advance is plugged into a controller port of Dolphin set
+to GBA (TCP), on the same device or another on the local network. It plays its part in the GameCube
+game, as a real Game Boy Advance plugged into a GameCube does. For a program the GameCube sends, set
+Cartridge to Removed; either BIOS takes it. Dolphin Address finds Dolphin by itself, or This Device
+looks only on this device. The console keeps to Dolphin's time while the game talks to it, so the
 two run in step.
 
-**Pair files.** A `.gb2` file, as Batocera writes them, or a `.gba2` file names the games of a link
-played Together, two to four, one per line, and opens like a game from RetroArch's Load Content:
+### Pair files
 
-    gb:Pokemon - Yellow Version.zip
-    gbc:Pokemon - Crystal Version.zip
+A `.gb2` file (as Batocera writes them) or a `.gba2` file names the games of a link played Together,
+two to four, one per line. It opens like a game from RetroArch's Load Content:
 
-`gb:`, `gbc:` and `gba:` mean that folder beside the pair file's folder; a line can also be a path
-from the pair file's folder, or a full path. Each player keeps their game's own save, where RetroArch
-keeps that game's save.
+    gb:Game One.zip
+    gbc:Game Two.zip
+
+`gb:`, `gbc:` and `gba:` mean that folder beside the pair file's folder. A line can also be a path
+from the pair file's folder, or a full path. Each player keeps their game's own save, where
+RetroArch keeps that game's save.
 
 ## Accuracy
 
-Anything a game's logic or the picture can observe is exact: IRQ, DMA and timer timing, self-modifying
-code, the prefetch pipeline, and visible video timing. What neither can observe is simplified where
-that is free: audio is exact in content but batched in time.
+Anything a game's logic or the picture can observe is exact: IRQ, DMA and timer timing,
+self-modifying code, the prefetch pipeline, and visible video timing. What neither can observe is
+simplified where that saves work: audio is exact in content but batched in time.
 
 Where the hardware gives no answer, these rules apply:
 
@@ -491,18 +608,19 @@ Where the hardware gives no answer, these rules apply:
 
 ## Testing
 
-- **Lockstep:** twenty games compared frame by frame with the stepping CPU on all three backends, and
-  every game of the Game Boy Advance set (4590) for 1500 frames on x86-64.
+- **Lockstep:** twenty games compared frame by frame with the stepping CPU on all three backends,
+  and every game of the Game Boy Advance set (4590) for 1500 frames on x86-64.
 - **`tests/cpufuzz`:** random ARM and Thumb programs against mGBA.
 - **Hardware test ROMs:** all 28 pass (jsmolka's gba-tests, FuzzARM, NanoBoyAdvance's).
 - **mGBA test suite:** every scored category passes in full except Misc edge, at 6 of 12.
 - **Game Boy test ROMs:** 213 of 236 screens match a SameBoy-based build. The rest are SameSuite's
   APU tests, which time the sound channels to a fraction of a CPU cycle.
-- **Game Boy games:** every game of the Game Boy and Game Boy Color sets was started and compared with
-  SameBoy: 2776 of 2796 and 2983 of 3055 match. The rest are not games (BIOS files, cheat cartridges),
-  betas, and unlicensed carts that differ on the other cores too.
-- **Save states and runahead:** frame-exact on x86-64 and AArch64 for GBA, GBC and GB. A Game Boy state
-  made as one model loads as another: the machine becomes the state's model until the next restart.
+- **Game Boy games:** every game of the Game Boy and Game Boy Color sets was started and compared
+  with SameBoy: 2776 of 2796 and 2983 of 3055 match. The rest are not games (BIOS files, cheat
+  cartridges), betas, and unlicensed carts that differ on the other cores too.
+- **Save states and runahead:** frame-exact on x86-64 and AArch64 for GBA, GBC and GB. A Game Boy
+  state made as one model loads as another: the machine becomes the state's model until the next
+  restart.
 
 ## Performance
 
@@ -539,14 +657,14 @@ slower chips.
 
 **Recompiler with an exact fallback.** ARM and Thumb code is compiled to AArch64, 32-bit ARM or
 x86-64 and counts its own cycles. When an event (timer, video line, DMA, IRQ) falls inside a block,
-a copy of the block with a check before each instruction takes over. An event the instruction cannot
-observe runs after it. For one it can observe, a cycle-exact stepping CPU (`src/cpu/step.c`) runs that
-single instruction.
+a copy of the block with a check before each instruction takes over. An event the instruction can't
+observe runs after it. For one it can observe, a cycle-exact stepping CPU (`src/cpu/step.c`) runs
+that single instruction.
 
 **Fewer events.** On a small core an event costs far more than its own work, because handling it
 pushes the game out of the instruction cache. Sound-timer overflows that only feed a FIFO or tick a
 cascaded timer are batched. Video events are scheduled only where something can see them, and lines
-are drawn lazily. `DISPSTAT`, `VCOUNT`, `KEYINPUT` and `IF` are read inline while they cannot change.
+are drawn lazily. `DISPSTAT`, `VCOUNT`, `KEYINPUT` and `IF` are read inline while they can't change.
 Provably idle loops skip to the next event. So do waiting loops that span calls, once the exact CPU
 has seen one go round twice the same way.
 
@@ -585,22 +703,22 @@ The test tools also need an mGBA source tree with `tests/mgba-oracle.patch` appl
 
 ## Known gaps
 
-- A few unlicensed Game Boy Color cartridges with undocumented protection chips do not boot.
-- Four Game Boy Advances on one device need a fast one with four cores: each runs on a core of its
-  own, and while they link they wait for each other often.
+- A few unlicensed Game Boy Color cartridges with undocumented protection chips don't boot.
+- Four Game Boy Advances on one device need a fast device with four cores: each console runs on a
+  core of its own, and while they link they often wait for each other.
 - The frontend's netplay connects only to another armgba, not to RetroArch.
 - Cheat codes mGBA can't run either (Action Replay's slowdown and disabling codes) are left out. A
-  code that hooks a routine of the game runs as the frame ends instead.
+  code that hooks one of the game's routines runs as the frame ends instead.
 
 ## Credits
 
 Code taken from other projects, each under its own license (see License):
 
 - **mGBA** (Jeffrey Pfau and contributors, MPL-2.0): the software renderer, bus and I/O behaviour,
-  save chips, the GPIO clock, the light sensor, gyro, tilt sensor and rumble, the Matrix and Vast Fame
-  cartridge mappers, the save override list, the GBA sound channels, the cheat code decoders and
-  engine, the unlicensed Game Boy mapper tables, and its MBC3 `.rtc` layout, which armGBA's clock
-  files carry too. It is also the yardstick the GBA side is compared with, through
+  save chips, the GPIO clock, the light sensor, gyro, tilt sensor and rumble, the Matrix and Vast
+  Fame cartridge mappers, the save override list, the GBA sound channels, the cheat code decoders
+  and engine, the unlicensed Game Boy mapper tables, and its MBC3 `.rtc` layout, which armGBA's
+  clock files carry too. It is also the yardstick the GBA side is compared with, through
   `tests/mgba-oracle.patch`.
 - **Gambatte** (sinamas) as extended by **Gambatte-Speedrun** (pokemon-speedrunning/gambatte-core,
   GPL-2.0): the whole Game Boy core in `gambatte/`, with **snes_spc** (Shay Green, LGPL) inside it.
@@ -621,7 +739,7 @@ Read for how the hardware behaves, without code taken:
 - **hhugboy** (taizou): how unlicensed Game Boy cartridges are detected and banked.
 - **gambatte-libretro**: its `.rtc` layout, which armGBA's clock files share, its turbo buttons and
   their period, and its Grayscale palette.
-- **pret/pokecrystal** and **pret/pokegold**: how Pokémon Gold, Silver and Crystal check the clock.
+- **pret/pokecrystal** and **pret/pokegold**: how the games they decompile check the clock.
 - **gpSP**: fast-forward on a held button.
 
 Test ROMs: jsmolka's gba-tests, DenSinH's FuzzARM, NanoBoyAdvance's hardware tests, mGBA's test
@@ -630,10 +748,10 @@ suite and its Game Boy test collection (Blargg's tests, Gekkio's Mooneye, LIJI's
 ## AI assistance
 
 armGBA was written with heavy use of an AI coding assistant, Anthropic's Claude (through Claude
-Code). Most of the code, comments and documentation were drafted by it at Magnominus's direction.
-He chose what to build and decides what goes in. Each change was tested on his PCs and handhelds
-first, and the accuracy and speed claims here come from those tests, listed above, not from the
-assistant's word.
+Code). Most of the code, comments and documentation were drafted by it at Magnominus's direction. He
+chose what to build and decides what goes in. Each change was tested on his PCs and handhelds first,
+and the accuracy and speed claims here come from those tests, listed above, not from the assistant's
+word.
 
 ## License
 
