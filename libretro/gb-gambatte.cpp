@@ -160,6 +160,9 @@ static unsigned cpuQuarters = 4;
 static bool gameTime;
 static unsigned clockPercent = 100;
 static long long clockOffset;
+// Real Time outside netplay: the clock runs on the device's time, so fast-forward and pauses don't
+// move it, and loaded states leave it as it is.
+static bool deviceClock;
 // How many consoles of a link run here (1 without one), and whether the Four Player Adapter joins
 // them; two without it share the cable.
 int players = 1;
@@ -1214,6 +1217,15 @@ void libretroGbSetClock(bool timeOfGame, unsigned percent, long long offset) {
 	}
 }
 
+void libretroGbDeviceTime(bool on) {
+	deviceClock = on;
+	for (int i = 0; i < MAX_PLAYERS; ++i) {
+		if (consoles[i].gb && consoles[i].gb->deviceTime() != on) {
+			consoles[i].gb->setDeviceTime(on);
+		}
+	}
+}
+
 bool libretroGbResetClock(void) {
 	bool reset = false;
 	for (int i = 0; i < MAX_PLAYERS; ++i) {
@@ -1402,9 +1414,9 @@ bool saveOne(void* data, size_t size) {
 	return true;
 }
 
-bool loadOne(const void* data, size_t size) {
+bool readState(const void* data, size_t size) {
 	gambatte::uint_least32_t length;
-	if (!s->gb || size < sizeof(length)) {
+	if (size < sizeof(length)) {
 		return false;
 	}
 	std::memcpy(&length, data, sizeof(length));
@@ -1449,6 +1461,27 @@ bool loadOne(const void* data, size_t size) {
 	// also holds the clock, so a state loaded before the first frame wins over the .rtc file.
 	setColors();
 	s->rtcPending = false;
+	return true;
+}
+
+// On the device's time, a loaded state leaves the clock as it was, as the Advance's does, except
+// before the first frame, where the state's clock wins over the .rtc file.
+bool loadOne(const void* data, size_t size) {
+	if (!s->gb) {
+		return false;
+	}
+	unsigned long clock[11];
+	bool const keepClock = deviceClock && s->gb->hasMbc3Rtc() && !s->rtcPending;
+	if (keepClock) {
+		s->gb->getRtcRegs(clock);
+	}
+	if (!readState(data, size)) {
+		return false;
+	}
+	if (keepClock) {
+		s->gb->setRtcRegs(clock);
+	}
+	s->gb->setDeviceTime(deviceClock);
 	return true;
 }
 

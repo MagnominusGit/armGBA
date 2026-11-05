@@ -19,10 +19,17 @@
 #include "time.h"
 #include "../savestate.h"
 
+#include <chrono>
+
 namespace gambatte {
 
+static long long nowNanos() {
+	return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 Time::Time()
-: lastTime_(std::time(0))
+: lastNanos_(nowNanos())
+, nanoRest_(0)
 , lastCycles_(0)
 , useCycles_(true)
 , rtcDivisor_(0x400000)
@@ -61,7 +68,19 @@ void Time::setTimeMode(bool useCycles, unsigned long const cc) {
 	update(cc);
 	useCycles_ = useCycles;
 	lastCycles_ = cc;
-	lastTime_ = std::time(0);
+	lastNanos_ = nowNanos();
+	nanoRest_ = 0;
+}
+
+// armGBA: on the device's time, the clock starts again from now. Staying on the console's cycles, it
+// keeps those it hasn't counted yet.
+void Time::setDeviceTime(bool const device, unsigned long const cc) {
+	if (!device && useCycles_)
+		return;
+	useCycles_ = !device;
+	lastCycles_ = cc;
+	lastNanos_ = nowNanos();
+	nanoRest_ = 0;
 }
 
 void Time::setSpeed(unsigned const percent, unsigned long const cc) {
@@ -75,9 +94,12 @@ unsigned long long Time::diff(unsigned long const cc) {
 		diff = ((cc - lastCycles_) >> ds_) * (unsigned long long) percent_ / 100;
 		lastCycles_ = cc;
 	} else {
-		std::time_t const now = std::time(0);
-		diff = (now - lastTime_) * (unsigned long long)rtcDivisor_;
-		lastTime_ = now;
+		long long const now = nowNanos();
+		unsigned long long const nanos = now > lastNanos_ ? now - lastNanos_ : 0;
+		unsigned long long const part = nanos % 1000000000 * rtcDivisor_ + nanoRest_;
+		diff = nanos / 1000000000 * rtcDivisor_ + part / 1000000000;
+		nanoRest_ = part % 1000000000;
+		lastNanos_ = now;
 	}
 	return diff;
 }

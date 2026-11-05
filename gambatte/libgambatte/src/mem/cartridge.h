@@ -76,6 +76,8 @@ public:
 	void setTimeMode(bool useCycles, unsigned long const cc) { time_.setTimeMode(useCycles, cc); }
 	void setRtcDivisorOffset(long const rtcDivisorOffset) { time_.setRtcDivisorOffset(rtcDivisorOffset); }
 	void setRtcSpeed(unsigned percent, unsigned long const cc) { time_.setSpeed(percent, cc); }
+	bool deviceTime() const { return time_.deviceTime(); }
+	void setDeviceTime(bool device, unsigned long const cc) { time_.setDeviceTime(device, cc); }
 	void setTime(unsigned long long dividers) { time_.setTime(dividers); }
 	void rtcWrite(unsigned data, unsigned long const cc) { rtc_.write(data, cc); }
 	unsigned char rtcRead() const { return rtc_.activeLatch() ? *rtc_.activeLatch() : 0xFF; }

@@ -448,8 +448,8 @@ sector erase, as in mGBA.
 A Game Boy cartridge's clock (MBC3 or HuC3) is kept in the `.rtc` file and moves on by the time the
 game was off. gambatte-libretro and mGBA read the same file: gambatte-libretro its first 8 bytes,
 and mGBA the MBC3 registers after them. armGBA reads either core's own file too. A host clock that
-was never set, or that went back, adds no time. While a game runs, its clock counts emulated time,
-so fast-forward speeds it up.
+was never set, or that went back, adds no time. While a game runs, its clock follows the device's
+time, so fast-forward and pauses don't move it, and a loaded state leaves an MBC3 clock as it is.
 
 A Game Boy Advance cartridge's clock reads the device's time. The chip only counts from 2000 to
 2099, so a host clock that was never set, which starts at 1970, reads as 2000 and counts on from
@@ -473,8 +473,8 @@ the reset, so a reset takes two steps.
   back to 0, and Game Time starts again from now. It never sets the clock's power-loss flag, which
   games report as a dead battery.
 
-In netplay, a Game Boy Advance clock counts the console's time from the host's, so every device
-reads the same. Every player needs the same Clock options.
+In netplay, a cartridge's clock counts the console's time from the host's, so every device reads
+the same. Every player needs the same Clock options.
 
 ### Game Boy Advance cartridge hardware
 

@@ -45,6 +45,8 @@ public:
 
 	void setTimeMode(bool useCycles, unsigned long cycleCounter);
 	void setSpeed(unsigned percent, unsigned long cycleCounter);
+	bool deviceTime() const { return !useCycles_; }
+	void setDeviceTime(bool device, unsigned long cycleCounter);
 
 	void set(Clock *clock) { clock_ = clock; }
 	void setTime(unsigned long long const dividers) { if (clock_) clock_->setTime(dividers); }
@@ -58,7 +60,8 @@ public:
 	template<bool isReader>void SyncState(NewState *ns);
 
 private:
-	std::time_t lastTime_;
+	long long lastNanos_;
+	unsigned long long nanoRest_;
 	unsigned long lastCycles_;
 	bool useCycles_;
 	unsigned long rtcDivisor_;

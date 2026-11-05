@@ -80,6 +80,9 @@ enum LibretroGbClock libretroGbClock(void);
 // off; the speed is in percent of the console's (0 stopped); the offset, in seconds, moves an MBC3
 // clock by its change.
 void libretroGbSetClock(bool gameTime, unsigned percent, long long offset);
+// Each frame: whether the clocks run on the device's time (Real Time outside netplay) or count the
+// console's cycles, as every device in netplay must.
+void libretroGbDeviceTime(bool on);
 // Clears every MBC3 clock with its halt bit set, as a dead battery leaves it; returns whether there
 // was one.
 bool libretroGbResetClock(void);

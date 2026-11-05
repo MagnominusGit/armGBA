@@ -243,6 +243,10 @@ public:
 	/** armGBA: the clock's speed in percent of the console's, 0 stopped */
 	void setRtcSpeed(unsigned percent);
 
+	/** armGBA: whether the clock runs on the device's time rather than the console's cycles */
+	bool deviceTime() const;
+	void setDeviceTime(bool device);
+
 	/** armGBA: whether the cartridge has an MBC3 clock, and its registers: rtc_dh, rtc_dl, rtc_h, rtc_m, rtc_s,
 	  * rtc_c (cycles into the second), then the latched five (mem/rtc.h) */
 	bool hasMbc3Rtc() const;

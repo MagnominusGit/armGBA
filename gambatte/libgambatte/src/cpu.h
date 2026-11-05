@@ -136,6 +136,8 @@ public:
 	void setTimeMode(bool useCycles) { mem_.setTimeMode(useCycles, cycleCounter_); }
 	void setRtcDivisorOffset(long const rtcDivisorOffset) { mem_.setRtcDivisorOffset(rtcDivisorOffset); }
 	void setRtcSpeed(unsigned percent) { mem_.setRtcSpeed(percent, cycleCounter_); }
+	bool deviceTime() const { return mem_.deviceTime(); }
+	void setDeviceTime(bool device) { mem_.setDeviceTime(device, cycleCounter_); }
 	bool hasMbc3Rtc() const { return mem_.hasMbc3Rtc(); }
 	void getRtcRegs(unsigned long *dest) { mem_.getRtcRegs(dest, cycleCounter_); }
 	void setRtcRegs(unsigned long *src) { mem_.setRtcRegs(src, cycleCounter_); }

@@ -15,7 +15,7 @@
 // states bring it along. In Game Time it is kept beside the save as the .rtc file:
 // - 4 bytes, "aGBt";
 // - 8 bytes, the time without the Clock Offset, in the console's cycles since 1970.
-// Game Boy cartridges' clocks are Gambatte's, in gb-gambatte.cpp.
+// Game Boy cartridges' clocks are Gambatte's, in gb-gambatte.cpp, on the same terms.
 
 enum {
 	CLOCK_MAGIC = 0,
@@ -65,6 +65,9 @@ static bool consoleTime(void) {
 }
 
 void clockFrame(void) {
+	if (gameBoy) {
+		libretroGbDeviceTime(!consoleTime());
+	}
 	for (int i = 0; i < playersHere; ++i) {
 		if (!hasClock(i)) {
 			continue;

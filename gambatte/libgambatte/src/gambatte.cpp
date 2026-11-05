@@ -199,6 +199,14 @@ void GB::setRtcSpeed(unsigned const percent) {
 	p_->cpu.setRtcSpeed(percent);
 }
 
+bool GB::deviceTime() const {
+	return p_->cpu.deviceTime();
+}
+
+void GB::setDeviceTime(bool const device) {
+	p_->cpu.setDeviceTime(device);
+}
+
 bool GB::hasMbc3Rtc() const {
 	return p_->cpu.loaded() && p_->cpu.hasMbc3Rtc();
 }
