@@ -150,6 +150,8 @@ static inline float libretroLcdReach(int way) {
 void libretroLcdFitSize(unsigned width, unsigned height, unsigned* outWidth, unsigned* outHeight);
 // How many times larger than the console's the picture the core sends is, by LCD Scale or Fit Screen.
 extern float libretroLcdShownScale;
+// The size the frontend draws the picture into, for Fit Screen's Auto; 0 while it doesn't say.
+extern unsigned libretroLcdScreenWidth, libretroLcdScreenHeight;
 
 // How strongly a grid drawn at any size shows when a source pixel is pitch output pixels wide: none at
 // 1x, all of it from 3x on. Smaller, a gap is under a pixel wide and reads as heavy lines.

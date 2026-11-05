@@ -1071,6 +1071,7 @@ static struct {
 } fit = { .lcd = -1 };
 
 float libretroLcdShownScale = 1;
+unsigned libretroLcdScreenWidth, libretroLcdScreenHeight;
 
 void libretroLcdFitSize(unsigned width, unsigned height, unsigned* outWidth, unsigned* outHeight) {
 	float const scale = fminf((float) gridFitWidth / width, (float) gridFitHeight / height);

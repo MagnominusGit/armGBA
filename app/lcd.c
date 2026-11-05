@@ -207,7 +207,19 @@ void lcdPictureUpload(void) {
 	SDL_UpdateTexture(app.game, NULL, app.picture, (int) app.picturePitch);
 }
 
+// Fit Screen's Auto draws at the size of the window, which the core reads with its options.
+static void tellScreenSize(void) {
+	int width, height;
+	if (SDL_GetRendererOutputSize(app.renderer, &width, &height) == 0 && width > 0 && height > 0 &&
+	    ((unsigned) width != libretroLcdScreenWidth || (unsigned) height != libretroLcdScreenHeight)) {
+		libretroLcdScreenWidth = (unsigned) width;
+		libretroLcdScreenHeight = (unsigned) height;
+		optionsChanged = true;
+	}
+}
+
 void lcdPictureDraw(SDL_Rect to) {
+	tellScreenSize();
 	if (gpuOn()) {
 		struct LcdGlLook look;
 		fillLook(&look, to);

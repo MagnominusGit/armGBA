@@ -145,7 +145,8 @@ With Low Memory on, RetroArch leaves loading the game to the core, which maps th
 instead of keeping a copy. The host then reads only the parts of the game in use and can drop them
 again. Games with a soft patch beside them, and files over 32 MiB, load as they do with Low Memory
 off. It works best with unzipped games: RetroArch unpacks a zipped game to a temporary folder away
-from its soft patch, so the game runs unpatched.
+from its soft patch, so the game runs unpatched. The standalone frontend always gives the core the
+game itself, so it doesn't show Low Memory.
 
 ### Frame Skip
 
@@ -184,7 +185,8 @@ Game Boy Advance game.
 Fit Screen draws the picture as large as fits a screen size, to the output pixel, so the frontend
 shows it pixel for pixel with no stretching: on a 1240x1080 screen a Game Boy Advance game is drawn
 at 1240x827. RetroArch doesn't tell a core the screen's resolution, so Screen Size says it: Auto
-reads the display's size where the system gives it (Linux's DRM, as on ROCKNIX), else 1280x720; a
+takes the standalone frontend's window size, else reads the display's where the system gives it
+(Linux's DRM, as on ROCKNIX), else 1280x720; a
 listed size; or Custom, set as hundreds and the rest, to the pixel. At such a size no block of
 pixels repeats, so each output column and row has its own source pixel, share of gap and stripes,
 worked out once for the size. Use it with RetroArch's aspect ratio set to the core's and integer

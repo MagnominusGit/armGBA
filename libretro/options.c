@@ -191,7 +191,7 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	    { "5", "5x" }, { "5.5", "5.5x" }, { "6", "6x" }, { "6.5", "6.5x" }, { "7", "7x" }, { "7.5", "7.5x" }, { "8", "8x" }, { NULL, NULL } },
 	  "disabled" },
 	{ "armgba_lcd_screen", "Screen Size", NULL,
-	  "The size Fit Screen draws at, to show it pixel for pixel. Auto reads the display's size where it can, else 1280x720.",
+	  "The size Fit Screen draws at, to show it pixel for pixel. Auto uses the app's window or the display's size where it can, else 1280x720.",
 	  NULL, "video_lcd",
 	  { { "auto", "Auto" }, { "480x320", "480x320" }, { "640x480", "640x480" }, { "720x480", "720x480" }, { "720x720", "720x720" },
 	    { "800x480", "800x480" }, { "854x480", "854x480" }, { "960x544", "960x544" }, { "960x640", "960x640" }, { "1024x600", "1024x600" },

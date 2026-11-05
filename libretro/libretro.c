@@ -634,12 +634,15 @@ static bool displaySize(unsigned* width, unsigned* height) {
 	return found;
 }
 
-// Screen Size for Fit Screen: the display's own (else 1280x720), one listed, or Custom's, set as
+// Screen Size for Fit Screen: the frontend's, else the display's own (else 1280x720), one listed, or Custom's, set as
 // hundreds and the rest so any size can be picked from short lists.
 static void readScreenSize(unsigned* width, unsigned* height) {
 	const char* const size = option("armgba_lcd_screen");
 	unsigned w = 1280, h = 720;
-	if (!size || !strcmp(size, "auto")) {
+	if ((!size || !strcmp(size, "auto")) && libretroLcdScreenWidth && libretroLcdScreenHeight) {
+		w = libretroLcdScreenWidth;
+		h = libretroLcdScreenHeight;
+	} else if (!size || !strcmp(size, "auto")) {
 		displaySize(&w, &h);
 	} else if (!strcmp(size, "custom")) {
 		const char* const parts[4] = { option("armgba_lcd_width_hundreds"), option("armgba_lcd_width_rest"), option("armgba_lcd_height_hundreds"),

@@ -7,6 +7,13 @@
 #include "hooks.h"
 #include "link.h"
 
+#include <string.h>
+
+// Low Memory needs the game's path, and the app gives the core the game itself.
+static bool optionShown(const struct Option* option, bool shown) {
+	return strcmp(option->key, "armgba_low_memory") && lcdOptionShown(option, shown);
+}
+
 const struct AppHooks appHooks = {
 	.start = lcdStart,
 	.pictureCame = lcdPictureCame,
@@ -15,7 +22,7 @@ const struct AppHooks appHooks = {
 	.rendererGoing = lcdRendererGoing,
 	.coreScale = lcdCoreScale,
 	.optionRead = lcdOptionRead,
-	.optionShown = lcdOptionShown,
+	.optionShown = optionShown,
 	.groupRows = lcdGroupRows,
 	.shaderRows = lcdShaderRows,
 	.settingsDefaults = lcdSettingsDefaults,
