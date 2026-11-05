@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// LCD Rendering: the LCD effects on the GPU (lcd-gl.c) or by the core on the CPU, their rows in the
+// LCD Effects: off, on the GPU (lcd-gl.c) or by the core on the CPU, their rows in the
 // menus and their settings.
 
 #include "hooks.h"
@@ -21,10 +21,11 @@
 // SHADOW_TILT, the way the device tilts.
 #define SHADOW_TILT 9
 
-// LCD Rendering: the LCD effects drawn by the core on the CPU, or all of them here on the GPU, never
-// some of each; the GPU's grid, and its pixel shadow.
+// LCD Effects: off, drawn by the core on the CPU, or all of them here on the GPU, never some of each;
+// the GPU's grid, and its pixel shadow.
+enum { LCD_OFF, LCD_CPU, LCD_GPU };
 static struct {
-	bool onGpu;
+	int effects;
 	bool grid;
 	int shadow;
 } lcdSettings;
@@ -32,7 +33,7 @@ static struct {
 // The effects are on the GPU when they're set to be and the renderer can draw them; otherwise the
 // core draws them.
 static bool gpuOn(void) {
-	return lcdSettings.onGpu && lcdGlUsable();
+	return lcdSettings.effects == LCD_GPU && lcdGlUsable();
 }
 
 // How many times larger the core makes the picture, by LCD Scale or Fit Screen; 1 with the effects on
@@ -236,22 +237,28 @@ void lcdRendererGoing(void) {
 	lcdGlStop();
 }
 
-// With the effects on the GPU, the core draws none of them, whatever they're set to.
+// LCD Effects stands for the core's CPU LCD Effects: the core draws its effects only on the CPU.
 const char* lcdOptionRead(const struct Option* option) {
-	return gpuOn() && !strcmp(option->key, "armgba_lcd_effects") ? "disabled" : NULL;
+	if (strcmp(option->key, "armgba_lcd_effects")) {
+		return NULL;
+	}
+	return lcdSettings.effects == LCD_OFF || gpuOn() ? "disabled" : "enabled";
 }
 
-// With the effects on the GPU, the core's own rows go (CPU LCD Effects, LCD Scale, Pixel Gaps, its
-// pixel shadow and LCD Effect Threads), and the settings the GPU shares show as the screen has them:
-// LCD Ghosting; Interlaced Rows on the Color's and Advance's screens, LCD Subpixels there with the grid
-// on; Pixel Shadow Distance with the GPU's shadow on.
+// LCD Effects replaces CPU LCD Effects' row. With the effects on the GPU, the core's own rows go too
+// (LCD Scale, Pixel Gaps, its pixel shadow and LCD Effect Threads), and the settings the GPU shares
+// show as the screen has them: LCD Ghosting; Interlaced Rows on the Color's and Advance's screens,
+// LCD Subpixels there with the grid on; Pixel Shadow Distance with the GPU's shadow on.
 bool lcdOptionShown(const struct Option* option, bool shown) {
+	if (!strcmp(option->key, "armgba_lcd_effects")) {
+		return false;
+	}
 	if (!gpuOn()) {
 		return shown;
 	}
 	uint32_t gap;
 	bool const tft = libretroLcdHasSubpixels(libretroLcd(&gap));
-	static const char* const cpuOnly[] = { "armgba_lcd_effects", "armgba_lcd_grid", "armgba_lcd_gaps", "armgba_lcd_shadow", "armgba_lcd_threads" };
+	static const char* const cpuOnly[] = { "armgba_lcd_grid", "armgba_lcd_gaps", "armgba_lcd_shadow", "armgba_lcd_threads" };
 	for (size_t i = 0; i < sizeof(cpuOnly) / sizeof(*cpuOnly); ++i) {
 		if (!strcmp(option->key, cpuOnly[i])) {
 			return false;
@@ -281,9 +288,10 @@ enum {
 static void changeLcd(int which, int delta) {
 	int const d = delta ? delta : 1;
 	switch (which) {
-	// The core reads its effects again, now off or back as they're set.
+	// Off, CPU, then GPU where the renderer can draw them. The core reads its effects again, now off or
+	// back as they're set.
 	case SET_LCD_RENDERING:
-		lcdSettings.onGpu = !lcdSettings.onGpu;
+		lcdSettings.effects = wrap(lcdSettings.effects == LCD_GPU && !lcdGlUsable() ? LCD_CPU : lcdSettings.effects, d, lcdGlUsable() ? 3 : 2);
 		optionsChanged = true;
 		refreshShownOptions();
 		break;
@@ -298,22 +306,23 @@ static void changeLcd(int which, int delta) {
 	settingsWrite();
 }
 
-// LCD Rendering, the same row on Core > Video and Shaders: whether the core draws the LCD effects on the
-// CPU or the app on the GPU. Without a GL renderer, only the CPU can.
+// LCD Effects, the same row on Core > Video and Shaders: off, or drawn by the core on the CPU or the app
+// on the GPU. Without a GL renderer, only the CPU can.
 static void addLcdRendering(void) {
-	addValue("LCD Rendering", gpuOn() ? "GPU" : "CPU", changeLcd, SET_LCD_RENDERING);
-	helpFor(lcdGlUsable() ? "Who draws the LCD effects: the CPU or the GPU. Their settings are on Core \xE2\x80\xBA Video."
-	                      : "Who draws the LCD effects: the CPU, as this renderer can't draw them on the GPU.");
+	static const char* const names[] = { "Off", "CPU", "GPU" };
+	addValue("LCD Effects", names[lcdSettings.effects == LCD_OFF ? LCD_OFF : gpuOn() ? LCD_GPU : LCD_CPU], changeLcd, SET_LCD_RENDERING);
+	helpFor(lcdGlUsable() ? "Off, or drawn on the CPU or the GPU, each with the rows below. Every effect keeps its setting."
+	                      : "Off, or drawn on the CPU; this renderer can't draw them on the GPU. Every effect keeps its setting.");
 }
 
-// LCD Effects starts with LCD Rendering, which Shaders shows too.
+// The LCD Effects group starts with LCD Effects, which Shaders shows too.
 void lcdGroupRows(const char* category) {
 	if (!strcmp(category, "video_lcd")) {
 		addLcdRendering();
 	}
 }
 
-// Pixel Gaps and the pixel shadow, only with LCD Rendering on the GPU, the shadow only on the first
+// Pixel Gaps and the pixel shadow, only with LCD Effects on the GPU, the shadow only on the first
 // Game Boy's and the Pocket's screens, or before a game is loaded.
 static void addGpuRows(void) {
 	if (!gpuOn()) {
@@ -343,14 +352,14 @@ void lcdOptionRows(const struct Option* option) {
 	}
 }
 
-// Shaders: LCD Rendering, then the GPU's rows.
+// Shaders: LCD Effects, then the GPU's rows.
 void lcdShaderRows(void) {
 	addLcdRendering();
 	addGpuRows();
 }
 
 void lcdSettingsDefaults(void) {
-	lcdSettings.onGpu = true;
+	lcdSettings.effects = LCD_GPU;
 	lcdSettings.grid = false;
 	lcdSettings.shadow = 0;
 }
@@ -363,7 +372,7 @@ bool lcdSettingRead(const char* key, const char* value, int n, bool yes) {
 		}
 		return false;
 	} else if (!strcmp(key, "lcd_rendering")) {
-		lcdSettings.onGpu = strcmp(value, "cpu") != 0;
+		lcdSettings.effects = !strcmp(value, "off") ? LCD_OFF : !strcmp(value, "cpu") ? LCD_CPU : LCD_GPU;
 	} else if (!strcmp(key, "gpu_lcd_grid")) {
 		lcdSettings.grid = yes;
 	} else if (!strcmp(key, "lcd_shadow")) {
@@ -375,5 +384,6 @@ bool lcdSettingRead(const char* key, const char* value, int n, bool yes) {
 }
 
 void lcdSettingsWrite(FILE* f) {
-	fprintf(f, "lcd_rendering = %s\ngpu_lcd_grid = %s\nlcd_shadow = %d\n", lcdSettings.onGpu ? "gpu" : "cpu", lcdSettings.grid ? "true" : "false", lcdSettings.shadow);
+	static const char* const names[] = { "off", "cpu", "gpu" };
+	fprintf(f, "lcd_rendering = %s\ngpu_lcd_grid = %s\nlcd_shadow = %d\n", names[lcdSettings.effects], lcdSettings.grid ? "true" : "false", lcdSettings.shadow);
 }

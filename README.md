@@ -230,10 +230,11 @@ Screen does, so every gap is drawn alike at any size. It is at full strength fro
 towards 1x, where a gap is under a pixel wide.
 
 The standalone frontend draws the same effects on the GPU itself, with the same shaders. Its LCD
-Rendering setting has either the core draw every effect on the CPU, or the app draw every effect on
-the GPU, never some of each. On the GPU, LCD Ghosting moves on once for each picture the core sends,
-and Pixel Gaps and the pixel shadow are set with the other LCD effects in Core > Video, and on the Shaders page. The GPU needs SDL's GL or GLES renderer;
-with its software renderer, the core draws the effects.
+Effects setting, in place of CPU LCD Effects, is Off, CPU (the core draws every effect) or GPU (the
+app draws every effect), never some of each, and each effect keeps its setting. On the GPU, LCD
+Ghosting moves on once for each picture the core sends, and Pixel Gaps and the pixel shadow are set
+with the other LCD effects in Core > Video, and on the Shaders page. The GPU needs SDL's GL or GLES
+renderer; with its software renderer, LCD Effects is Off or CPU.
 
 ## Building
 
@@ -339,8 +340,8 @@ also work on a row without a value). It opens again where it was left.
 - **Game:** the loaded game's state slots (0 to 99, each with a picture) and Undo Load State, its
   cheats (RetroArch's `.cht` files can be added), its saves (the core's Saves options: backing up,
   loading and sending), Restart, Take Screenshot, recording and Close Game.
-- **Core:** the core's options, in RetroArch's categories, with LCD Rendering in Video and on
-  Shaders, which has the CPU or the GPU draw the LCD effects.
+- **Core:** the core's options, in RetroArch's categories, with LCD Effects (Off, CPU or GPU) in
+  Video and on Shaders in place of CPU LCD Effects.
 - **Extras:** netplay and RetroAchievements.
 
 Rows ending in "..." open a page. Rows with a value step through it, except Back Up Save, Load Save
