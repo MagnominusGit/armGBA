@@ -301,20 +301,20 @@ void lcdGroupRows(const char* category) {
 	}
 }
 
-// Shaders: the LCD grid and pixel shadow only with LCD Rendering on the GPU, the shadow only on the
+// Shaders: Pixel Gaps and the pixel shadow only with LCD Rendering on the GPU, the shadow only on the
 // first Game Boy's and the Pocket's screens, or before a game is loaded.
 void lcdShaderRows(void) {
 	addLcdRendering();
 	if (!gpuOn()) {
 		return;
 	}
-	addValue("LCD Grid", onOff(lcdSettings.grid), changeLcd, SET_GPU_GRID);
-	helpFor("The gaps between the screen's pixels, at any size; fainter when smaller.");
+	addValue("Pixel Gaps", onOff(lcdSettings.grid), changeLcd, SET_GPU_GRID);
+	helpFor("The gaps between the screen's pixels, at any size, fainter when smaller. LCD Subpixels and the pixel shadow need them.");
 	if (lcdSettings.grid && (!app.loaded || libretroLcdShadow())) {
 		static const char* const shadows[SHADOW_TILT + 1] = { "Off", "Up", "Up Right", "Right", "Down Right", "Down", "Down Left", "Left", "Up Left", "Tilt" };
 		addValue("Game Boy Pixel Shadow", shadows[lcdSettings.shadow], changeLcd, SET_SHADOW);
-		helpFor(tiltAvailable() ? "Where the Game Boy's pixel shadow falls; Tilt moves it as the device tilts."
-		                        : "Where the Game Boy's pixel shadow falls.");
+		helpFor(tiltAvailable() ? "Which way the Game Boy's and Pocket's pixels cast a shadow, or Off. Tilt follows the device."
+		                        : "Which way the Game Boy's and Pocket's pixels cast a shadow, or Off.");
 	}
 }
 

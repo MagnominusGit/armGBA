@@ -72,15 +72,15 @@ standalone frontend shows as one page with headers.
 | | Clock Offset: Days | Both (not HuC3) | -30 to +30 days, 0 by default |
 | | Clock Offset: Hours | Both (not HuC3) | -23 to +23 hours, 0 by default |
 | | Allow Clock Reset | Both (Game Boy: MBC3) | Off, On (back to Off after a reset) |
-| | Reset Clock (with Allow Clock Reset on) | Both (Game Boy: MBC3) | No, Reset |
+| | Reset Clock (with Allow Clock Reset on) | Both (Game Boy: MBC3) | Off, Reset |
 | Video | Threaded Video | Game Boy Advance | Off, On, One Frame Late |
-| | Frame Skip | Both | Off, Auto, 1, 2, 3 (not in netplay) |
 | | GBA Color Correction | Game Boy Advance | Off, On |
 | | Game Boy Color Correction | Game Boy | Off, On |
 | | Game Boy Screen | Game Boy | Grayscale, Game Boy, Game Boy Pocket (both measured from real ones), Game Boy Light (Backlit) |
 | | Game Boy Contrast | Game Boy | 0% to 100% of the wheel in tenths, 50% by default (original Game Boy screens) |
 | | Game Boy on GBA: Border | Game Boy | Cropped, Shown (Game Boy Advance model) |
 | | Game Boy on GBA: Screen | Game Boy | Game Boy Advance, Game Boy Color (Game Boy Advance model) |
+| | Frame Skip | Both | Off, Auto, 1, 2, 3 (not in netplay) |
 | Video: LCD Effects | CPU LCD Effects | Both | Off, On (each effect below keeps its setting) |
 | | LCD Ghosting | Both | Off, 25%, 50%, 75%, 100% |
 | | Interlaced Rows | Both | Off, On (Color's and Advance's screens) |
@@ -230,7 +230,7 @@ towards 1x, where a gap is under a pixel wide.
 The standalone frontend draws the same effects on the GPU itself, with the same shaders. Its LCD
 Rendering setting has either the core draw every effect on the CPU, or the app draw every effect on
 the GPU, never some of each. On the GPU, LCD Ghosting moves on once for each picture the core sends,
-and the grid and pixel shadow are set on the Shaders page. The GPU needs SDL's GL or GLES renderer;
+and Pixel Gaps and the pixel shadow are set on the Shaders page. The GPU needs SDL's GL or GLES renderer;
 with its software renderer, the core draws the effects.
 
 ## Building
@@ -325,7 +325,7 @@ also work on a row without a value). It opens again where it was left.
 
 - **General:** the recent games, Load Game, the app's settings and Quit. The settings cover Video
   (window, scaling, vsync, and the frame rate and messages on screen), Shaders (Sharp, Smooth, and
-  the GPU's LCD grid and Game Boy pixel shadow), the sound's volume and latency, Controls,
+  the GPU's Pixel Gaps and Game Boy pixel shadow), the sound's volume and latency, Controls,
   Fast-Forward and Rewind (with Run-Ahead), Saves and Folders, the menus' look (accent color, size,
   background), and Reset All Settings.
   - Controls has Players, which picks the controller for each player, as RetroArch's Device Index
