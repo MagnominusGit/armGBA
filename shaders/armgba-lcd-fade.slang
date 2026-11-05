@@ -26,7 +26,7 @@ layout(push_constant) uniform Push {
 	float DRIVEN_SHARE;
 } params;
 
-#pragma parameter GHOSTING "LCD Ghosting (0 Off, 0.25 to 1)" 0.0 0.0 1.0 0.25
+#pragma parameter GHOSTING "LCD Ghosting (0 Off, 0.25 to 1)" 1.0 0.0 1.0 0.25
 #pragma parameter INTERLACED "Interlaced Rows (Color and Advance)" 0.0 0.0 1.0 1.0
 #pragma parameter GHOST_DARKEN "Ghosting: Time to Darken (ms)" 15.0 5.0 200.0 1.0
 #pragma parameter GHOST_LIGHTEN "Ghosting: Time to Lighten (ms)" 30.0 5.0 200.0 1.0

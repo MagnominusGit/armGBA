@@ -223,6 +223,7 @@ for each screen, `.slangp` and `.glslp`: `gb`, `gb-pocket`, `gb-light` and `gb-g
 shadow), `gbc` and `gba`. Each runs two passes. The first draws LCD Ghosting and Interlaced Rows at
 the console's resolution from the last frame shown, with the same math as the CPU and each screen's
 times; Interlaced Rows may fall on the other set of rows, as RetroArch counts frames its own way.
+LCD Ghosting is at 100% in every preset; its shader parameter turns it down or off.
 The second draws the grid, with Pixel Gaps, Subpixels (and Subpixel Order) and the pixel shadow.
 
 The GPU grid puts each gap on the output pixel edge where one pixel gives way to the next, as Fit

@@ -7,7 +7,7 @@
 // armGBA's LCD Ghosting and Interlaced Rows for RetroArch's gl driver; armgba-lcd-fade.slang says what
 // it draws. The preset's feedback_pass gives it the last frame shown.
 
-#pragma parameter GHOSTING "LCD Ghosting (0 Off, 0.25 to 1)" 0.0 0.0 1.0 0.25
+#pragma parameter GHOSTING "LCD Ghosting (0 Off, 0.25 to 1)" 1.0 0.0 1.0 0.25
 #pragma parameter INTERLACED "Interlaced Rows (Color and Advance)" 0.0 0.0 1.0 1.0
 #pragma parameter GHOST_DARKEN "Ghosting: Time to Darken (ms)" 15.0 5.0 200.0 1.0
 #pragma parameter GHOST_LIGHTEN "Ghosting: Time to Lighten (ms)" 30.0 5.0 200.0 1.0
@@ -70,7 +70,7 @@ uniform COMPAT_PRECISION float GHOST_DARKEN;
 uniform COMPAT_PRECISION float GHOST_LIGHTEN;
 uniform COMPAT_PRECISION float DRIVEN_SHARE;
 #else
-#define GHOSTING 0.0
+#define GHOSTING 1.0
 #define INTERLACED 0.0
 #define GHOST_DARKEN 15.0
 #define GHOST_LIGHTEN 30.0
