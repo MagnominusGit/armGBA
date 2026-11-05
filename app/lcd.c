@@ -306,8 +306,8 @@ static void changeLcd(int which, int delta) {
 	settingsWrite();
 }
 
-// LCD Effects, the same row on Core > Video and Shaders: off, or drawn by the core on the CPU or the app
-// on the GPU. Without a GL renderer, only the CPU can.
+// LCD Effects: off, or drawn by the core on the CPU or the app on the GPU. Without a GL renderer, only
+// the CPU can.
 static void addLcdRendering(void) {
 	static const char* const names[] = { "Off", "CPU", "GPU" };
 	addValue("LCD Effects", names[lcdSettings.effects == LCD_OFF ? LCD_OFF : gpuOn() ? LCD_GPU : LCD_CPU], changeLcd, SET_LCD_RENDERING);
@@ -315,7 +315,7 @@ static void addLcdRendering(void) {
 	                      : "Off, or drawn on the CPU; this renderer can't draw them on the GPU. Every effect keeps its setting.");
 }
 
-// The LCD Effects group starts with LCD Effects, which Shaders shows too.
+// The LCD Effects group starts with LCD Effects.
 void lcdGroupRows(const char* category) {
 	if (!strcmp(category, "video_lcd")) {
 		addLcdRendering();
@@ -323,14 +323,14 @@ void lcdGroupRows(const char* category) {
 }
 
 // Pixel Gaps and the pixel shadow, only with LCD Effects on the GPU, the shadow only on the first
-// Game Boy's and the Pocket's screens, or before a game is loaded.
+// Game Boy's and the Pocket's screens.
 static void addGpuRows(void) {
 	if (!gpuOn()) {
 		return;
 	}
 	addValue("Pixel Gaps", onOff(lcdSettings.grid), changeLcd, SET_GPU_GRID);
 	helpFor("The gaps between the screen's pixels, at any size, fainter when smaller.");
-	if (!app.loaded || libretroLcdShadow()) {
+	if (libretroLcdShadow()) {
 		static const char* const shadows[SHADOW_TILT + 1] = { "Off", "Up", "Up Right", "Right", "Down Right", "Down", "Down Left", "Left", "Up Left", "Tilt" };
 		addValue("Game Boy Pixel Shadow", shadows[lcdSettings.shadow], changeLcd, SET_SHADOW);
 		helpFor(tiltAvailable() ? "Which way the Game Boy's and Pocket's pixels cast a shadow, or Off. Tilt follows the device."
@@ -346,12 +346,6 @@ void lcdOptionRows(const struct Option* option) {
 	if (!strcmp(option->key, tft ? "armgba_lcd_interleave" : "armgba_lcd_ghosting")) {
 		addGpuRows();
 	}
-}
-
-// Shaders: LCD Effects, then the GPU's rows.
-void lcdShaderRows(void) {
-	addLcdRendering();
-	addGpuRows();
 }
 
 void lcdSettingsDefaults(void) {

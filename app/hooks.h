@@ -20,7 +20,6 @@ const char* lcdOptionRead(const struct Option* option);
 bool lcdOptionShown(const struct Option* option, bool shown);
 void lcdOptionRows(const struct Option* option);
 void lcdGroupRows(const char* category);
-void lcdShaderRows(void);
 void lcdSettingsDefaults(void);
 bool lcdSettingRead(const char* key, const char* value, int n, bool yes);
 void lcdSettingsWrite(FILE* f);

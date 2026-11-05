@@ -234,8 +234,8 @@ The standalone frontend draws the same effects on the GPU itself, with the same 
 Effects setting, in place of CPU LCD Effects, is Off, CPU (the core draws every effect) or GPU (the
 app draws every effect), never some of each, and each effect keeps its setting. On the GPU, LCD
 Ghosting moves on once for each picture the core sends, and Pixel Gaps and the pixel shadow are set
-with the other LCD effects in Core > Video, and on the Shaders page. The GPU needs SDL's GL or GLES
-renderer; with its software renderer, LCD Effects is Off or CPU.
+with the other LCD effects in Core > Video. The GPU needs SDL's GL or GLES renderer; with its
+software renderer, LCD Effects is Off or CPU.
 
 ## Building
 
@@ -328,10 +328,9 @@ The menu has four tabs, which L and R move between (Q and E, or Tab, on the keyb
 also work on a row without a value). It opens again where it was left.
 
 - **General:** the recent games, Load Game, the app's settings and Quit. The settings cover Video
-  (window, scaling, vsync, and the frame rate and messages on screen), Shaders (Sharp, Smooth, and
-  the GPU's Pixel Gaps and Game Boy pixel shadow), the sound's volume and latency, Controls,
-  Fast-Forward and Rewind (with Run-Ahead), Saves and Folders, the menus' look (accent color, size,
-  background), and Reset All Settings.
+  (window, scaling, vsync, and the frame rate and messages on screen), Shaders (Sharp or Smooth), the
+  sound's volume and latency, Controls, Fast-Forward and Rewind (with Run-Ahead), Saves and Folders,
+  the menus' look (accent color, size, background), and Reset All Settings.
   - Controls has Players, which picks the controller for each player, as RetroArch's Device Index
     does, and remembers it for when the controller connects again. A ROCKNIX handheld's own controls
     show as Built-In Controls.
@@ -342,7 +341,7 @@ also work on a row without a value). It opens again where it was left.
   cheats (RetroArch's `.cht` files can be added), its saves (the core's Saves options: backing up,
   loading and sending), Restart, Take Screenshot, recording and Close Game.
 - **Core:** the core's options, in RetroArch's categories, with LCD Effects (Off, CPU or GPU) in
-  Video and on Shaders in place of CPU LCD Effects.
+  Video in place of CPU LCD Effects.
 - **Extras:** netplay and RetroAchievements.
 
 Rows ending in "..." open a page. Rows with a value step through it, except Back Up Save, Load Save

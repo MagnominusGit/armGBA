@@ -25,7 +25,6 @@ const struct AppHooks appHooks = {
 	.optionShown = optionShown,
 	.optionRows = lcdOptionRows,
 	.groupRows = lcdGroupRows,
-	.shaderRows = lcdShaderRows,
 	.settingsDefaults = lcdSettingsDefaults,
 	.settingRead = lcdSettingRead,
 	.settingsWrite = lcdSettingsWrite,
