@@ -2,10 +2,10 @@
 
 A Game Boy Advance, Game Boy and Game Boy Color libretro core for low-power handhelds.
 
-armGBA builds on years of work by others. Parts of its Game Boy Advance side come from mGBA (Jeffrey
-Pfau and contributors), notably the renderer, cheat engine, sound channels and save chips, and mGBA
-is the reference it's tested against. Game Boy and Game Boy Color games run on Gambatte-Speedrun's
-core. See Credits for the full list.
+armGBA builds on other projects. Parts of its Game Boy Advance side come from mGBA (Jeffrey Pfau and
+contributors), notably the renderer, cheat engine, sound channels and save chips, and mGBA is the
+reference it's tested against. Game Boy and Game Boy Color games run on Gambatte-Speedrun's core.
+See Credits for the full list.
 
 armGBA adds a recompiler for the Game Boy Advance's CPU, so games run with headroom on slow handheld
 chips such as the Cortex-A35 and Cortex-A55. It stays accurate wherever a game could notice:
@@ -176,12 +176,12 @@ LCD Scale draws the picture 2x to 8x larger, with room inside each pixel for Pix
 between the screen's pixels) and for the shadow that the original Game Boy's and the Pocket's pixels
 cast. Pick the largest size that fits the screen, with RetroArch's integer scaling on. At a half
 step such as 2.5x, each 2x2 block of pixels becomes a whole number of output pixels (5x5), so the
-gaps repeat every two pixels. On a 640x480 handheld, 2.5x (600x400) fills the most of the screen
-with a Game Boy Advance game. The core can't pick the size itself, because RetroArch doesn't tell a
-core the screen's resolution.
+gaps repeat every two pixels. On a 640x480 handheld, 2.5x (600x400) fills most of the screen with a
+Game Boy Advance game. The core can't pick the size itself, because RetroArch doesn't tell a core
+the screen's resolution.
 
-LCD Scale runs on the CPU in vector code (NEON, SSE or AVX). It and LCD Ghosting share their rows
-out among the CPU's cores: LCD Effect Threads sets how many, and Auto leaves one core free, or uses
+LCD Scale runs on the CPU in vector code (NEON, SSE or AVX). LCD Scale and LCD Ghosting split their
+rows among the CPU's cores. LCD Effect Threads sets how many cores; Auto leaves one free, or uses
 two with Threaded Video. The shadow is one shade for each pixel's square, close to the smooth shadow
 that the shaders and the standalone frontend draw, at a fraction of the cost. At 6x, a Game Boy
 game's grid adds about 1.5 ms a frame on an RG353M and its shadow 0.1 ms more; on a Core i7-9700F,
@@ -189,9 +189,9 @@ game's grid adds about 1.5 ms a frame on an RG353M and its shadow 0.1 ms more; o
 
 LCD Subpixels draws the red, green and blue stripes of the Color's and Advance's screens inside each
 pixel. Photos of the two screens show red, green and blue from the left on the Color, and blue,
-green and red on the Advance. The stripes are mixed over each pixel's color in linear light, as (1 -
-mix) * color + mix * stripes, with each stripe lighting only its own channel. At 100% a pixel is its
-stripes alone, a third as bright.
+green and red on the Advance. The stripes are mixed over each pixel's color in linear light, as
+`(1 - mix) * color + mix * stripes`, with each stripe lighting only its own channel. At 100% a pixel
+is its stripes alone, a third as bright.
 
 The stripes are laid across the output columns each pixel covers, in as many bands as the narrowest
 pixel has columns. From 3x at whole sizes, each stripe is a column or more. At 2x there are two
@@ -544,7 +544,7 @@ Adapter works with Together, and three or four Game Boys always use it.
 - **Back Up Save** copies a player's save, as it is, to a file named for the time, such as
   `Game.20261018-153012.srm`, beside their save. Player 1's goes in the save folder's armGBA/Player
   1 folder. The game carries on.
-- **Load Save** makes a backup a player's save again. With two or more players it can also give one
+- **Load Save** restores a backup as a player's save. With two or more players it can also give one
   player another's current save or backup, as Load Save Into says. It backs up the save it replaces
   first, then restarts that player's console. It isn't available during netplay.
 - **Remote saves:** a device that joined another's netplay session keeps that session's saves in
@@ -552,8 +552,8 @@ Adapter works with Together, and three or four Game Boys always use it.
   Player 1 to 4. Unless Load Save Into names a player, each goes to the other person: Remote Player
   1 (the host) to player 2 here when there is one, and Remote Player 2 to player 1. Hosting and
   joining in turn passes both players' saves each way.
-- **Keep My Netplay Progress**, off unless chosen, applies on a device that joined Together netplay.
-  If its player's console in the session started from this device's own save (sent in with Save
+- **Keep My Netplay Progress** (off by default) applies to a device that joined Together netplay. If
+  its player's console in the session started from this device's own save (sent in with Save
   Manager, or the app's Send My Save), that console's save becomes this device's own as the session
   ends, and the old one is backed up. Otherwise this device's own save is never touched.
 - **Save Manager** moves saves between devices with no game loaded. Start the core with no game
@@ -566,8 +566,8 @@ Adapter works with Together, and three or four Game Boys always use it.
   takes a save to player 2's on the host, and to your own save on a device that joined. So before
   playing Together, the joining player sends their save in, and afterwards the host sends Player 2's
   back, or Keep My Netplay Progress brings it home by itself.
-- **Backups Kept:** 10 per player unless chosen. A save that matches its newest backup isn't backed
-  up again.
+- **Backups Kept:** 10 per player by default. A save that matches its newest backup isn't backed up
+  again.
 - **Player 1's Save Folder** can keep player 1's save in armGBA/Player 1 too, beside the other
   players'. When it changes, the newer save is used.
 
@@ -576,9 +576,9 @@ Adapter works with Together, and three or four Game Boys always use it.
 With Link Mode on GameCube, this Game Boy Advance is plugged into a controller port of Dolphin set
 to GBA (TCP), on the same device or another on the local network. It plays its part in the GameCube
 game, as a real Game Boy Advance plugged into a GameCube does. For a program the GameCube sends, set
-Cartridge to Removed; either BIOS takes it. Dolphin Address finds Dolphin by itself, or This Device
-looks only on this device. The console keeps to Dolphin's time while the game talks to it, so the
-two run in step.
+Cartridge to Removed; either BIOS can receive it. Dolphin Address finds Dolphin on the network by
+itself, or looks only on this device with This Device. The console keeps to Dolphin's time while the
+game talks to it, so the two run in step.
 
 ### Pair files
 
