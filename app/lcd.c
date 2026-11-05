@@ -302,7 +302,7 @@ static void changeLcd(int which, int delta) {
 // CPU or the app on the GPU. Without a GL renderer, only the CPU can.
 static void addLcdRendering(void) {
 	addValue("LCD Rendering", gpuOn() ? "GPU" : "CPU", changeLcd, SET_LCD_RENDERING);
-	helpFor(lcdGlUsable() ? "Who draws the LCD effects: the CPU (Core \xE2\x80\xBA Video) or the GPU, with its grid on Shaders."
+	helpFor(lcdGlUsable() ? "Who draws the LCD effects: the CPU or the GPU. Their settings are on Core \xE2\x80\xBA Video."
 	                      : "Who draws the LCD effects: the CPU, as this renderer can't draw them on the GPU.");
 }
 
@@ -313,10 +313,9 @@ void lcdGroupRows(const char* category) {
 	}
 }
 
-// Shaders: Pixel Gaps and the pixel shadow only with LCD Rendering on the GPU, the shadow only on the
-// first Game Boy's and the Pocket's screens, or before a game is loaded.
-void lcdShaderRows(void) {
-	addLcdRendering();
+// Pixel Gaps and the pixel shadow, only with LCD Rendering on the GPU, the shadow only on the first
+// Game Boy's and the Pocket's screens, or before a game is loaded.
+static void addGpuRows(void) {
 	if (!gpuOn()) {
 		return;
 	}
@@ -328,6 +327,26 @@ void lcdShaderRows(void) {
 		helpFor(tiltAvailable() ? "Which way the Game Boy's and Pocket's pixels cast a shadow, or Off. Tilt follows the device."
 		                        : "Which way the Game Boy's and Pocket's pixels cast a shadow, or Off.");
 	}
+}
+
+// On LCD Effects, the GPU's rows come where the CPU's Pixel Gaps does: after Interlaced Rows on the
+// Color's and Advance's screens, else after LCD Ghosting. On the GPU, LCD Subpixels needs Pixel Gaps,
+// not LCD Scale, so its help is the GPU's.
+void lcdOptionRows(const struct Option* option) {
+	if (gpuOn() && !strcmp(option->key, "armgba_lcd_subpixels")) {
+		helpFor("The red, green and blue stripes in each pixel of the Color's and Advance's screens. 100% is the stripes alone.");
+	}
+	uint32_t gap;
+	bool const tft = libretroLcdHasSubpixels(libretroLcd(&gap));
+	if (!strcmp(option->key, tft ? "armgba_lcd_interleave" : "armgba_lcd_ghosting")) {
+		addGpuRows();
+	}
+}
+
+// Shaders: LCD Rendering, then the GPU's rows.
+void lcdShaderRows(void) {
+	addLcdRendering();
+	addGpuRows();
 }
 
 void lcdSettingsDefaults(void) {

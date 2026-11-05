@@ -233,7 +233,7 @@ towards 1x, where a gap is under a pixel wide.
 The standalone frontend draws the same effects on the GPU itself, with the same shaders. Its LCD
 Rendering setting has either the core draw every effect on the CPU, or the app draw every effect on
 the GPU, never some of each. On the GPU, LCD Ghosting moves on once for each picture the core sends,
-and Pixel Gaps and the pixel shadow are set on the Shaders page. The GPU needs SDL's GL or GLES renderer;
+and Pixel Gaps and the pixel shadow are set with the other LCD effects in Core > Video, and on the Shaders page. The GPU needs SDL's GL or GLES renderer;
 with its software renderer, the core draws the effects.
 
 ## Building
