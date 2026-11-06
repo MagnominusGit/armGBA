@@ -226,6 +226,12 @@ times; Interlaced Rows may fall on the other set of rows, as RetroArch counts fr
 LCD Ghosting is at 100% in every preset; its shader parameter turns it down or off.
 The second draws the grid, with Pixel Gaps, Subpixels (and Subpixel Order) and the pixel shadow.
 
+For slower GPUs, the `.glslp` `*-lite` presets use `armgba-lcd-fade-lite.glsl` and
+`armgba-lcd-lite.glsl`. They keep the same screen colors, gaps and ghosting controls, but approximate
+ghosting directly in gamma-encoded color, use gamma-encoded brightness compensation, and omit pixel
+shadows and subpixels to reduce per-pixel work and texture reads. They are a lighter visual
+approximation, not a pixel-identical substitute.
+
 The GPU grid puts each gap on the output pixel edge where one pixel gives way to the next, as Fit
 Screen does, so every gap is drawn alike at any size. It is at full strength from 3x, and fades out
 towards 1x, where a gap is under a pixel wide.
