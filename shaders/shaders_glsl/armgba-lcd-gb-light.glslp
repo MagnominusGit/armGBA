@@ -1,11 +1,12 @@
-# armGBA LCD: the Game Boy Pocket, measured colors.
+# armGBA LCD: the Game Boy Light, backlit.
 shaders = 2
-shader0 = armgba-lcd-fade.slang
+shader0 = shaders/armgba-lcd-fade.glsl
 filter_linear0 = false
 scale_type0 = source
 scale0 = 1.0
 float_framebuffer0 = true
-shader1 = armgba-lcd.slang
+feedback_pass = 0
+shader1 = shaders/armgba-lcd.glsl
 filter_linear1 = true
 scale_type1 = viewport
 
@@ -19,13 +20,13 @@ PIXEL_GAPS = 1
 GAP_SHARE = 0.15
 GAP_ACROSS = 1
 GAP_DOWN = 1
-GAP_RED = 163
-GAP_GREEN = 178
-GAP_BLUE = 163
+GAP_RED = 93
+GAP_GREEN = 235
+GAP_BLUE = 235
 KEEP_BRIGHTNESS = 1
-UNLIT_RED = 194
-UNLIT_GREEN = 207
-UNLIT_BLUE = 168
-SHADOW = 0.25
+UNLIT_RED = 96
+UNLIT_GREEN = 241
+UNLIT_BLUE = 241
+SHADOW = 0
 SHADOW_WAY = 4
 SHADOW_DISTANCE = 1.5
