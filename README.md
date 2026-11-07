@@ -229,12 +229,13 @@ The second draws the grid, with Pixel Gaps, Subpixels (and Subpixel Order) and t
 For slower GPUs, the `.glslp` `*-lite` presets use `armgba-lcd-fade-lite.glsl` and
 `armgba-lcd-lite.glsl`. They keep the same screen colors, gaps and ghosting controls, but approximate
 ghosting directly in gamma-encoded color, use gamma-encoded brightness compensation, and omit pixel
-shadows and subpixels to reduce per-pixel work and texture reads. They are a lighter visual
-approximation, not a pixel-identical substitute.
+shadows and subpixels to reduce per-pixel work and texture reads. Their grid uses fractional gap
+coverage to smooth lines at non-integer scales, and compensates brightness using average gap coverage.
+They are a lighter visual approximation, not a pixel-identical substitute.
 
-The GPU grid puts each gap on the output pixel edge where one pixel gives way to the next, as Fit
-Screen does, so every gap is drawn alike at any size. It is at full strength from 3x, and fades out
-towards 1x, where a gap is under a pixel wide.
+The full GPU grid puts each gap on the output pixel edge where one pixel gives way to the next, as
+Fit Screen does, so every gap is drawn alike at any size. Both grids are at full strength from 3x,
+and fade out towards 1x, where a gap is under a pixel wide.
 
 The standalone frontend draws the same effects on the GPU itself, with the same shaders. Its LCD
 Effects setting, in place of CPU LCD Effects, is Off, CPU (the core draws every effect) or GPU (the

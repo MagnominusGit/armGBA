@@ -86,13 +86,11 @@ uniform COMPAT_PRECISION float KEEP_BRIGHTNESS;
 #define KEEP_BRIGHTNESS 0.0
 #endif
 
-float edgeGap(float x, float n, float m) {
-	float pitch = m / n;
-	float s = floor((x + 0.5) / pitch + 0.001);
-	float first = ceil((s - 0.001) * pitch - 0.5);
-	float next = ceil((s + 1.0 - 0.001) * pitch - 0.5);
-	float halfGap = GAP_SHARE * pitch * 0.5;
-	return min(clamp(halfGap - (x - first), 0.0, 1.0) + clamp(halfGap - (next - x - 1.0), 0.0, 1.0), 1.0);
+float gapCoverage(float x, float pitch) {
+	// Integrate the periodic gaps over one output pixel without snapping their edges.
+	float from = fract(x / pitch + GAP_SHARE * 0.5);
+	float to = from + 1.0 / pitch;
+	return clamp(pitch * (floor(to) * GAP_SHARE + min(fract(to), GAP_SHARE) - min(from, GAP_SHARE)), 0.0, 1.0);
 }
 
 float gridFade(float pitch) {
@@ -109,11 +107,14 @@ void main() {
 	float gapDown = GAP_DOWN * PIXEL_GAPS;
 	float fade = gridFade(1.0 / max(size.x, size.y));
 	vec2 pixel = floor(at / size);
-	float across = edgeGap(pixel.x, InputSize.x, InputSize.x / size.x) * gapAcross * fade;
-	float down = edgeGap(pixel.y, InputSize.y, InputSize.y / size.y) * gapDown * fade;
+	float across = gapCoverage(pixel.x, 1.0 / size.x) * gapAcross * fade;
+	float down = gapCoverage(pixel.y, 1.0 / size.y) * gapDown * fade;
 	float covered = across + down - across * down;
 	if (KEEP_BRIGHTNESS > 0.5) {
-		vec3 inside = clamp((color - gap * covered) / max(1.0 - covered, 0.0001), 0.0, 1.0);
+		float averageAcross = GAP_SHARE * gapAcross * fade;
+		float averageDown = GAP_SHARE * gapDown * fade;
+		float averageCovered = averageAcross + averageDown - averageAcross * averageDown;
+		vec3 inside = clamp((color - gap * averageCovered) / max(1.0 - averageCovered, 0.0001), 0.0, 1.0);
 		color = mix(inside, gap, covered);
 	} else {
 		color = mix(color, gap, covered);
