@@ -13,6 +13,7 @@ extern "C" {
 }
 #include "dmg07.h"
 #include "link.h"
+#include "printer.h"
 #include "armgba-boot.h"
 
 #include "gambatte.h"
@@ -169,6 +170,10 @@ int players = 1;
 bool adapterOn;
 
 Dmg07 adapter;
+// The Game Boy Printer on player 1's port, and where its prints go.
+Printer printer;
+bool printerOn;
+PrinterOutput printed;
 
 // One transfer on the Four Player Adapter: each Game Boy waiting on the external clock takes the
 // adapter's byte and gives its own.
@@ -732,12 +737,12 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 		s->gb->setRtcSpeed(clockPercent);
 	}
 	s->gb->setLinkCallback(players > 1 ? 0 : linkClocked);
-	s->linked = false;
+	s->linked = players == 1 && printerOn;
 	if (s->gb->load(reinterpret_cast<const char*>(bytes), size, s->loadFlags) != gambatte::LOADRES_OK) {
 		std::snprintf(error, errorSize, "armGBA can't run this Game Boy game");
 		return false;
 	}
-	s->gb->linkStatus(players > 1 ? LINK_ON : LINK_OFF);
+	s->gb->linkStatus(players > 1 || s->linked ? LINK_ON : LINK_OFF);
 	if (!boot.empty()) {
 		if (s->gb->loadBios(boot) < 0) {
 			std::snprintf(error, errorSize, "armGBA can't read %s", boot.c_str());
@@ -765,15 +770,19 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	return true;
 }
 
-// The eight bits of a transfer this Game Boy clocked are out: the other one's byte comes back.
+// The eight bits of a transfer this Game Boy clocked are out: the other one's byte, or the
+// printer's, comes back.
 void linkClocked() {
 	s->gb->linkStatus(LINK_ACK);
-	s->gb->linkStatus(linkGbTransfer(s->gb->linkStatus(LINK_OUT)));
+	int const out = s->gb->linkStatus(LINK_OUT);
+	bool const toPrinter = printerOn && !linkGbConnected();
+	s->gb->linkStatus(toPrinter ? printerTransfer(&printer, out, s->gb->timeNow(), printed) : linkGbTransfer(out));
 }
 
 void updateLink() {
-	if (s->linked != linkGbConnected()) {
-		s->linked = !s->linked;
+	bool const linked = linkGbConnected() || printerOn;
+	if (s->linked != linked) {
+		s->linked = linked;
 		s->gb->linkStatus(s->linked ? LINK_ON : LINK_OFF);
 	}
 }
@@ -792,6 +801,7 @@ bool libretroGbLoad(const void* rom, size_t size, const char* systemDirectory, e
 	ratio = NATIVE_RATE / audioRate;
 	s->stateSize = 0;
 	s->wanted = model;
+	printerReset(&printer);
 	if (!start(model, error, errorSize)) {
 		libretroGbUnload();
 		return false;
@@ -1378,6 +1388,32 @@ size_t stateSizeOne() {
 bool exactStates;
 gambatte::uint_least32_t const EXACT = 0x80000000u;
 
+// Player 1's printer is kept at the end of its console's part, in the room left for the state to
+// grow; zeros there, as in a state from before the printer, are a printer just switched on.
+size_t printerAt() {
+	return s->stateSize - sizeof(printer);
+}
+
+void savePrinter(void* data, size_t length) {
+	if (s == &consoles[0] && sizeof(gambatte::uint_least32_t) + length <= printerAt()) {
+		std::memcpy(static_cast<char*>(data) + printerAt(), &printer, sizeof(printer));
+	}
+}
+
+void loadPrinter(const void* data, size_t size) {
+	if (s != &consoles[0]) {
+		return;
+	}
+	gambatte::uint_least32_t length;
+	std::memcpy(&length, data, sizeof(length));
+	length &= ~0x80000000u;
+	if (size >= s->stateSize && sizeof(length) + length <= printerAt()) {
+		std::memcpy(&printer, static_cast<const char*>(data) + printerAt(), sizeof(printer));
+	} else {
+		printerReset(&printer);
+	}
+}
+
 bool saveExact(void* data) {
 	bool const shades = !s->gb->isCgb() || (s->loadFlags & gambatte::GB::NO_BIOS);
 	for (int i = 0; shades && i < 12; ++i) {
@@ -1390,6 +1426,7 @@ bool saveExact(void* data) {
 		std::memcpy(data, &marked, sizeof(marked));
 		s->gb->saveExactState(static_cast<char*>(data) + sizeof(length));
 		std::memset(static_cast<char*>(data) + sizeof(length) + length, 0, s->stateSize - sizeof(length) - length);
+		savePrinter(data, length);
 	}
 	setColors();
 	return fits;
@@ -1411,6 +1448,7 @@ bool saveOne(void* data, size_t size) {
 	s->gb->saveState(0, 0, static_cast<char*>(data) + sizeof(length));
 	// The room left for the state to grow is zero, so the same machine always makes the same state.
 	std::memset(static_cast<char*>(data) + sizeof(length) + length, 0, s->stateSize - sizeof(length) - length);
+	savePrinter(data, length);
 	return true;
 }
 
@@ -1478,6 +1516,7 @@ bool loadOne(const void* data, size_t size) {
 	if (!readState(data, size)) {
 		return false;
 	}
+	loadPrinter(data, size);
 	if (keepClock) {
 		s->gb->setRtcRegs(clock);
 	}
@@ -1515,6 +1554,14 @@ void libretroGbSelect(int which) {
 // Real consoles are never in step, and games rely on it: when two try to lead the link at the same
 // moment, Pokemon's handshake never settles. So each console runs a part of a frame behind the one
 // before.
+void libretroGbSetPrinter(bool on, PrinterOutput output) {
+	if (on && !printerOn) {
+		printerReset(&printer);
+	}
+	printerOn = on;
+	printed = output;
+}
+
 void libretroGbSetPlayers(int count, bool withAdapter) {
 	players = count;
 	adapterOn = count > 1 && withAdapter;

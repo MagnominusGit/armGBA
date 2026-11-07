@@ -91,6 +91,17 @@ size_t saveSize(struct GBA* machine);
 void notify(const char* message, unsigned frames);
 void showMessage(const char* message);
 
+// ereader.c: e-Reader cards from the frontend's disc menu, set up as a game starts; the first frame
+// calibrates a blank e-Reader.
+void ereaderStart(void);
+void ereaderFrame(void);
+void ereaderForget(void);
+
+// printout.c: the Game Boy Printer's paper, saved as a picture in the save folder once it is cut, or
+// as the game closes.
+void printoutPage(const uint8_t* pixels, int rows, bool cut, uint32_t number);
+void printoutFinish(void);
+
 // saves.c: each player's save memory and files, the saves the core keeps itself (the other
 // players', and player 1's with a pair file or Player 1's Save Folder), and the Saves options.
 void* saveMemory(int player, size_t* size);

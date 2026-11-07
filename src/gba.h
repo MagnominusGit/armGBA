@@ -694,6 +694,38 @@ struct Cart {
 	uint32_t multiLength;
 };
 
+#define EREADER_DOTCODE_STRIDE 1420
+#define EREADER_DOTCODE_SIZE (EREADER_DOTCODE_STRIDE * 40)
+#define EREADER_CARDS_MAX 16
+
+// The e-Reader's side kept by the host: the strip under the scanner, as one byte per dot, and the
+// cards waiting to be scanned.
+struct EReaderCards {
+	uint8_t dots[EREADER_DOTCODE_SIZE];
+	bool loaded;
+	void* data[EREADER_CARDS_MAX];
+	size_t size[EREADER_CARDS_MAX];
+};
+
+// The e-Reader's scanner: its registers at 0x0DF80000 and 0x0E00FFB0, and the serial port to the
+// sensor's settings.
+struct EReader {
+	uint16_t data[44];
+	uint8_t serial[92];
+	uint16_t registerUnk;
+	uint16_t registerReset;
+	uint8_t control0;
+	uint8_t control1;
+	uint16_t led;
+	uint8_t state;
+	uint8_t command;
+	uint8_t activeRegister;
+	uint8_t byte;
+	int32_t scanX;
+	int32_t scanY;
+	HOST_POINTER(struct EReaderCards* cards, cards);
+};
+
 struct GBA {
 	struct CPU cpu;
 
@@ -824,13 +856,14 @@ struct GBA {
 	// Mode 2 with both of its backgrounds on: the display has VRAM to itself while it draws a line.
 	bool vramStall;
 	struct Cart cart;
+	struct EReader ereader;
 	// Last, so that growing it doesn't move the memories.
 	struct Renderer renderer;
 };
 
 _Static_assert(offsetof(struct GBA, iwramCode) % 4096 == 0, "change PAD_TO_PAGE so that iwramCode starts on a page");
 // States are the struct as it lies in memory; this size is the same in every build.
-_Static_assert(sizeof(struct GBA) == 788504, "struct GBA changed: check it is laid out the same on 32-bit and 64-bit CPUs (tests/state-layout.sh), then update this size and STATE_MAGIC");
+_Static_assert(sizeof(struct GBA) == 788712, "struct GBA changed: check it is laid out the same on 32-bit and 64-bit CPUs (tests/state-layout.sh), then update this size and STATE_MAGIC");
 
 #define CPU_FREQUENCY 0x1000000
 
@@ -1069,6 +1102,16 @@ void cartVfameSramWrite(struct GBA*, uint32_t address, uint8_t value);
 bool cartMultiWrite(struct GBA*, uint32_t address, uint8_t value);
 int overridesApply(struct GBA*);
 bool overridesLogoValid(struct GBA*);
+
+// ereader.c
+void ereaderReset(struct GBA*);
+void ereaderFree(struct GBA*);
+void ereaderCalibrate(struct GBA*);
+void ereaderQueueCard(struct GBA*, const void* data, size_t size);
+uint16_t ereaderRead(struct GBA*, uint32_t address);
+void ereaderWrite(struct GBA*, uint32_t address, uint16_t value);
+uint8_t ereaderReadFlash(struct GBA*, uint32_t address);
+void ereaderWriteFlash(struct GBA*, uint32_t address, uint8_t value);
 
 // gpio.c
 enum {

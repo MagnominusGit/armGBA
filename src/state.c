@@ -16,7 +16,7 @@
 #include <string.h>
 
 enum {
-	STATE_MAGIC = 0x3953424A,
+	STATE_MAGIC = 0x3A53424A,
 	// The machine's events, as events() lists them.
 	EVENTS = 12 + 4 + 12 + 7 + 4,
 };
@@ -128,6 +128,7 @@ static void leaveOutHost(const struct GBA* gba, struct GBA* saved) {
 	saved->biosLoaded = false;
 	memset(saved->bios, 0, sizeof(saved->bios));
 	saved->gpio.clockSlot = 0;
+	saved->ereader.cardsSlot = 0;
 	saved->gpio.clockContextSlot = 0;
 	saved->savedata.backed = false;
 	saved->renderer.rgb565 = false;
@@ -264,6 +265,7 @@ bool gbaLoadState(struct GBA* gba, const void* state, size_t size) {
 	memcpy(gba->bios, host->bios, sizeof(gba->bios));
 	gba->gpio.clock = host->gpio.clock;
 	gba->gpio.clockContext = host->gpio.clockContext;
+	gba->ereader.cards = host->ereader.cards;
 	gba->savedata.backed = host->savedata.backed;
 	gba->savedata.data = moved(gba, saved->savedata.dataSlot);
 	gba->savedata.currentBank = moved(gba, saved->savedata.currentBankSlot);

@@ -116,6 +116,9 @@ int libretroGbLinkOut(void);
 void libretroGbLinkIn(int byte);
 // The serial control register, SC.
 int libretroGbLinkControl(void);
+// The Game Boy Printer on player 1's link port, when no other Game Boy is linked; output gets each
+// print (printer.h).
+void libretroGbSetPrinter(bool on, void (*output)(const uint8_t* pixels, int rows, bool cut, uint32_t number));
 // The consoles of a link here, two to four. The functions above work on the selected one (0 to 3).
 // Setting how many there are joins their serial ports, by the cable (two) or the Four Player
 // Adapter, and restarts their timing. States then hold them all.

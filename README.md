@@ -106,6 +106,7 @@ standalone frontend shows as one page with headers.
 | | GBA Link Port (applies on restart) | Game Boy Advance | Link Cable, Wireless Adapter |
 | | Game Boy Link Port (applies on restart) | Game Boy | Link Cable, Four Player Adapter (Together) |
 | | Game Boy Link Timing | Game Boy | Standard, Exact (Separate) |
+| | Game Boy Printer | Game Boy | Off, On (Link Mode Off) |
 | | Dolphin Address | Game Boy Advance | Find on the Network, This Device (GameCube) |
 | Link: Screens and Controllers | Screen Layout | Both | Side by Side, Top and Bottom, Player 1 Only to Player 4 Only (Together) |
 | | L2 Button | Both | Fast-Forward, Previous Layout (Together; outside netplay) |
@@ -495,6 +496,12 @@ multi-game cartridges, Vast Fame's protection, and the mirrored ROM of the Class
 also has, as mGBA does, the light sensor, gyro, tilt sensor and rumble motor some cartridges carry.
 A stick moves them the way mGBA's SDL frontend scales a stick.
 
+The e-Reader reads cards as mGBA's does: a card's dot code is drawn as the strip would show it, and
+the e-Reader's own program decodes it. Cards are added through RetroArch's Disc Control (Load New
+Disc), or the standalone frontend's Game tab (e-Reader Cards). A card can be a `.raw` dump (with its
+error-correcting bytes) or a `.bin` one (without them), and a file holding several strips is scanned
+a strip at a time. A card waits until the e-Reader scans.
+
 ### Game Boy and Game Boy Color
 
 These run on Gambatte-Speedrun's core (`gambatte/`), plus mappers for unlicensed cartridges: Sachen,
@@ -507,6 +514,12 @@ TAMA5, MBC6, MBC7, Vast Fame, and the BBD, Hitek, Sintax, Li Cheng, NT and Makon
 - Grayscale is gambatte-libretro's.
 - The Game Boy Color and Game Boy Advance color correction is SameBoy's.
 - The built-in boot ROMs are armGBA's own.
+
+The Game Boy Printer (Game Boy Printer option, Link Mode Off) follows Pan Docs' description: its
+status, the print command's palette and exposure, compressed image data, and a packet dropped after
+100 ms. Prints that run on without a paper cut are joined, as on the real paper, and each printout
+is saved as a PNG in the save folder. Printing takes a second for every eight rows, as SameBoy has
+it, since the real printer's speed isn't documented.
 
 ### Link play
 

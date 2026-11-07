@@ -272,7 +272,9 @@ static bool plainSource(unsigned region) {
 }
 
 // Returns the units memoryDmaCopy can move: between RAM, palette, VRAM and OAM, or read forwards
-// from cartridge ROM once the burst has started and the cartridge's counter is at the source.
+// from cartridge ROM once the burst has started and the cartridge's counter is at the source. The
+// top of the cartridge space is left to the slow path when an EEPROM or the e-Reader's scanner is
+// there.
 static bool plain(struct GBA* gba, uint32_t source, uint32_t dest, int32_t sourceStep, bool cartridge, bool eeprom) {
 	unsigned region = source >> 24;
 	if (!plainSource(dest >> 24)) {
@@ -281,7 +283,8 @@ static bool plain(struct GBA* gba, uint32_t source, uint32_t dest, int32_t sourc
 	if (plainSource(region)) {
 		return true;
 	}
-	return cartridge && sourceStep > 0 && region >= REGION_ROM0 && region <= REGION_ROM2_EX && !(eeprom && region == REGION_ROM2_EX) &&
+	bool device = eeprom || (gba->gpio.devices & HW_EREADER);
+	return cartridge && sourceStep > 0 && region >= REGION_ROM0 && region <= REGION_ROM2_EX && !(device && region == REGION_ROM2_EX) &&
 	       !gba->cpu.prefetching && gba->romLatch == (source & (SIZE_ROM - 1));
 }
 

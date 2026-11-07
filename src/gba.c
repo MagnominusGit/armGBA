@@ -152,6 +152,7 @@ void gbaDestroy(struct GBA* gba) {
 	renderThreadStop(gba);
 	jitDeinit(gba);
 	cartFree(gba);
+	ereaderFree(gba);
 	romFree(gba->rom);
 	free(gba->multiboot);
 	free(gba);
@@ -351,6 +352,8 @@ void gbaReset(struct GBA* gba, bool skipBios) {
 	memoryReset(gba);
 	gpioReset(gba);
 	savedataReset(gba);
+	ereaderReset(gba);
+	ereaderCalibrate(gba);
 	dmaReset(gba);
 	videoReset(gba);
 	audioReset(gba);

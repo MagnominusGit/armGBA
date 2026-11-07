@@ -757,6 +757,7 @@ static void readOptions(void) {
 			libretroGbSetColorCorrection(gbColorCorrection);
 		}
 	}
+	libretroGbSetPrinter(optionIs("armgba_link_mode", "off") && optionIs("armgba_gb_printer", "on"), printoutPage);
 	int const chosenScreens = optionChoice("armgba_link_screens", screensChoices, COUNT(screensChoices), SCREENS_SIDE);
 	// R2 (and L2 in netplay) changes the screens too; the option wins only when it changes.
 	if (chosenScreens != screensOption) {
@@ -1445,6 +1446,7 @@ static bool loadAdvance(const struct retro_game_info* game, const struct retro_g
 	offerLinkNetplay();
 	showOptions();
 	announceMemory();
+	ereaderStart();
 	struct retro_rumble_interface rumble = { NULL };
 	setRumble = gba->gpio.devices & HW_RUMBLE && environment(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &rumble) ? rumble.set_rumble_state : NULL;
 	rumbling = false;
@@ -1536,6 +1538,8 @@ void retro_unload_game(void) {
 	writeCoreSaves(true);
 	forgetSaves();
 	clockForget();
+	ereaderForget();
+	printoutFinish();
 	largestWidth = largestHeight = 0;
 	pairFile = false;
 	secondFromFrontend = false;
@@ -2751,6 +2755,7 @@ void retro_run(void) {
 	readFastForward();
 	writeKeptSaves();
 	clockFrame();
+	ereaderFrame();
 	if (gbTogether) {
 		runGameBoys();
 	} else if (gameBoy) {

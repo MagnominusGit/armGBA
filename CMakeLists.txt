@@ -25,6 +25,7 @@ set(CORE_SOURCES
 	src/audio/audio.c
 	src/audio/psg.c
 	src/cart/cart.c
+	src/cart/ereader.c
 	src/cart/gpio.c
 	src/cart/overrides.c
 	src/cart/savedata.c
@@ -112,7 +113,7 @@ target_compile_definitions(retro-archive PRIVATE HAVE_ZLIB HAVE_7ZIP)
 target_compile_options(retro-archive PRIVATE -w -O2)
 set_target_properties(retro-archive PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-set(LIBRETRO_SOURCES libretro/libretro.c libretro/clock.c libretro/lcd.c libretro/options.c libretro/saves.c libretro/dolphin.c libretro/link.c libretro/games.c libretro/savefiles.c libretro/patch.c libretro/dmg07.c libretro/workers.c libretro/gb-gambatte.cpp)
+set(LIBRETRO_SOURCES libretro/libretro.c libretro/clock.c libretro/lcd.c libretro/options.c libretro/saves.c libretro/dolphin.c libretro/link.c libretro/games.c libretro/savefiles.c libretro/patch.c libretro/dmg07.c libretro/ereader.c libretro/printer.c libretro/printout.c libretro/workers.c libretro/gb-gambatte.cpp)
 add_library(armgba_libretro SHARED ${LIBRETRO_SOURCES})
 # RetroArch for Android lists cores by the _android ending.
 if(ANDROID)

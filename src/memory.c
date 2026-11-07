@@ -544,6 +544,8 @@ uint32_t memoryLoad16(struct GBA* gba, uint32_t address, int* cycles) {
 		if ((address >> 24) == REGION_ROM2_EX && (gba->savedata.type == SAVEDATA_EEPROM || gba->savedata.type == SAVEDATA_EEPROM512)) {
 			// An EEPROM sits at the top of the cartridge space and is read a bit at a time.
 			value = savedataReadEeprom(gba);
+		} else if ((address & 0x0DFC0000) >= 0x0DF80000 && (gba->gpio.devices & HW_EREADER)) {
+			value = ereaderRead(gba, address);
 		} else if ((address & (SIZE_ROM - 2)) < gba->romSize) {
 			value = le16(&gba->rom[address & (SIZE_ROM - 2)]);
 		} else if (gba->cart.vfame) {
@@ -629,6 +631,10 @@ uint32_t memoryLoad8(struct GBA* gba, uint32_t address, int* cycles) {
 		// DMA 0 cannot read the cartridge's save memory.
 		if (gba->performingDma == 1) {
 			value = 0;
+			break;
+		}
+		if ((gba->gpio.devices & HW_EREADER) && (address & 0xE00FF80) >= 0xE00FF80) {
+			value = ereaderReadFlash(gba, address);
 			break;
 		}
 		switch (gba->savedata.type) {
@@ -755,6 +761,10 @@ void memoryStore16(struct GBA* gba, uint32_t address, uint16_t value, int* cycle
 		}
 		break;
 	case REGION_ROM2_EX:
+		if ((address & 0x0DFC0000) >= 0x0DF80000 && (gba->gpio.devices & HW_EREADER)) {
+			ereaderWrite(gba, address, value);
+			break;
+		}
 		if (gba->savedata.type == SAVEDATA_AUTODETECT) {
 			savedataInitEeprom(gba);
 		}
@@ -820,6 +830,11 @@ void memoryStore8(struct GBA* gba, uint32_t address, uint8_t value, int* cycles)
 			} else {
 				savedataInitSram(gba);
 			}
+		}
+		if ((gba->gpio.devices & HW_EREADER) && (address & 0xE00FF80) >= 0xE00FF80) {
+			ereaderWriteFlash(gba, address, value);
+			wait = gba->waitN16[REGION_SRAM];
+			break;
 		}
 		switch (gba->savedata.type) {
 		case SAVEDATA_FLASH512:
