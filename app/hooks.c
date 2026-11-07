@@ -14,6 +14,8 @@ static bool optionShown(const struct Option* option, bool shown) {
 	return strcmp(option->key, "armgba_low_memory") && lcdOptionShown(option, shown);
 }
 
+static const char* const cardFiles[] = { ".raw", ".bin", NULL };
+
 const struct AppHooks appHooks = {
 	.start = lcdStart,
 	.pictureCame = lcdPictureCame,
@@ -36,4 +38,7 @@ const struct AppHooks appHooks = {
 	.playOn = libretroPlayOn,
 	.saveManagerFolders = libretroSaveManagerFolders,
 	.cheevosConsole = netCheevosConsole,
+	.discMenu = "e-Reader Cards",
+	.disc = "Card",
+	.discFiles = cardFiles,
 };
