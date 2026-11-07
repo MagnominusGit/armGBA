@@ -1,11 +1,12 @@
-# armGBA LCD: the Game Boy Advance.
+# armGBA LCD: the Game Boy Color.
 shaders = 2
-shader0 = armgba-lcd-fade.slang
+shader0 = shaders/armgba-lcd-fade.glsl
 filter_linear0 = false
 scale_type0 = source
 scale0 = 1.0
 float_framebuffer0 = true
-shader1 = armgba-lcd.slang
+feedback_pass = 0
+shader1 = shaders/armgba-lcd.glsl
 filter_linear1 = true
 scale_type1 = viewport
 
@@ -14,11 +15,11 @@ GHOSTING = 1
 INTERLACED = 0
 GHOST_DARKEN = 15
 GHOST_LIGHTEN = 30
-DRIVEN_SHARE = 0.8
+DRIVEN_SHARE = 0.75
 PIXEL_GAPS = 1
 GAP_SHARE = 0.15
-GAP_ACROSS = 0.75
-GAP_DOWN = 0.75
+GAP_ACROSS = 0.6
+GAP_DOWN = 0.1
 GAP_RED = 0
 GAP_GREEN = 0
 GAP_BLUE = 0

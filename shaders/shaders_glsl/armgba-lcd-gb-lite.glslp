@@ -1,12 +1,12 @@
-# armGBA LCD Lite: the first Game Boy, gray screen.
+# armGBA LCD Lite: the first Game Boy, measured colors.
 shaders = 2
-shader0 = armgba-lcd-fade-lite.glsl
+shader0 = shaders/armgba-lcd-fade-lite.glsl
 filter_linear0 = false
 scale_type0 = source
 scale0 = 1.0
 float_framebuffer0 = true
 feedback_pass = 0
-shader1 = armgba-lcd-lite.glsl
+shader1 = shaders/armgba-lcd-lite.glsl
 filter_linear1 = true
 scale_type1 = viewport
 
@@ -20,7 +20,7 @@ PIXEL_GAPS = 1
 GAP_SHARE = 0.25
 GAP_ACROSS = 1
 GAP_DOWN = 1
-GAP_RED = 224
-GAP_GREEN = 224
-GAP_BLUE = 224
+GAP_RED = 63
+GAP_GREEN = 138
+GAP_BLUE = 4
 KEEP_BRIGHTNESS = 1
