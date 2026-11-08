@@ -227,8 +227,8 @@ times; Interlaced Rows may fall on the other set of rows, as RetroArch counts fr
 LCD Ghosting is at 100% in every preset; its shader parameter turns it down or off.
 The second draws the grid, with Pixel Gaps, Subpixels (and Subpixel Order) and the pixel shadow.
 
-For slower GPUs, the `.glslp` `*-lite` presets use `armgba-lcd-fade-lite.glsl` and
-`armgba-lcd-lite.glsl`. They keep the same screen colors, gaps and ghosting controls, but approximate
+For slower GPUs, the `.glslp` `*-fast` presets use `armgba-lcd-fade-fast.glsl` and
+`armgba-lcd-fast.glsl`. They keep the same screen colors, gaps and ghosting controls, but approximate
 ghosting directly in gamma-encoded color, use gamma-encoded brightness compensation, and omit pixel
 shadows and subpixels to reduce per-pixel work and texture reads. Their grid uses fractional gap
 coverage to smooth lines at non-integer scales, and compensates brightness using average gap coverage.
@@ -239,8 +239,9 @@ Fit Screen does, so every gap is drawn alike at any size. Both grids are at full
 and fade out towards 1x, where a gap is under a pixel wide.
 
 The standalone frontend draws the same effects on the GPU itself, with the same shaders. Its LCD
-Effects setting, in place of CPU LCD Effects, is Off, CPU (the core draws every effect) or GPU (the
-app draws every effect), never some of each, and each effect keeps its setting. On the GPU, LCD
+Effects setting, in place of CPU LCD Effects, is Off, CPU (the core draws every effect), GPU (the
+app draws every effect) or GPU Fast (the `-fast` presets' shaders, without subpixels or the pixel
+shadow), never some of each, and each effect keeps its setting. On the GPU, LCD
 Ghosting moves on once for each picture the core sends, and Pixel Gaps and the pixel shadow are set
 with the other LCD effects in Core > Video. The GPU needs SDL's GL or GLES renderer; with its
 software renderer, LCD Effects is Off or CPU.
@@ -350,7 +351,7 @@ also work on a row without a value). It opens again where it was left.
 - **Game:** the loaded game's state slots (0 to 99, each with a picture) and Undo Load State, its
   cheats (RetroArch's `.cht` files can be added), its saves (the core's Saves options: backing up,
   loading and sending), Restart, Take Screenshot, recording and Close Game.
-- **Core:** the core's options, in RetroArch's categories, with LCD Effects (Off, CPU or GPU) in
+- **Core:** the core's options, in RetroArch's categories, with LCD Effects (Off, CPU, GPU or GPU Fast) in
   Video in place of CPU LCD Effects.
 - **Extras:** netplay and RetroAchievements.
 

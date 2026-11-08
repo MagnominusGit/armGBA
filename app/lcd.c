@@ -21,9 +21,9 @@
 // SHADOW_TILT, the way the device tilts.
 #define SHADOW_TILT 9
 
-// LCD Effects: off, drawn by the core on the CPU, or all of them here on the GPU, never some of each;
-// the GPU's grid, and its pixel shadow.
-enum { LCD_OFF, LCD_CPU, LCD_GPU };
+// LCD Effects: off, drawn by the core on the CPU, or all of them here on the GPU, never some of each,
+// or the GPU's fast shaders for slower GPUs; the GPU's grid, and its pixel shadow.
+enum { LCD_OFF, LCD_CPU, LCD_GPU, LCD_GPU_FAST };
 static struct {
 	int effects;
 	bool grid;
@@ -33,7 +33,12 @@ static struct {
 // The effects are on the GPU when they're set to be and the renderer can draw them; otherwise the
 // core draws them.
 static bool gpuOn(void) {
-	return lcdSettings.effects == LCD_GPU && lcdGlUsable();
+	return (lcdSettings.effects == LCD_GPU || lcdSettings.effects == LCD_GPU_FAST) && lcdGlUsable();
+}
+
+// The fast shaders draw no LCD Subpixels and no pixel shadow.
+static bool gpuFast(void) {
+	return lcdSettings.effects == LCD_GPU_FAST && gpuOn();
 }
 
 // How many times larger the core makes the picture, by LCD Scale or Fit Screen; 1 with the effects on
@@ -181,6 +186,12 @@ static void fillLook(struct LcdGlLook* look, SDL_Rect to) {
 	look->subpixels = tft ? libretroLcdSubpixelMix : 0;
 	look->bgr = lcd == LIBRETRO_LCD_ADVANCE;
 	look->smooth = settings.filter;
+	look->fast = gpuFast();
+	if (look->fast) {
+		look->subpixels = 0;
+		followTilt(false);
+		return;
+	}
 	bool const shadowed = lcdSettings.shadow && app.format == RETRO_PIXEL_FORMAT_XRGB8888 && libretroLcdShadow();
 	followTilt(shadowed && lcdSettings.shadow == SHADOW_TILT);
 	if (shadowed) {
@@ -271,10 +282,10 @@ bool lcdOptionShown(const struct Option* option, bool shown) {
 		return tft;
 	}
 	if (!strcmp(option->key, "armgba_lcd_shadow_distance")) {
-		return lcdSettings.shadow && libretroLcdShadow();
+		return lcdSettings.shadow && libretroLcdShadow() && !gpuFast();
 	}
 	if (!strcmp(option->key, "armgba_lcd_subpixels")) {
-		return tft;
+		return tft && !gpuFast();
 	}
 	return shown;
 }
@@ -288,10 +299,10 @@ enum {
 static void changeLcd(int which, int delta) {
 	int const d = delta ? delta : 1;
 	switch (which) {
-	// Off, CPU, then GPU where the renderer can draw them. The core reads its effects again, now off or
-	// back as they're set.
+	// Off, CPU, then GPU and GPU Fast where the renderer can draw them. The core reads its effects
+	// again, now off or back as they're set.
 	case SET_LCD_RENDERING:
-		lcdSettings.effects = wrap(lcdSettings.effects == LCD_GPU && !lcdGlUsable() ? LCD_CPU : lcdSettings.effects, d, lcdGlUsable() ? 3 : 2);
+		lcdSettings.effects = wrap(lcdSettings.effects >= LCD_GPU && !lcdGlUsable() ? LCD_CPU : lcdSettings.effects, d, lcdGlUsable() ? 4 : 2);
 		optionsChanged = true;
 		refreshShownOptions();
 		break;
@@ -309,9 +320,9 @@ static void changeLcd(int which, int delta) {
 // LCD Effects: off, or drawn by the core on the CPU or the app on the GPU. Without a GL renderer, only
 // the CPU can.
 static void addLcdRendering(void) {
-	static const char* const names[] = { "Off", "CPU", "GPU" };
-	addValue("LCD Effects", names[lcdSettings.effects == LCD_OFF ? LCD_OFF : gpuOn() ? LCD_GPU : LCD_CPU], changeLcd, SET_LCD_RENDERING);
-	helpFor(lcdGlUsable() ? "Off, or drawn on the CPU or the GPU, each with the rows below. Every effect keeps its setting."
+	static const char* const names[] = { "Off", "CPU", "GPU", "GPU Fast" };
+	addValue("LCD Effects", names[lcdSettings.effects == LCD_OFF ? LCD_OFF : gpuOn() ? lcdSettings.effects : LCD_CPU], changeLcd, SET_LCD_RENDERING);
+	helpFor(lcdGlUsable() ? "Off, or drawn on the CPU or the GPU. GPU Fast is for slower GPUs: ghosting and gaps, no subpixels or shadow."
 	                      : "Off, or drawn on the CPU; this renderer can't draw them on the GPU. Every effect keeps its setting.");
 }
 
@@ -330,7 +341,7 @@ static void addGpuRows(void) {
 	}
 	addValue("Pixel Gaps", onOff(lcdSettings.grid), changeLcd, SET_GPU_GRID);
 	helpFor("The gaps between the screen's pixels, at any size, fainter when smaller.");
-	if (libretroLcdShadow()) {
+	if (libretroLcdShadow() && !gpuFast()) {
 		static const char* const shadows[SHADOW_TILT + 1] = { "Off", "Up", "Up Right", "Right", "Down Right", "Down", "Down Left", "Left", "Up Left", "Tilt" };
 		addValue("Game Boy Pixel Shadow", shadows[lcdSettings.shadow], changeLcd, SET_SHADOW);
 		helpFor(tiltAvailable() ? "Which way the Game Boy's and Pocket's pixels cast a shadow, or Off. Tilt follows the device."
@@ -356,7 +367,7 @@ void lcdSettingsDefaults(void) {
 
 bool lcdSettingRead(const char* key, const char* value, int n, bool yes) {
 	if (!strcmp(key, "lcd_rendering")) {
-		lcdSettings.effects = !strcmp(value, "off") ? LCD_OFF : !strcmp(value, "cpu") ? LCD_CPU : LCD_GPU;
+		lcdSettings.effects = !strcmp(value, "off") ? LCD_OFF : !strcmp(value, "cpu") ? LCD_CPU : !strcmp(value, "gpu_fast") ? LCD_GPU_FAST : LCD_GPU;
 	} else if (!strcmp(key, "gpu_lcd_grid")) {
 		lcdSettings.grid = yes;
 	} else if (!strcmp(key, "lcd_shadow")) {
@@ -368,6 +379,6 @@ bool lcdSettingRead(const char* key, const char* value, int n, bool yes) {
 }
 
 void lcdSettingsWrite(FILE* f) {
-	static const char* const names[] = { "off", "cpu", "gpu" };
+	static const char* const names[] = { "off", "cpu", "gpu", "gpu_fast" };
 	fprintf(f, "lcd_rendering = %s\ngpu_lcd_grid = %s\nlcd_shadow = %d\n", names[lcdSettings.effects], lcdSettings.grid ? "true" : "false", lcdSettings.shadow);
 }

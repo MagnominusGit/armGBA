@@ -256,7 +256,77 @@ static const char gridSource[] =
 	"	gl_FragColor = vec4(color, 1.0);\n"
 	"}\n";
 
-enum { FADE, GRID, PROGRAMS };
+// armgba-lcd-fade-fast.glsl: ghosting worked out in gamma-encoded color, for slower GPUs.
+static const char fadeFastSource[] =
+	"uniform sampler2D u_picture;\n"
+	"uniform sampler2D u_before;\n"
+	"uniform vec2 u_size;\n"
+	"uniform float u_frame, u_ghosting, u_interlaced, u_darken, u_lighten, u_lead, u_fresh, u_bgr;\n"
+	"varying vec2 v_at;\n"
+	"void main() {\n"
+	"	vec4 c = texture2D(u_picture, v_at);\n"
+	"	vec3 now = u_bgr > 0.5 ? c.bgr : c.rgb;\n"
+	"	vec3 before = texture2D(u_before, v_at).rgb;\n"
+	"	bool interlaced = u_interlaced > 0.5;\n"
+	"	if (u_fresh > 0.5 || (u_ghosting <= 0.0 && !interlaced)) {\n"
+	"		gl_FragColor = vec4(now, 1.0);\n"
+	"		return;\n"
+	"	}\n"
+	"	float row = floor(v_at.y * u_size.y);\n"
+	"	bool weak = interlaced && mod(row + u_frame, 2.0) > 0.5;\n"
+	"	if (u_ghosting <= 0.0) {\n"
+	"		gl_FragColor = vec4(weak ? before : now, 1.0);\n"
+	"		return;\n"
+	"	}\n"
+	"	float scale = !interlaced ? 1.0 : weak ? 1.0 / (2.0 - 1.0 / u_lead) : u_lead;\n"
+	"	float frames = 16.743 / u_ghosting / scale;\n"
+	"	float dark = 1.0 - exp(-frames / u_darken);\n"
+	"	float light = 1.0 - exp(-frames / u_lighten);\n"
+	"	vec3 was = floor(before * 255.0 + 0.5), want = floor(now * 255.0 + 0.5);\n"
+	"	vec3 diff = want - was;\n"
+	"	vec3 moved = was + diff * mix(vec3(dark), vec3(light), step(vec3(0.0), diff));\n"
+	"	vec3 next = floor(moved + 0.5);\n"
+	"	next += sign(diff) * step(abs(next - was), vec3(0.0)) * step(0.5, abs(diff));\n"
+	"	gl_FragColor = vec4(next / 255.0, 1.0);\n"
+	"}\n";
+
+// armgba-lcd-fast.glsl: the gaps as a share of each output pixel, unsnapped, in the color that keeps
+// the screen's brightness, with no subpixels or pixel shadow; the filter as the full grid has it.
+static const char gridFastSource[] =
+	"uniform sampler2D u_picture;\n"
+	"uniform vec2 u_size, u_shown;\n"
+	"uniform float u_share, u_across, u_down, u_smooth;\n"
+	"uniform vec3 u_gap;\n"
+	"varying vec2 v_at;\n"
+	"float gapCoverage(float x, float pitch) {\n"
+	"	float from = fract(x / pitch + u_share * 0.5);\n"
+	"	float to = from + 1.0 / pitch;\n"
+	"	return clamp(pitch * (floor(to) * u_share + min(fract(to), u_share) - min(from, u_share)), 0.0, 1.0);\n"
+	"}\n"
+	"void main() {\n"
+	"	vec2 at = v_at * u_size;\n"
+	"	vec2 size = u_size / u_shown;\n"
+	"	vec2 shown = floor((floor(at / size) + 0.5) * size + 0.001);\n"
+	"	vec3 color = texture2D(u_picture, (shown + 0.5) / u_size).rgb;\n"
+	"	if (u_smooth > 1.5) {\n"
+	"		vec2 scale = max(floor(u_shown / u_size), 1.0);\n"
+	"		vec2 middle = fract(at) - 0.5;\n"
+	"		vec2 edge = (middle - clamp(middle, -0.5 + 0.5 / scale, 0.5 - 0.5 / scale)) * scale + 0.5;\n"
+	"		color = texture2D(u_picture, (floor(at) + edge) / u_size).rgb;\n"
+	"	} else if (u_smooth > 0.5) {\n"
+	"		color = texture2D(u_picture, v_at).rgb;\n"
+	"	}\n"
+	"	if (u_share > 0.0) {\n"
+	"		float fade = clamp((1.0 / max(size.x, size.y) - 1.0) * 0.5, 0.0, 1.0);\n"
+	"		vec2 pixel = floor(at / size);\n"
+	"		float across = gapCoverage(pixel.x, 1.0 / size.x) * u_across * fade;\n"
+	"		float down = gapCoverage(pixel.y, 1.0 / size.y) * u_down * fade;\n"
+	"		color = mix(color, u_gap, across + down - across * down);\n"
+	"	}\n"
+	"	gl_FragColor = vec4(color, 1.0);\n"
+	"}\n";
+
+enum { FADE, GRID, FADE_FAST, GRID_FAST, PROGRAMS };
 
 static SDL_GLContext context, rendererContext;
 static bool failed, es;
@@ -386,9 +456,11 @@ static bool start(void) {
 	if (found) {
 		programs[FADE] = link(fadeSource);
 		programs[GRID] = link(gridSource);
+		programs[FADE_FAST] = link(fadeFastSource);
+		programs[GRID_FAST] = link(gridFastSource);
 		gl.GenFramebuffers(1, &framebuffer);
 	}
-	if (!found || !programs[FADE] || !programs[GRID]) {
+	if (!found || !programs[FADE] || !programs[GRID] || !programs[FADE_FAST] || !programs[GRID_FAST]) {
 		SDL_GL_MakeCurrent(app.window, rendererContext);
 		lcdGlStop();
 		return giveUp();
@@ -472,7 +544,7 @@ static GLuint fade(const struct LcdGlLook* look) {
 		return faded[fadedNow];
 	}
 	int const next = !fadedNow;
-	GLuint const p = programs[FADE];
+	GLuint const p = programs[look->fast ? FADE_FAST : FADE];
 	gl.UseProgram(p);
 	gl.ActiveTexture(GL_TEXTURE0);
 	gl.BindTexture(GL_TEXTURE_2D, picture);
@@ -538,7 +610,7 @@ bool lcdGlDraw(SDL_Rect to, const struct LcdGlLook* look) {
 		++pictures;
 		pictureNew = false;
 	}
-	GLuint const p = programs[GRID];
+	GLuint const p = programs[look->fast ? GRID_FAST : GRID];
 	gl.UseProgram(p);
 	gl.ActiveTexture(GL_TEXTURE0);
 	gl.BindTexture(GL_TEXTURE_2D, source);
