@@ -104,6 +104,21 @@ static void leaveOutHost(const struct GBA* gba, struct GBA* saved) {
 	memset(saved->jitScratch, 0, sizeof(saved->jitScratch));
 	saved->jitDeferred = false;
 	saved->jitLeave = false;
+	saved->jitBase = 0;
+	saved->biosPrefetchNext = 0;
+	// The cartridge's counter is only read within a burst, whose first access sets it, and a state
+	// never falls inside one. Compiled code leaves it where it was while stepping moves it on.
+	saved->romLatch = 0;
+	saved->romNext = 0;
+	// Only the cartridge charges a sequential fetch less, and not while the prefetch buffer reads on, so
+	// otherwise the flag is kept as compiled code keeps it. A stopped buffer's start is set again before
+	// it's read.
+	if ((saved->cpu.r[15] >> 24) < REGION_ROM0 || (saved->cpu.r[15] >> 24) > REGION_ROM2_EX || saved->cpu.prefetching) {
+		saved->cpu.fetchSeq = true;
+	}
+	if (!saved->cpu.prefetching) {
+		saved->prefetcher.base = 0;
+	}
 	saved->idleMark = 0;
 	saved->idleCycles = 0;
 	saved->idleRuns = 0;
