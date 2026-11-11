@@ -52,8 +52,12 @@ bool skipBios;
 static int8_t cpuOverclock;
 static bool stockDuringBoot;
 static bool booting;
-enum { TILT_LEFT_STICK, TILT_RIGHT_STICK, TILT_DPAD };
+enum { TILT_LEFT_STICK, TILT_RIGHT_STICK, TILT_DPAD, TILT_DEVICE };
 static int tiltControl;
+// Device Motion: the frontend's sensors, and which of them are on.
+static struct retro_sensor_interface sensors;
+static bool accelerometerOn, gyroscopeOn;
+static void useSensors(bool tilt, bool gyro);
 static bool leftStickDpad;
 enum { RESTART_L_R_START, RESTART_L_R_A_B, RESTART_STICKS, RESTART_SELECT_START_A_B, RESTART_OFF };
 static int restartButtons;
@@ -560,7 +564,9 @@ static void showButtons(void) {
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "Turbo L");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, "Turbo R");
 	}
-	if (tiltControl != TILT_DPAD) {
+	if (tiltControl == TILT_DEVICE && forGameBoy) {
+		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "Flick (Motion Sensor)");
+	} else if (tiltControl != TILT_DPAD) {
 		unsigned const stick = tiltControl == TILT_RIGHT_STICK ? RETRO_DEVICE_INDEX_ANALOG_RIGHT : RETRO_DEVICE_INDEX_ANALOG_LEFT;
 		BUTTON(RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_X, "Tilt / Turn (Motion Sensor)");
 		BUTTON(RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_Y,
@@ -683,7 +689,7 @@ static void readOptions(void) {
 		{ "off", RESTART_OFF },
 	};
 	leftStickDpad = optionIs("armgba_left_stick_dpad", "enabled");
-	static const struct Choice tiltChoices[] = { { "right stick", TILT_RIGHT_STICK }, { "d-pad", TILT_DPAD } };
+	static const struct Choice tiltChoices[] = { { "right stick", TILT_RIGHT_STICK }, { "d-pad", TILT_DPAD }, { "device", TILT_DEVICE } };
 
 	skipBios = optionIs("armgba_skip_bios", "enabled");
 	const char* clock = option("armgba_cpu_clock");
@@ -1532,6 +1538,7 @@ bool retro_load_game_special(unsigned type, const struct retro_game_info* info, 
 }
 
 void retro_unload_game(void) {
+	useSensors(false, false);
 	if (!secondFromFrontend) {
 		rememberSecondChoice();
 	}
@@ -1622,11 +1629,53 @@ void retro_reset(void) {
 
 // Input.
 
+// Turns the frontend's motion sensors on or off: on for Device Motion with a cartridge that has a
+// tilt sensor or a gyro, outside netplay, where the other players couldn't see them.
+static void useSensors(bool tilt, bool gyro) {
+	bool const wanted = tiltControl == TILT_DEVICE && !netplaySeen;
+	tilt &= wanted;
+	gyro &= wanted;
+	if ((tilt || gyro) && !sensors.set_sensor_state && !environment(RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE, &sensors)) {
+		memset(&sensors, 0, sizeof(sensors));
+	}
+	if (!sensors.set_sensor_state) {
+		return;
+	}
+	if (tilt != accelerometerOn) {
+		accelerometerOn = sensors.set_sensor_state(0, tilt ? RETRO_SENSOR_ACCELEROMETER_ENABLE : RETRO_SENSOR_ACCELEROMETER_DISABLE, 60) && tilt;
+	}
+	if (gyro != gyroscopeOn) {
+		gyroscopeOn = sensors.set_sensor_state(0, gyro ? RETRO_SENSOR_GYROSCOPE_ENABLE : RETRO_SENSOR_GYROSCOPE_DISABLE, 60) && gyro;
+	}
+}
+
+// Device Motion: gravity and the device's own movement along the screen's right and down, as the
+// cartridge's sensor would feel them, 1 g giving 0x7FFF (a stick pushed all the way) and capped at
+// 2 g so that a flick still counts. False with no readings, for the left stick to stand in.
+static bool deviceMotion(int* x, int* y) {
+	if (!accelerometerOn) {
+		return false;
+	}
+	float const right = sensors.get_sensor_input(0, RETRO_SENSOR_ACCELEROMETER_X);
+	float const up = sensors.get_sensor_input(0, RETRO_SENSOR_ACCELEROMETER_Y);
+	float const out = sensors.get_sensor_input(0, RETRO_SENSOR_ACCELEROMETER_Z);
+	if (right == 0 && up == 0 && out == 0) {
+		return false;
+	}
+	// The sensor reads the push that holds the device up, so a side tipped down reads away from it.
+	float const scale = 0x7FFF / 9.80665f;
+	*x = (int) fmaxf(-0xFFFE, fminf(0xFFFE, -right * scale));
+	*y = (int) fmaxf(-0xFFFE, fminf(0xFFFE, up * scale));
+	return true;
+}
+
 // Reads the motion sensor control: a stick, or the D-pad pushed all the way, giving -0x7FFF to
-// 0x7FFF on each axis. Also reports whether the stick is clicked, or L is held when using the
-// D-pad.
+// 0x7FFF on each axis, or the device's motion. Also reports whether the stick is clicked, or L is
+// held when using the D-pad, or L3 with Device Motion.
 static void readMotion(uint16_t keys, int* x, int* y, bool* click) {
-	if (tiltControl == TILT_DPAD) {
+	if (deviceMotion(x, y)) {
+		*click = !switchStick(RETRO_DEVICE_ID_JOYPAD_L3) && inputState(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3);
+	} else if (tiltControl == TILT_DPAD) {
 		*x = keys & KEY_RIGHT ? 0x7FFF : keys & KEY_LEFT ? -0x7FFF : 0;
 		*y = keys & KEY_DOWN ? 0x7FFF : keys & KEY_UP ? -0x7FFF : 0;
 		*click = keys & KEY_L;
@@ -1645,6 +1694,7 @@ static void readTilt(uint16_t keys) {
 	int x;
 	int y;
 	bool click;
+	useSensors(true, false);
 	readMotion(keys, &x, &y, &click);
 	if (click && !pressed.flickHeld) {
 		libretroGbFlick();
@@ -1707,10 +1757,17 @@ static void readSensors(uint16_t keys) {
 		int x;
 		int y;
 		bool click;
+		useSensors(devices & HW_TILT, devices & HW_GYRO);
 		readMotion(keys, &x, &y, &click);
 		gba->gpio.tiltInputX = x * 0x3800;
 		gba->gpio.tiltInputY = y * 0x3800;
 		gba->gpio.gyroZ = x * 11000;
+		if (gyroscopeOn) {
+			// The cartridge's gyro reads up to about 300 degrees a second (5 rad/s) either way;
+			// turning clockwise as the stick's right does.
+			float const turn = -sensors.get_sensor_input(0, RETRO_SENSOR_GYROSCOPE_Z) / 5.0f;
+			gba->gpio.gyroZ = (int32_t) (fmaxf(-2, fminf(2, turn)) * 0x7FFF * 11000);
+		}
 	}
 	if (devices & HW_LIGHT_SENSOR) {
 		static const int levels[10] = { 5, 11, 18, 27, 42, 62, 84, 109, 139, 183 };

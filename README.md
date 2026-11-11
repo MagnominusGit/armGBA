@@ -41,7 +41,11 @@ interrupts, DMA, timers and what's on screen all happen when they would on the h
 | L, R, Start (held 1 s) | Restart that player's console (the Restart Combo option) | Same |
 
 The tilt stick is the left stick by default. Tilt Control moves it to the right stick or the D-pad;
-with the D-pad, L is the flick.
+with the D-pad, L is the flick. Device Motion tilts the cartridge with the device itself, where the
+frontend passes its motion sensors on (RetroArch on Android, and the standalone frontend on devices
+with them): the cartridge feels what the device does, held flat reading level, and a quick flick
+counts as one. L3 also flicks, and the gyro cartridge turns with the device. In netplay, or with no
+readings, the left stick tilts instead.
 
 With the consoles of a link on one device, R2 changes how the screens are shown. L2 fast-forwards or
 changes the layout back, as the L2 Button option says; in netplay, L2 always changes it back. Each
@@ -95,7 +99,7 @@ standalone frontend shows as one page with headers.
 | Audio | Low-Pass Filter | Both | Off, 20%, 40%, 60%, 80% |
 | Input | Left Stick as D-Pad | Both | Off, On |
 | | Turbo Button Period | Both | 4 to 120 frames, 4 by default |
-| | Tilt Control | Both | Left Stick, Right Stick, D-Pad |
+| | Tilt Control | Both | Left Stick, Right Stick, D-Pad, Device Motion |
 | | Solar Sensor | Game Boy Advance | 0 (Dark) to 10 (Full Sun), 5 by default |
 | | Restart Combo | Both | L + R + Start, L + R + A + B, L3 + R3, Select + Start + A + B, Off |
 | Link | Link Mode (applies on restart) | Both | Off, Together, Separate, GameCube (Game Boy Advance) |
