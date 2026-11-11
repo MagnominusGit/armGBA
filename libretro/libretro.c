@@ -1900,9 +1900,13 @@ static void soundBufferStatus(bool active, unsigned occupancy, bool underrunLike
 	soundShort = underrunLikely;
 }
 
+// Fast-Forward Skip: frames the frontend won't show while it fast-forwards aren't drawn.
+static bool fastForwardSkip;
+
 static void readFrameSkip(void) {
 	static const struct Choice choices[] = { { "auto", -1 }, { "1", 1 }, { "2", 2 }, { "3", 3 } };
 	frameSkip = optionChoice("armgba_frame_skip", choices, COUNT(choices), 0);
+	fastForwardSkip = !optionIs("armgba_fast_forward_skip", "disabled");
 	struct retro_audio_buffer_status_callback status = { frameSkip < 0 ? soundBufferStatus : NULL };
 	if (!environment(RETRO_ENVIRONMENT_SET_AUDIO_BUFFER_STATUS_CALLBACK, &status) || frameSkip >= 0) {
 		soundActive = false;
@@ -1911,12 +1915,18 @@ static void readFrameSkip(void) {
 
 // Whether this frame is left out: with Auto while the sound is about to run short, a third full or
 // less, and no more than three in a row; otherwise the set count after each one shown. Never in
-// netplay, where every device's state must match, nor for a frame RetroArch runs again.
+// netplay, where every device's state must match, nor for a frame RetroArch runs again. With
+// Fast-Forward Skip, a GBA frame the frontend won't show while it fast-forwards is left out too.
 static bool skipThisFrame(void) {
 	static int run;
 	bool skip = false;
 	if (frameSkip && !netplaySeen && !rerunning()) {
 		skip = frameSkip < 0 ? soundActive && (soundShort || soundFull <= 33) && run < 3 : run < frameSkip;
+	}
+	bool fastForwarding = false;
+	if (!skip && fastForwardSkip && !gameBoy && !netplaySeen && rerunning() &&
+	    environment(RETRO_ENVIRONMENT_GET_FASTFORWARDING, &fastForwarding) && fastForwarding) {
+		skip = true;
 	}
 	if (!skip) {
 		framesSkipped = run;

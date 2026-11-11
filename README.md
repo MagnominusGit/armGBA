@@ -87,6 +87,7 @@ standalone frontend shows as one page with headers.
 | | Game Boy on GBA: Border | Game Boy | Cropped, Shown (Game Boy Advance model) |
 | | Game Boy on GBA: Screen | Game Boy | Game Boy Advance, Game Boy Color (Game Boy Advance model) |
 | | Frame Skip | Both | Off, Auto, 1, 2, 3 (not in netplay) |
+| | Fast-Forward Skip | Game Boy Advance | Off, On (on by default; not in netplay) |
 | Video: LCD Effects | CPU LCD Effects | Both | Off, On (each effect below keeps its setting) |
 | | LCD Ghosting | Both | Off, 25%, 50%, 75%, 100% |
 | | Interlaced Rows | Both | Off, On (Color's and Advance's screens) |
@@ -164,6 +165,11 @@ skip that many frames after each frame shown. The game still runs every frame, s
 and saves the same. A skipped frame isn't drawn by the Game Boy Advance's renderer or by the LCD
 effects, and RetroArch shows the last picture again. LCD Ghosting catches up on the next frame
 shown. Frame Skip stays off in netplay, where every device's state must match.
+
+Fast-Forward Skip does the same for the frames a frontend runs but won't show while it
+fast-forwards: RetroArch with its fast-forward frame skip on, and the standalone frontend, which
+shows only the last frame before each picture. It's on by default and works for Game Boy Advance
+games; it stays off in netplay.
 
 ### Game Boy games on the Game Boy Advance model
 
