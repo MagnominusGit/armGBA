@@ -79,6 +79,7 @@ standalone frontend shows as one page with headers.
 | | Allow Clock Reset | Both (Game Boy: MBC3) | Off, On (back to Off after a reset) |
 | | Reset Clock (with Allow Clock Reset on) | Both (Game Boy: MBC3) | Off, Reset |
 | Video | Threaded Video | Game Boy Advance | Off, On, One Frame Late |
+| | Video Threads (with Threaded Video) | Game Boy Advance | 1, 2 |
 | | GBA Color Correction | Game Boy Advance | Off, On |
 | | Game Boy Color Correction | Game Boy | Off, On |
 | | Game Boy Screen | Game Boy | Grayscale, Game Boy, Game Boy Pocket (both measured from real ones), Game Boy Light (Backlit) |
@@ -201,11 +202,11 @@ RetroArch's aspect ratio set to the core's and integer scaling either way. Stret
 instead, a picture's columns land unevenly, and stripes and gaps show as uneven bands.
 
 LCD Scale runs on the CPU in vector code (NEON, SSE or AVX). LCD Scale and LCD Ghosting split their
-rows among the CPU's cores. LCD Effect Threads sets how many cores; Auto leaves one free, or uses
-two with Threaded Video. The shadow is one shade for each pixel's square, close to the smooth shadow
-that the shaders and the standalone frontend draw, at a fraction of the cost. At 6x, a Game Boy
-game's grid adds about 1.5 ms a frame on an RG353M and its shadow 0.1 ms more; on a Core i7-9700F,
-0.07 ms and 0.02 ms.
+rows among the CPU's cores. LCD Effect Threads sets how many cores; Auto leaves one free, and one
+more for each of Threaded Video's threads. The shadow is one shade for each pixel's square, close to
+the smooth shadow that the shaders and the standalone frontend draw, at a fraction of the cost. At
+6x, a Game Boy game's grid adds about 1.5 ms a frame on an RG353M and its shadow 0.1 ms more; on a
+Core i7-9700F, 0.07 ms and 0.02 ms.
 
 LCD Subpixels draws the red, green and blue stripes of the Color's and Advance's screens inside each
 pixel. Photos of the two screens show red, green and blue from the left on the Color, and blue,

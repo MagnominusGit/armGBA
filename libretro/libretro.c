@@ -89,6 +89,7 @@ static struct {
 static retro_set_rumble_state_t setRumble;
 static bool rumbling;
 int threadedVideo;
+int videoThreads = 1;
 // Color correction: each RGB565 color, green's low bit ignored, to its corrected color.
 static bool colorCorrection;
 static uint16_t* correctedColors;
@@ -703,13 +704,15 @@ static void readOptions(void) {
 	int threaded = optionChoice("armgba_threaded_video", threadedChoices, COUNT(threadedChoices), THREADED_OFF);
 	// Linked consoles run in turns, which a render thread would only slow.
 	threaded = gbaTogether ? THREADED_OFF : threaded;
-	if (gba && threaded != threadedVideo) {
+	int const threads = optionIs("armgba_video_threads", "2") ? 2 : 1;
+	if (gba && (threaded != threadedVideo || (threaded && threads != videoThreads))) {
 		renderThreadStop(gba);
 		if (threaded) {
-			renderThreadStart(gba, threaded == THREADED_LATE);
+			renderThreadStart(gba, threaded == THREADED_LATE, threads == 2);
 		}
 	}
 	threadedVideo = threaded;
+	videoThreads = threads;
 	colorCorrection = optionIs("armgba_color_correction", "enabled") && buildCorrectedColors();
 	// CPU LCD Effects off leaves each effect's setting as it is, and off.
 	bool const effects = optionIs("armgba_lcd_effects", "enabled");

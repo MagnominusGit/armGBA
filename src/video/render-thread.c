@@ -407,7 +407,7 @@ const struct Renderer* renderThreadRenderer(struct GBA* gba) {
 
 // Starts the worker with a copy of the renderer and of video memory as they are now. With late,
 // each frame is handed over one frame after it was made, so the emulation thread never waits.
-bool renderThreadStart(struct GBA* gba, bool late) {
+bool renderThreadStart(struct GBA* gba, bool late, bool second) {
 	if (gba->renderThread) {
 		return true;
 	}
@@ -447,9 +447,7 @@ bool renderThreadStart(struct GBA* gba, bool late) {
 	}
 	// A second worker where there is a core for it. Nothing is logged yet, so the workers wait.
 #if defined(__3DS__)
-	bool second = true;
-#else
-	bool second = getenv("ARMGBA_RENDER_WORKERS") && atoi(getenv("ARMGBA_RENDER_WORKERS")) == 2;
+	second = true;
 #endif
 	if (second) {
 		t->workers[1].copy = calloc(1, sizeof(struct GBA));

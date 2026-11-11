@@ -221,8 +221,8 @@ void renderFinishFrame(struct GBA*);
 // render-thread.c: drawing on a second thread. Once started, each call above is logged for it after
 // it is made here, except renderScanline, which only the thread makes; the frame is complete after
 // renderFinishFrame. With late, renderFinishFrame hands back the frame before the one it ends, so
-// drawing overlaps emulation.
-bool renderThreadStart(struct GBA*, bool late);
+// drawing overlaps emulation. With second, two threads draw, each every other line.
+bool renderThreadStart(struct GBA*, bool late, bool second);
 void renderThreadStop(struct GBA*);
 void renderThreadClone(struct GBA*);
 // Returns the copy's renderer, with everything logged so far drawn.
