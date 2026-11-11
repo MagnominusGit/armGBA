@@ -21,6 +21,9 @@ enum {
 	EVENTS = 12 + 4 + 12 + 7 + 4,
 };
 
+// Where the cartridge port's registers read in the ROM.
+enum { GPIO_REGISTERS = 0xC4 };
+
 struct StateHeader {
 	uint32_t magic;
 	uint32_t size;
@@ -31,6 +34,10 @@ struct StateHeader {
 	uint8_t queued;
 	// Whether the video event is an H-blank's or a line's.
 	bool hblank;
+	// The cartridge port's registers, which read in the ROM at 0x080000C4-C9, and whether they are
+	// here (not in a state from before them).
+	uint8_t gpioRegisters[6];
+	bool gpioKept;
 };
 
 // Lists every event inside the machine in a fixed order, so a state can name them by number.
@@ -189,6 +196,10 @@ void gbaSaveState(struct GBA* gba, void* state) {
 		}
 	}
 	header.hblank = videoEventIsHblank(gba);
+	if (gba->rom) {
+		memcpy(header.gpioRegisters, &gba->rom[GPIO_REGISTERS], sizeof(header.gpioRegisters));
+		header.gpioKept = true;
+	}
 	struct GBA* saved = (struct GBA*) ((uint8_t*) state + sizeof(header));
 	memcpy(state, &header, sizeof(header));
 	memcpy(saved, gba, sizeof(*gba));
@@ -311,6 +322,9 @@ bool gbaLoadState(struct GBA* gba, const void* state, size_t size) {
 	timingResetNextEvent(gba);
 	free(host);
 
+	if (header.gpioKept && gba->rom) {
+		memcpy(&gba->rom[GPIO_REGISTERS], header.gpioRegisters, sizeof(header.gpioRegisters));
+	}
 	jitStateLoaded(gba, flush);
 	cartRestore(gba);
 	if (gba->renderThread) {
