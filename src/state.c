@@ -126,6 +126,12 @@ static void leaveOutHost(const struct GBA* gba, struct GBA* saved) {
 	if (!saved->cpu.prefetching) {
 		saved->prefetcher.base = 0;
 	}
+	// The drawing code's 32-bit and byte copies of the palettes are rebuilt from the palettes when
+	// used, at times that differ between the x86 and ARM drawing code, so they are saved as stale.
+	memset(saved->renderer.normal32, 0, sizeof(saved->renderer.normal32));
+	memset(saved->renderer.variant32, 0, sizeof(saved->renderer.variant32));
+	memset(saved->renderer.bankBytes, 0, sizeof(saved->renderer.bankBytes));
+	saved->renderer.palette32Stale = 0xFFFFFFFF;
 	// With no H-blank request pending, IF's stable time only means far off, from whenever it was last set.
 	if (!saved->irq.quietPending) {
 		saved->irq.ifStable = timingCpuTime(saved) + INT32_MAX;
