@@ -212,6 +212,7 @@ void renderReset(struct GBA*);
 void renderInit(void);
 uint16_t renderWriteRegister(struct GBA*, uint32_t address, uint16_t value);
 void renderScanline(struct GBA*, int y);
+void renderSkipScanline(struct GBA*, int y);
 // At the start of each line, the affine backgrounds finish the last line and take on new reference
 // points.
 void renderStartLine(struct GBA*, int y);
@@ -229,6 +230,7 @@ void renderThreadClone(struct GBA*);
 const struct Renderer* renderThreadRenderer(struct GBA*);
 void renderThreadRegister(struct GBA*, uint32_t address, uint16_t value);
 void renderThreadScanline(struct GBA*, int y);
+void renderThreadSkipScanline(struct GBA*, int y);
 void renderThreadStartLine(struct GBA*, int y);
 void renderThreadLatch(struct GBA*);
 void renderThreadFinishFrame(struct GBA*);
