@@ -119,6 +119,10 @@ static void leaveOutHost(const struct GBA* gba, struct GBA* saved) {
 	if (!saved->cpu.prefetching) {
 		saved->prefetcher.base = 0;
 	}
+	// With no H-blank request pending, IF's stable time only means far off, from whenever it was last set.
+	if (!saved->irq.quietPending) {
+		saved->irq.ifStable = timingCpuTime(saved) + INT32_MAX;
+	}
 	saved->idleMark = 0;
 	saved->idleCycles = 0;
 	saved->idleRuns = 0;
