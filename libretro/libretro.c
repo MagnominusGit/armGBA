@@ -57,6 +57,8 @@ static int tiltControl;
 // Device Motion: the frontend's sensors, and which of them are on.
 static struct retro_sensor_interface sensors;
 static bool accelerometerOn, gyroscopeOn;
+// Device Motion Sensor Rotation: quarter turns of the screen from the sensor's own axes.
+static int motionRotation;
 static void useSensors(bool tilt, bool gyro);
 static bool leftStickDpad;
 enum { RESTART_L_R_START, RESTART_L_R_A_B, RESTART_STICKS, RESTART_SELECT_START_A_B, RESTART_OFF };
@@ -811,6 +813,8 @@ static void readOptions(void) {
 	turboPulse = clampInt(turboPeriod / 2, 2, 15);
 	linkSetGbExact(optionIs("armgba_gb_link_timing", "exact"));
 	restartButtons = optionChoice("armgba_restart_buttons", restartChoices, COUNT(restartChoices), RESTART_L_R_START);
+	static const struct Choice rotationChoices[] = { { "90", 1 }, { "180", 2 }, { "270", 3 } };
+	motionRotation = optionChoice("armgba_motion_rotation", rotationChoices, COUNT(rotationChoices), 0);
 	int const tilt = optionChoice("armgba_gb_tilt", tiltChoices, COUNT(tiltChoices), TILT_LEFT_STICK);
 	if (tilt != tiltControl) {
 		tiltControl = tilt;
@@ -1656,12 +1660,18 @@ static bool deviceMotion(int* x, int* y) {
 	if (!accelerometerOn) {
 		return false;
 	}
-	float const right = sensors.get_sensor_input(0, RETRO_SENSOR_ACCELEROMETER_X);
-	float const up = sensors.get_sensor_input(0, RETRO_SENSOR_ACCELEROMETER_Y);
+	float const sensorX = sensors.get_sensor_input(0, RETRO_SENSOR_ACCELEROMETER_X);
+	float const sensorY = sensors.get_sensor_input(0, RETRO_SENSOR_ACCELEROMETER_Y);
 	float const out = sensors.get_sensor_input(0, RETRO_SENSOR_ACCELEROMETER_Z);
-	if (right == 0 && up == 0 && out == 0) {
+	if (sensorX == 0 && sensorY == 0 && out == 0) {
 		return false;
 	}
+	// The sensor's axes turned to the screen's, for a frontend that passes them on as the device has
+	// them (RetroArch on a handheld whose screen is naturally upright, for one).
+	static const float turns[4][4] = { { 1, 0, 0, 1 }, { 0, -1, 1, 0 }, { -1, 0, 0, -1 }, { 0, 1, -1, 0 } };
+	const float* const turn = turns[motionRotation];
+	float const right = turn[0] * sensorX + turn[1] * sensorY;
+	float const up = turn[2] * sensorX + turn[3] * sensorY;
 	// The sensor reads the push that holds the device up, so a side tipped down reads away from it.
 	float const scale = 0x7FFF / 9.80665f;
 	*x = (int) fmaxf(-0xFFFE, fminf(0xFFFE, -right * scale));

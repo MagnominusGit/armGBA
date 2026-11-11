@@ -45,7 +45,8 @@ with the D-pad, L is the flick. Device Motion tilts the cartridge with the devic
 frontend passes its motion sensors on (RetroArch on Android, and the standalone frontend on devices
 with them): the cartridge feels what the device does, held flat reading level, and a quick flick
 counts as one. L3 also flicks, and the gyro cartridge turns with the device. In netplay, or with no
-readings, the left stick tilts instead.
+readings, the left stick tilts instead. If tilting goes the wrong way, Device Motion Sensor Rotation
+turns the sensor to match the screen: usually 0° in the standalone app, often 90° in RetroArch.
 
 With the consoles of a link on one device, R2 changes how the screens are shown. L2 fast-forwards or
 changes the layout back, as the L2 Button option says; in netplay, L2 always changes it back. Each
@@ -100,6 +101,7 @@ standalone frontend shows as one page with headers.
 | Input | Left Stick as D-Pad | Both | Off, On |
 | | Turbo Button Period | Both | 4 to 120 frames, 4 by default |
 | | Tilt Control | Both | Left Stick, Right Stick, D-Pad, Device Motion |
+| | Device Motion Sensor Rotation (with Device Motion) | Both | 0°, 90°, 180°, 270° |
 | | Solar Sensor | Game Boy Advance | 0 (Dark) to 10 (Full Sun), 5 by default |
 | | Restart Combo | Both | L + R + Start, L + R + A + B, L3 + R3, Select + Start + A + B, Off |
 | Link | Link Mode (applies on restart) | Both | Off, Together, Separate, GameCube (Game Boy Advance) |
