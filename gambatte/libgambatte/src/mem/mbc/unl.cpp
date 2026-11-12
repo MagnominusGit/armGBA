@@ -11,6 +11,7 @@
 //   GNU General Public License version 2 for more details.
 //
 
+#include "gbint.h"
 #include "mbc.h"
 
 namespace gambatte {
@@ -90,7 +91,7 @@ bool UnlMbc5::disabledRam() const {
 	return !enableRam_;
 }
 
-void UnlMbc5::romWrite(unsigned const p, unsigned data, unsigned long const cc) {
+void UnlMbc5::romWrite(unsigned const p, unsigned data, gb_ulong const cc) {
 	switch (kind_) {
 	case bbd:
 	case hitek:
@@ -203,10 +204,10 @@ void UnlMbc5::saveState(SaveState::Mem &ss) const {
 		ss.mbcExtra2 = 0;
 	} else if (kind_ == ntnew) {
 		ss.mbcExtra = split_;
-		ss.mbcExtra2 = half_[0] | 1ul * half_[1] << 16;
+		ss.mbcExtra2 = half_[0] | 1u * half_[1] << 16;
 	} else {
-		ss.mbcExtra = dataMode_ | bankMode_ << 4 | sintaxMode_ << 8 | 1ul * sintaxBank_ << 16;
-		ss.mbcExtra2 = xor_[0] | xor_[1] << 8 | xor_[2] << 16 | 1ul * xor_[3] << 24;
+		ss.mbcExtra = dataMode_ | bankMode_ << 4 | sintaxMode_ << 8 | 1u * sintaxBank_ << 16;
+		ss.mbcExtra2 = xor_[0] | xor_[1] << 8 | xor_[2] << 16 | 1u * xor_[3] << 24;
 	}
 }
 
@@ -281,7 +282,7 @@ void UnlMbc5::mapRombank() {
 	if (kind_ == ntnew && splitMapped_) {
 		// Two halves side by side in the spare bank.
 		for (unsigned i = 0; i < 2; ++i) {
-			std::memcpy(spare + i * 0x2000, memptrs_.romdata() + (half_[i] & (banks_ * 2 - 1)) * 0x2000ul, 0x2000);
+			std::memcpy(spare + i * 0x2000, memptrs_.romdata() + (half_[i] & (banks_ * 2 - 1)) * 0x2000u, 0x2000);
 		}
 		memptrs_.setRombank(banks_);
 		return;

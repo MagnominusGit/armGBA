@@ -3,7 +3,9 @@
 > as of 2026-10-12), without its frontend, tests and build scripts, so the build steps below don't
 > apply here. armGBA's changes are marked `armGBA:` in the source, and six files are its own:
 > `mbc7.cpp`, `pkjd.cpp`, `sachen.cpp`, `tama5.cpp`, `unl.cpp` and `vf001.cpp` in
-> `libgambatte/src/mem/mbc/`. The rest of this file is Gambatte-Speedrun's.
+> `libgambatte/src/mem/mbc/`. Its `long` and `unsigned long` are `gb_long` and `gb_ulong`
+> (`gbint.h`), 32 bits on every build, so 32-bit and 64-bit devices run and save alike. The rest of
+> this file is Gambatte-Speedrun's.
 
 # Gambatte-Speedrun
 

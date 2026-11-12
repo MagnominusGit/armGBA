@@ -16,6 +16,7 @@
 //   51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.
 //
 
+#include "gbint.h"
 #include "ppu.h"
 #include "gambatte.h"
 #include "savestate.h"
@@ -139,7 +140,7 @@ inline void nextCall(int const cycles, PPUState const &state, PPUPriv &p) {
 	p.nextCallPtr = &state;
 }
 
-inline unsigned long const * cgbSpPalette(PPUPriv const &p, unsigned const attrib) {
+inline gb_ulong const * cgbSpPalette(PPUPriv const &p, unsigned const attrib) {
 	if (!p.cgbDmg)
 		return p.spPalette + (attrib & attr_cgbpalno) * num_palette_entries;
 	else
@@ -380,8 +381,8 @@ inline void handleSpritePriorityDmg(PPUPriv &p, int i, uint_least32_t *dst, int 
 		n = tile_len - pos;
 
 	unsigned const attrib = p.spriteList[i].attrib;
-	long spword = p.spwordList[i];
-	unsigned long const *const spPalette = p.spPalette
+	gb_long spword = p.spwordList[i];
+	gb_ulong const *const spPalette = p.spPalette
 		+ (attrib & attr_dmgpalno) / (attr_dmgpalno / num_palette_entries);
 	uint_least32_t *d = dst + pos;
 
@@ -428,7 +429,7 @@ inline void handleSpritePriorityDmg(PPUPriv &p, int i, uint_least32_t *dst, int 
 }
 
 inline void handleSpritePriorityCgb(PPUPriv &p, int i, uint_least32_t *dst, int xpos, unsigned tileword,
-		unsigned const attrib, unsigned const bgprioritymask, unsigned char *idtab, unsigned long const *const bgPalette) {
+		unsigned const attrib, unsigned const bgprioritymask, unsigned char *idtab, gb_ulong const *const bgPalette) {
 	int n;
 	int pos = spx(p.spriteList[i]) - xpos;
 	if (pos < 0) {
@@ -439,8 +440,8 @@ inline void handleSpritePriorityCgb(PPUPriv &p, int i, uint_least32_t *dst, int 
 
 	unsigned char const id = p.spriteList[i].oampos;
 	unsigned const sattrib = p.spriteList[i].attrib;
-	long spword = p.spwordList[i];
-	unsigned long const *const spPalette = cgbSpPalette(p, sattrib);
+	gb_long spword = p.spwordList[i];
+	gb_ulong const *const spPalette = cgbSpPalette(p, sattrib);
 
 	if (!((attrib | sattrib) & bgprioritymask)) {
 		unsigned char  *const idt = idtab + pos;
@@ -565,11 +566,11 @@ void doFullTilesUnrolledDmg(PPUPriv &p, int const xend, uint_least32_t *const db
 
 			p.nextSprite = nextSprite;
 		} else if (nextSprite - 1 < 0 || spx(p.spriteList[nextSprite - 1]) <= xpos - tile_len) {
-			if (!(p.cycles & -1ul * tile_len))
+			if (!(p.cycles & -1u * tile_len))
 				break;
 
 			int n = (std::min(spx(p.spriteList[nextSprite]), xend + tile_len - 1) - xpos) & -1u * tile_len;
-			n = std::min<long>(n, p.cycles & -1ul * tile_len);
+			n = std::min<gb_long>(n, p.cycles & -1u * tile_len);
 			p.cycles -= n;
 
 			unsigned ntileword = p.ntileword;
@@ -636,7 +637,7 @@ void doFullTilesUnrolledDmg(PPUPriv &p, int const xend, uint_least32_t *const db
 					int const sa = pos * tile_bpp >= 0
 						? tile_len * tile_bpp - pos * tile_bpp
 						: tile_len * tile_bpp + pos * tile_bpp;
-					p.spwordList[i] = 1l * p.spwordList[i] >> sa;
+					p.spwordList[i] = 1 * p.spwordList[i] >> sa;
 					--i;
 				} while (i >= 0 && spx(p.spriteList[i]) > xpos - tile_len);
 			} else {
@@ -705,11 +706,11 @@ void doFullTilesUnrolledCgb(PPUPriv &p, int const xend, uint_least32_t *const db
 
 			p.nextSprite = nextSprite;
 		} else if (nextSprite - 1 < 0 || spx(p.spriteList[nextSprite - 1]) <= xpos - tile_len) {
-			if (!(p.cycles & -1ul * tile_len))
+			if (!(p.cycles & -1u * tile_len))
 				break;
 
 			int n = (std::min(spx(p.spriteList[nextSprite]), xend + tile_len - 1) - xpos) & -1u * tile_len;
-			n = std::min<long>(n, p.cycles & -1ul * tile_len);
+			n = std::min<gb_long>(n, p.cycles & -1u * tile_len);
 			p.cycles -= n;
 
 			unsigned ntileword = p.ntileword;
@@ -728,7 +729,7 @@ void doFullTilesUnrolledCgb(PPUPriv &p, int const xend, uint_least32_t *const db
 					ntileword = expand_lut[(tileDataLine + ts * tno - 2 * ts * (tno & tileIndexSign))[0]]
 						  + expand_lut[(tileDataLine + ts * tno - 2 * ts * (tno & tileIndexSign))[1]] * 2;
 				} else do {
-					unsigned long const *const bgPalette = p.bgPalette
+					gb_ulong const *const bgPalette = p.bgPalette
 						+ (nattrib & attr_cgbpalno) * num_palette_entries;
 					dst[0] = bgPalette[ ntileword & tile_bpp_mask                                 ];
 					dst[1] = bgPalette[(ntileword & tile_bpp_mask << 1 * tile_bpp) >> 1 * tile_bpp];
@@ -768,7 +769,7 @@ void doFullTilesUnrolledCgb(PPUPriv &p, int const xend, uint_least32_t *const db
 			uint_least32_t *const dst = dbufline + (xpos - tile_len);
 			unsigned const tileword = -(p.layersMask & layer_mask_bg) & (((p.lcdc & 1u * lcdc_bgen) | !p.cgbDmg) * p.ntileword);
 			unsigned const attrib   = -(p.layersMask & layer_mask_bg) & p.nattrib;
-			unsigned long const *const bgPalette = p.bgPalette
+			gb_ulong const *const bgPalette = p.bgPalette
 				+ (attrib & attr_cgbpalno) * num_palette_entries;
 			dst[0] = bgPalette[ tileword & tile_bpp_mask                                 ];
 			dst[1] = bgPalette[(tileword & tile_bpp_mask << 1 * tile_bpp) >> 1 * tile_bpp];
@@ -787,7 +788,7 @@ void doFullTilesUnrolledCgb(PPUPriv &p, int const xend, uint_least32_t *const db
 					int const sa = pos * tile_bpp >= 0
 						? tile_len * tile_bpp - pos * tile_bpp
 						: tile_len * tile_bpp + pos * tile_bpp;
-					p.spwordList[i] = 1l * p.spwordList[i] >> sa;
+					p.spwordList[i] = 1 * p.spwordList[i] >> sa;
 					--i;
 				} while (i >= 0 && spx(p.spriteList[i]) > xpos - tile_len);
 			} else {
@@ -894,7 +895,7 @@ void plotPixel(PPUPriv &p) {
 		uint_least32_t *const fbline = p.framebuf.fbline();
 
 		unsigned const twdata = tileword & (((p.lcdc & lcdc_bgen) | (p.cgb * !p.cgbDmg)) & p.layersMask) * tile_bpp_mask;
-		unsigned long pixel = p.bgPalette[twdata + (p.attrib & attr_cgbpalno & -(p.layersMask & layer_mask_bg)) * num_palette_entries];
+		gb_ulong pixel = p.bgPalette[twdata + (p.attrib & attr_cgbpalno & -(p.layersMask & layer_mask_bg)) * num_palette_entries];
 		int i = static_cast<int>(p.nextSprite) - 1;
 
 		if (i >= 0 && spx(p.spriteList[i]) > xpos - tile_len) {
@@ -956,7 +957,7 @@ void plotPixelIfNoSprite(PPUPriv &p) {
 		plotPixel(p);
 }
 
-unsigned long nextM2Time(PPUPriv const &p) {
+gb_ulong nextM2Time(PPUPriv const &p) {
 	int const nm2 = p.lyCounter.ly() < lcd_vres - 1
 		? weMasterCheckPriorToLyIncLineCycle(p.cgb)
 		: lcd_cycles_per_line * (lcd_lines_per_frame - p.lyCounter.ly())
@@ -967,10 +968,10 @@ unsigned long nextM2Time(PPUPriv const &p) {
 void xposEnd(PPUPriv &p) {
 	p.lastM0Time = p.now - (p.cycles << p.lyCounter.isDoubleSpeed());
 
-	unsigned long const nextm2 = nextM2Time(p);
+	gb_ulong const nextm2 = nextM2Time(p);
 	p.cycles = p.now >= nextm2
-		? static_cast<long>((p.now - nextm2) >> p.lyCounter.isDoubleSpeed())
-		: -static_cast<long>((nextm2 - p.now) >> p.lyCounter.isDoubleSpeed());
+		? static_cast<gb_long>((p.now - nextm2) >> p.lyCounter.isDoubleSpeed())
+		: -static_cast<gb_long>((nextm2 - p.now) >> p.lyCounter.isDoubleSpeed());
 	nextCall(0, p.lyCounter.ly() == lcd_vres - 1 ? M2_Ly0::f0_ : M2_LyNon0::f0_, p);
 }
 
@@ -1647,8 +1648,8 @@ std::size_t upperBound(T const a[], K e) {
 
 struct CycleState {
 	PPUState const *state;
-	long cycle;
-	operator long() const { return cycle; }
+	gb_long cycle;
+	operator gb_long() const { return cycle; }
 };
 
 PPUState const * decodeM3LoopState(unsigned state) {
@@ -1678,8 +1679,8 @@ PPUState const * decodeM3LoopState(unsigned state) {
 	return 0;
 }
 
-long cyclesUntilM0Upperbound(PPUPriv const &p) {
-	long cycles = xpos_end - p.xpos + 6;
+gb_long cyclesUntilM0Upperbound(PPUPriv const &p) {
+	gb_long cycles = xpos_end - p.xpos + 6;
 	for (int i = p.nextSprite; i < lcd_max_num_sprites_per_line && p.spriteList[i].spx < xpos_end; ++i)
 		cycles += 11;
 
@@ -1698,7 +1699,7 @@ void saveSpriteList(PPUPriv const &p, SaveState &ss) {
 }
 
 void loadSpriteList(PPUPriv &p, SaveState const &ss) {
-	if (ss.ppu.videoCycles < 1ul * lcd_vres * lcd_cycles_per_line && ss.ppu.xpos < xpos_end) {
+	if (ss.ppu.videoCycles < 1u * lcd_vres * lcd_cycles_per_line && ss.ppu.xpos < xpos_end) {
 		int const ly = ss.ppu.videoCycles / lcd_cycles_per_line;
 		int const numSprites = p.spriteMapper.numSprites(ly);
 		unsigned char const *const sprites = p.spriteMapper.sprites(ly);
@@ -1712,7 +1713,7 @@ void loadSpriteList(PPUPriv &p, SaveState const &ss) {
 			p.spriteList[i].line = ly + 2 * tile_len - spy;
 			p.spriteList[i].oampos = pos * 2;
 			p.spriteList[i].attrib = ss.ppu.spAttribList[i] & 0xFF;
-			p.spwordList[i] = (ss.ppu.spByte1List[i] * 0x100l + ss.ppu.spByte0List[i]) & 0xFFFF;
+			p.spwordList[i] = (ss.ppu.spByte1List[i] * 0x100 + ss.ppu.spByte0List[i]) & 0xFFFF;
 		}
 
 		for (int i = numSprites; i < lcd_max_num_sprites_per_line; ++i) {
@@ -1760,9 +1761,9 @@ void PPU::saveState(SaveState &ss) const {
 
 void PPU::loadState(SaveState const &ss, unsigned char const *const oamram) {
 	PPUState const *const m3loopState = decodeM3LoopState(ss.ppu.state);
-	long const videoCycles = std::min(ss.ppu.videoCycles, lcd_cycles_per_frame - 1ul);
+	gb_long const videoCycles = std::min(ss.ppu.videoCycles, lcd_cycles_per_frame - 1u);
 	bool const ds = ss.ppu.notCgbDmg && (p_.cgb & ss.mem.ioamhram.get()[0x14D] >> 7);
-	long const lineCycles = static_cast<unsigned long>(videoCycles) % lcd_cycles_per_line;
+	gb_long const lineCycles = static_cast<gb_ulong>(videoCycles) % lcd_cycles_per_line;
 
 	p_.now = ss.cpu.cycleCounter;
 	p_.lcdc = ss.mem.ioamhram.get()[0x140];
@@ -1792,11 +1793,11 @@ void PPU::loadState(SaveState const &ss, unsigned char const *const oamram) {
 	p_.spPriority = (ss.ppu.spPriority & 2) ? ss.ppu.spPriority : 2 | !(p_.cgb && ss.ppu.notCgbDmg);
 	loadSpriteList(p_, ss);
 
-	if (m3loopState && videoCycles < 1l * lcd_vres * lcd_cycles_per_line && p_.xpos < xpos_end
+	if (m3loopState && videoCycles < 1 * lcd_vres * lcd_cycles_per_line && p_.xpos < xpos_end
 			&& lineCycles + cyclesUntilM0Upperbound(p_) < weMasterCheckPriorToLyIncLineCycle(p_.cgb)) {
 		p_.nextCallPtr = m3loopState;
 		p_.cycles = -1;
-	} else if (videoCycles < (lcd_vres - 1l) * lcd_cycles_per_line + m3StartLineCycle(p_.cgb) + max_m3start_cycles) {
+	} else if (videoCycles < (lcd_vres - 1) * lcd_cycles_per_line + m3StartLineCycle(p_.cgb) + max_m3start_cycles) {
 		CycleState const lineCycleStates[] = {
 			{   &M3Start::f0_, m3StartLineCycle(p_.cgb) },
 			{   &M3Start::f1_, m3StartLineCycle(p_.cgb) + max_m3start_cycles },
@@ -1829,9 +1830,9 @@ void PPU::reset(unsigned char const *oamram, unsigned char const *vram, bool cgb
 	p_.spriteMapper.reset(oamram, cgb);
 }
 
-void PPU::resetCc(unsigned long const oldCc, unsigned long const newCc) {
-	unsigned long const dec = oldCc - newCc;
-	unsigned long const videoCycles = lcdcEn(p_) ? p_.lyCounter.frameCycles(p_.now) : 0;
+void PPU::resetCc(gb_ulong const oldCc, gb_ulong const newCc) {
+	gb_ulong const dec = oldCc - newCc;
+	gb_ulong const videoCycles = lcdcEn(p_) ? p_.lyCounter.frameCycles(p_.now) : 0;
 
 	p_.now -= dec;
 	p_.lastM0Time = p_.lastM0Time ? p_.lastM0Time - dec : p_.lastM0Time;
@@ -1840,8 +1841,8 @@ void PPU::resetCc(unsigned long const oldCc, unsigned long const newCc) {
 }
 
 void PPU::speedChange() {
-	unsigned long const now = p_.now;
-	unsigned long const videoCycles = lcdcEn(p_) ? p_.lyCounter.frameCycles(now) : 0;
+	gb_ulong const now = p_.now;
+	gb_ulong const videoCycles = lcdcEn(p_) ? p_.lyCounter.frameCycles(now) : 0;
 
 	p_.now -= p_.lyCounter.isDoubleSpeed();
 	p_.spriteMapper.resetCycleCounter(now, p_.now);
@@ -1849,12 +1850,12 @@ void PPU::speedChange() {
 	p_.lyCounter.reset(videoCycles, p_.now);
 }
 
-unsigned long PPU::predictedNextXposTime(unsigned xpos) const {
+gb_ulong PPU::predictedNextXposTime(unsigned xpos) const {
 	return p_.now
 	    + (p_.nextCallPtr->predictCyclesUntilXpos_f(p_, xpos, -p_.cycles) << p_.lyCounter.isDoubleSpeed());
 }
 
-void PPU::setLcdc(unsigned const lcdc, unsigned long const cc) {
+void PPU::setLcdc(unsigned const lcdc, gb_ulong const cc) {
 	if ((p_.lcdc ^ lcdc) & lcdc & lcdc_en) {
 		p_.now = cc;
 		p_.lastM0Time = 0;
@@ -1886,8 +1887,8 @@ void PPU::setLcdc(unsigned const lcdc, unsigned long const cc) {
 	p_.lcdc = lcdc;
 }
 
-void PPU::update(unsigned long const cc) {
-	long const cycles = (cc - p_.now) >> p_.lyCounter.isDoubleSpeed();
+void PPU::update(gb_ulong const cc) {
+	gb_long const cycles = (cc - p_.now) >> p_.lyCounter.isDoubleSpeed();
 
 	p_.now += cycles << p_.lyCounter.isDoubleSpeed();
 	p_.cycles += cycles;

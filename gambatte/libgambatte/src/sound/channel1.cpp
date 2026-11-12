@@ -16,6 +16,7 @@
 //   51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.
 //
 
+#include "gbint.h"
 #include "channel1.h"
 #include "psgdef.h"
 #include "../savestate.h"
@@ -47,7 +48,7 @@ unsigned Channel1::SweepUnit::calcFreq() {
 }
 
 void Channel1::SweepUnit::event() {
-	unsigned long const period = (nr0_ & psg_nr10_time) / (1u * psg_nr10_time & -psg_nr10_time);
+	gb_ulong const period = (nr0_ & psg_nr10_time) / (1u * psg_nr10_time & -psg_nr10_time);
 
 	if (period) {
 		unsigned const freq = calcFreq();
@@ -60,7 +61,7 @@ void Channel1::SweepUnit::event() {
 
 		counter_ += period << 14;
 	} else
-		counter_ += 8ul << 14;
+		counter_ += 8u << 14;
 }
 
 void Channel1::SweepUnit::nr0Change(unsigned newNr0) {
@@ -70,7 +71,7 @@ void Channel1::SweepUnit::nr0Change(unsigned newNr0) {
 	nr0_ = newNr0;
 }
 
-void Channel1::SweepUnit::nr4Init(unsigned long const cc) {
+void Channel1::SweepUnit::nr4Init(gb_ulong const cc) {
 	neg_ = false;
 	shadow_ = dutyUnit_.freq();
 
@@ -142,13 +143,13 @@ void Channel1::setNr0(unsigned data) {
 	setEvent();
 }
 
-void Channel1::setNr1(unsigned data, unsigned long cc) {
+void Channel1::setNr1(unsigned data, gb_ulong cc) {
 	lengthCounter_.nr1Change(data, nr4_, cc);
 	dutyUnit_.nr1Change(data, cc);
 	setEvent();
 }
 
-void Channel1::setNr2(unsigned data, unsigned long cc) {
+void Channel1::setNr2(unsigned data, gb_ulong cc) {
 	envelopeUnit_.nr2Change(data, cc, master_);
 	if (!(data & (psg_nr2_initvol | psg_nr2_inc)))
 		disableMaster_();
@@ -158,12 +159,12 @@ void Channel1::setNr2(unsigned data, unsigned long cc) {
 	setEvent();
 }
 
-void Channel1::setNr3(unsigned data, unsigned long cc) {
+void Channel1::setNr3(unsigned data, gb_ulong cc) {
 	dutyUnit_.nr3Change(data, cc);
 	setEvent();
 }
 
-void Channel1::setNr4(unsigned data, unsigned long cc, unsigned long ref) {
+void Channel1::setNr4(unsigned data, gb_ulong cc, gb_ulong ref) {
 	lengthCounter_.nr4Change(nr4_, data, cc);
 	dutyUnit_.nr4Change(data, cc, ref, master_);
 	nr4_ = data;
@@ -178,7 +179,7 @@ void Channel1::setNr4(unsigned data, unsigned long cc, unsigned long ref) {
 	setEvent();
 }
 
-void Channel1::setSo(unsigned long soMask, unsigned long cc) {
+void Channel1::setSo(gb_ulong soMask, gb_ulong cc) {
 	soMask_ = soMask;
 	staticOutputTest_(cc);
 	setEvent();
@@ -195,7 +196,7 @@ void Channel1::init(bool cgb) {
 	sweepUnit_.init(cgb);
 }
 
-void Channel1::saveState(SaveState &state, unsigned long cc) {
+void Channel1::saveState(SaveState &state, gb_ulong cc) {
 	sweepUnit_.saveState(state);
 	dutyUnit_.saveState(state.spu.ch1.duty, cc);
 	envelopeUnit_.saveState(state.spu.ch1.env);
@@ -217,16 +218,16 @@ void Channel1::loadState(SaveState const &state) {
 	master_ = state.spu.ch1.master;
 }
 
-void Channel1::update(uint_least32_t *buf, unsigned long const soBaseVol, unsigned long cc, unsigned long const end) {
-	unsigned long const outBase = envelopeUnit_.dacIsOn() ? soBaseVol & soMask_ : 0;
-	unsigned long const outLow = outBase * -15;
+void Channel1::update(uint_least32_t *buf, gb_ulong const soBaseVol, gb_ulong cc, gb_ulong const end) {
+	gb_ulong const outBase = envelopeUnit_.dacIsOn() ? soBaseVol & soMask_ : 0;
+	gb_ulong const outLow = outBase * -15;
 
 	while (cc < end) {
-		unsigned long const outHigh = master_
-			? outBase * (envelopeUnit_.getVolume() * 2l - 15)
+		gb_ulong const outHigh = master_
+			? outBase * (envelopeUnit_.getVolume() * 2 - 15)
 			: outLow;
-		unsigned long const nextMajorEvent = std::min(nextEventUnit_->counter(), end);
-		unsigned long out = dutyUnit_.isHighState() ? outHigh : outLow;
+		gb_ulong const nextMajorEvent = std::min(nextEventUnit_->counter(), end);
+		gb_ulong out = dutyUnit_.isHighState() ? outHigh : outLow;
 
 		while (dutyUnit_.counter() <= nextMajorEvent) {
 			*buf = out - prevOut_;

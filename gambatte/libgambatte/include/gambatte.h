@@ -182,7 +182,7 @@ public:
 	  * @param palNum 0 <= palNum < 3. One of BG_PALETTE, SP1_PALETTE and SP2_PALETTE.
 	  * @param colorNum 0 <= colorNum < 4, or (armGBA:) 4 with BG_PALETTE for a Game Boy's screen while it is off
 	  */
-	void setDmgPaletteColor(int palNum, int colorNum, unsigned long rgb32);
+	void setDmgPaletteColor(int palNum, int colorNum, gb_ulong rgb32);
 
 	/**
 	  * Set CGB palette lookup.
@@ -238,7 +238,7 @@ public:
 	void setRemoteCallback(unsigned char (*callback)());
 
 	/** adjust the assumed clock speed of the CPU compared to the RTC */
-	void setRtcDivisorOffset(long const rtcDivisorOffset);
+	void setRtcDivisorOffset(gb_long const rtcDivisorOffset);
 
 	/** armGBA: the clock's speed in percent of the console's, 0 stopped */
 	void setRtcSpeed(unsigned percent);
@@ -250,8 +250,8 @@ public:
 	/** armGBA: whether the cartridge has an MBC3 clock, and its registers: rtc_dh, rtc_dl, rtc_h, rtc_m, rtc_s,
 	  * rtc_c (cycles into the second), then the latched five (mem/rtc.h) */
 	bool hasMbc3Rtc() const;
-	void getRtcRegs(unsigned long dest[11]);
-	void setRtcRegs(unsigned long src[11]);
+	void getRtcRegs(gb_ulong dest[11]);
+	void setRtcRegs(gb_ulong src[11]);
 
 	/** armGBA: whether the cartridge has a HuC3 chip, and the chip's state: the cycles into the current
 	  * minute (4 bytes, big-endian), then its 256 bytes of I/O, minutes at 0x10-0x12 and days at
@@ -261,7 +261,7 @@ public:
 	void setHuC3Regs(unsigned char src[0x104]);
 
 	/** Sets how long until the cart bus pulls up */
-	void setCartBusPullUpTime(unsigned long const cartBusPullUpTime);
+	void setCartBusPullUpTime(gb_ulong const cartBusPullUpTime);
 
 	/**
 	  * Sets the directory used for storing save data. The default is the same directory as

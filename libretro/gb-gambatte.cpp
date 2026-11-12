@@ -31,7 +31,7 @@ namespace gambatte {
 extern int mbc7TiltX;
 extern int mbc7TiltY;
 extern bool mbc7Flick;
-unsigned long crc32(unsigned long crc, void const* buf, std::size_t size);
+gb_ulong crc32(gb_ulong crc, void const* buf, std::size_t size);
 }
 
 namespace {
@@ -207,7 +207,7 @@ unsigned long long get64(const unsigned char* from) {
 // Advances a clock by some seconds the way the chip counts: a field past its range counts up to its
 // last value and wraps to 0 without a carry; past 511 days, the day counter wraps and sets its
 // carry bit.
-void runClock(unsigned long r[11], unsigned long long seconds) {
+void runClock(gb_ulong r[11], unsigned long long seconds) {
 	if (r[RTC_DH] & 0x40) {
 		return;
 	}
@@ -216,7 +216,7 @@ void runClock(unsigned long r[11], unsigned long long seconds) {
 	static const int fields[3] = { RTC_S, RTC_M, RTC_H };
 	unsigned long long carry = seconds;
 	for (int i = 0; i < 3 && carry; ++i) {
-		unsigned long& value = r[fields[i]];
+		gb_ulong& value = r[fields[i]];
 		if (value >= limits[i]) {
 			if (carry < ends[i] - value) {
 				value += carry;
@@ -239,7 +239,7 @@ void runClock(unsigned long r[11], unsigned long long seconds) {
 
 // Moves a running clock by some seconds, forwards or back, though not before day 0. Returns how much
 // of a move back it couldn't make.
-long long moveClock(unsigned long r[11], long long seconds) {
+long long moveClock(gb_ulong r[11], long long seconds) {
 	if (r[RTC_DH] & 0x40 || r[RTC_H] >= 24 || r[RTC_M] >= 60 || r[RTC_S] >= 60) {
 		return 0;
 	}
@@ -261,7 +261,7 @@ long long moveClock(unsigned long r[11], long long seconds) {
 
 // Moves the selected console's clock from one Clock Offset to another, making up first what an
 // earlier move back couldn't make.
-void moveBy(Console& c, unsigned long r[11], long long offset) {
+void moveBy(Console& c, gb_ulong r[11], long long offset) {
 	long long seconds = offset - c.clockMoved;
 	if (seconds > 0) {
 		long long const owed = seconds < c.clockShort ? seconds : c.clockShort;
@@ -355,7 +355,7 @@ void readRtcFile() {
 		s->gb->setHuC3Regs(state);
 		return;
 	}
-	unsigned long r[11] = { 0 };
+	gb_ulong r[11] = { 0 };
 	bool const ours = !std::memcmp(file + RTC_MAGIC, "aGBm", 4), older = !std::memcmp(file + RTC_MAGIC, "aGBc", 4);
 	s->clockMoved = s->clockShort = 0;
 	if (older) {
@@ -417,7 +417,7 @@ void writeRtcFile() {
 		put64(file + RTC_BASE, now - shown);
 		return;
 	}
-	unsigned long r[11];
+	gb_ulong r[11];
 	s->gb->getRtcRegs(r);
 	unsigned long long const shown = (((((r[RTC_DH] & 1) << 8 | r[RTC_DL]) * 24 + r[RTC_H]) * 60
 	                                  + r[RTC_M]) * 60 + r[RTC_S]);
@@ -848,7 +848,7 @@ void restartAs(LibretroGbModel model) {
 	size_t size;
 	const unsigned char* const ram = static_cast<const unsigned char*>(libretroGbSaveRam(&size));
 	std::vector<unsigned char> const kept(ram, ram + size);
-	unsigned long clock[11];
+	gb_ulong clock[11];
 	unsigned char huc3[HUC3_STATE];
 	if (s->gb->hasMbc3Rtc()) {
 		s->gb->getRtcRegs(clock);
@@ -1219,7 +1219,7 @@ void libretroGbSetClock(bool timeOfGame, unsigned percent, long long offset) {
 		}
 		c.gb->setRtcSpeed(clockPercent);
 		if (c.gb->hasMbc3Rtc() && !c.rtcPending && c.clockMoved != offset) {
-			unsigned long r[11];
+			gb_ulong r[11];
 			c.gb->getRtcRegs(r);
 			moveBy(c, r, offset);
 			c.gb->setRtcRegs(r);
@@ -1241,7 +1241,7 @@ bool libretroGbResetClock(void) {
 	for (int i = 0; i < MAX_PLAYERS; ++i) {
 		Console& c = consoles[i];
 		if (c.gb && c.gb->hasMbc3Rtc()) {
-			unsigned long r[11] = { 0 };
+			gb_ulong r[11] = { 0 };
 			r[RTC_DH] = r[RTC_DH + RTC_LATCHED] = 0x40;
 			c.gb->setRtcRegs(r);
 			c.rtcPending = false;
@@ -1508,7 +1508,7 @@ bool loadOne(const void* data, size_t size) {
 	if (!s->gb) {
 		return false;
 	}
-	unsigned long clock[11];
+	gb_ulong clock[11];
 	bool const keepClock = deviceClock && s->gb->hasMbc3Rtc() && !s->rtcPending;
 	if (keepClock) {
 		s->gb->getRtcRegs(clock);

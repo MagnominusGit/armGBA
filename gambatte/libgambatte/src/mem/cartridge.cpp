@@ -16,6 +16,7 @@
 //   51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.
 //
 
+#include "gbint.h"
 #include "cartridge.h"
 #include "file/file.h"
 #include "../savestate.h"
@@ -170,7 +171,7 @@ int presumedUnl(unsigned char const romdata[], unsigned size) {
 		}
 		// Two dumps of such games are patched to run on the cartridge their headers name
 		// (Pokemon Adventure, Shuma Baolong 2); nothing but their headers tells them apart
-		unsigned long const header = crc32(0, romdata + 0x100, 0x50);
+		gb_ulong const header = crc32(0, romdata + 0x100, 0x50);
 		return header == 0x72EDBF3E || header == 0x212ECA2F ? -1 : UnlMbc5::ntnew;
 	}
 	return -1;
@@ -280,7 +281,7 @@ void Cartridge::setStatePtrs(SaveState &state) {
 	camera_.setStatePtrs(state);
 }
 
-void Cartridge::saveState(SaveState &state, unsigned long const cc) {
+void Cartridge::saveState(SaveState &state, gb_ulong const cc) {
 	mbc_->saveState(state.mem);
 	time_.saveState(state, cc);
 	rtc_.saveState(state);
@@ -557,7 +558,7 @@ unsigned Cartridge::getSavedataLength() {
 	return ret;
 }
 
-void Cartridge::loadSavedata(unsigned long const cc) {
+void Cartridge::loadSavedata(gb_ulong const cc) {
 	std::string const &sbp = saveBasePath();
 
 	if (hasBattery(romHeader[0x147])) {
@@ -602,7 +603,7 @@ void Cartridge::loadSavedata(unsigned long const cc) {
 				}
 				huc3_.setHuC3Regs(huc3Regs);
 			} else {
-				unsigned long rtcRegs[11] { 0 };
+				gb_ulong rtcRegs[11] { 0 };
 				rtcRegs[rtc_dh] = file.get() & 0xC1;
 				if (!file.eof()) {
 					rtcRegs[rtc_dl] = file.get() & 0xFF;
@@ -629,7 +630,7 @@ void Cartridge::loadSavedata(unsigned long const cc) {
 	}
 }
 
-void Cartridge::saveSavedata(unsigned long const cc) {
+void Cartridge::saveSavedata(gb_ulong const cc) {
 	std::string const &sbp = saveBasePath();
 
 	if (hasBattery(romHeader[0x147])) {
@@ -655,7 +656,7 @@ void Cartridge::saveSavedata(unsigned long const cc) {
 			for (unsigned i = 0; i < 0x104; i++)
 				file.put(huc3Regs[i] & 0xFF);
 		} else {
-			unsigned long rtcRegs[11];
+			gb_ulong rtcRegs[11];
 			rtc_.getRtcRegs(rtcRegs, cc);
 			file.put(rtcRegs[rtc_dh]         & 0xC1);
 			file.put(rtcRegs[rtc_dl]         & 0xFF);
@@ -675,7 +676,7 @@ void Cartridge::saveSavedata(unsigned long const cc) {
 	}
 }
 
-void Cartridge::saveSavedata(char* dest, unsigned long const cc) {
+void Cartridge::saveSavedata(char* dest, gb_ulong const cc) {
 	if (hasBattery(romHeader[0x147])) {
 		int length = memptrs_.rambankdataend() - memptrs_.rambankdata();
 		std::memcpy(dest, memptrs_.rambankdata(), length);
@@ -697,7 +698,7 @@ void Cartridge::saveSavedata(char* dest, unsigned long const cc) {
 			huc3_.getHuC3Regs(huc3Regs, cc);
 			std::memcpy(dest, huc3Regs, sizeof huc3Regs);
 		} else {
-			unsigned long rtcRegs[11];
+			gb_ulong rtcRegs[11];
 			rtc_.getRtcRegs(rtcRegs, cc);
 			*dest++ = rtcRegs[rtc_dh]         & 0xC1;
 			*dest++ = rtcRegs[rtc_dl]         & 0xFF;
@@ -717,7 +718,7 @@ void Cartridge::saveSavedata(char* dest, unsigned long const cc) {
 	}
 }
 
-void Cartridge::loadSavedata(char const *data, unsigned long const cc) {
+void Cartridge::loadSavedata(char const *data, gb_ulong const cc) {
 	if (hasBattery(romHeader[0x147])) {
 		int length = memptrs_.rambankdataend() - memptrs_.rambankdata();
 		std::memcpy(memptrs_.rambankdata(), data, length);
@@ -745,7 +746,7 @@ void Cartridge::loadSavedata(char const *data, unsigned long const cc) {
 			std::memcpy(huc3Regs, data, sizeof huc3Regs);
 			huc3_.setHuC3Regs(huc3Regs);
 		} else {
-			unsigned long rtcRegs[11];
+			gb_ulong rtcRegs[11];
 			rtcRegs[rtc_dh] = *data++ & 0xC1;
 			rtcRegs[rtc_dl] = *data++ & 0xFF;
 			rtcRegs[rtc_h] = *data++ & 0x1F;
@@ -837,13 +838,13 @@ void Cartridge::setGameGenie(std::string const &codes) {
 
 PakInfo const Cartridge::pakInfo() const {
 	if (loaded()) {
-		unsigned crc = 0L;
+		unsigned crc = 0;
 		unsigned const rombs = rombanks(memptrs_);
-		crc = crc32(crc, memptrs_.romdata(), rombs*0x4000ul);
+		crc = crc32(crc, memptrs_.romdata(), rombs*0x4000u);
 		return PakInfo(presumedMbc1m(memptrs_.romdata(), rombs),
-		               presumedM161(memptrs_.romdata(), rombs*0x4000ul),
-		               presumedMmm01(memptrs_.romdata(), rombs*0x4000ul),
-		               presumedWisdomTree(memptrs_.romdata(), rombs*0x4000ul),
+		               presumedM161(memptrs_.romdata(), rombs*0x4000u),
+		               presumedMmm01(memptrs_.romdata(), rombs*0x4000u),
+		               presumedWisdomTree(memptrs_.romdata(), rombs*0x4000u),
 		               rombs,
 		               crc,
 		               romHeader);

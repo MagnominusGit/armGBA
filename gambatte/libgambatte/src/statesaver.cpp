@@ -16,6 +16,7 @@
 //   51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.
 //
 
+#include "gbint.h"
 #include "statesaver.h"
 #include "savestate.h"
 #include "array.h"
@@ -55,13 +56,13 @@ inline bool operator<(Saver const &l, Saver const &r) {
 	return std::strcmp(l.label, r.label) < 0;
 }
 
-void put24(std::ostringstream &file, unsigned long data) {
+void put24(std::ostringstream &file, gb_ulong data) {
 	file.put(data >> 16 & 0xFF);
 	file.put(data >>  8 & 0xFF);
 	file.put(data       & 0xFF);
 }
 
-void put32(std::ostringstream &file, unsigned long data) {
+void put32(std::ostringstream &file, gb_ulong data) {
 	file.put(data >> 24 & 0xFF);
 	file.put(data >> 16 & 0xFF);
 	file.put(data >>  8 & 0xFF);
@@ -81,7 +82,7 @@ void write(std::ostringstream &file, unsigned short data) {
 	file.put(data      & 0xFF);
 }
 
-void write(std::ostringstream &file, unsigned long data) {
+void write(std::ostringstream &file, gb_ulong data) {
 	static char const inf[] = { 0x00, 0x00, 0x04 };
 	file.write(inf, sizeof inf);
 	put32(file, data);
@@ -102,20 +103,20 @@ void write(std::ostringstream &file, unsigned short const *data, std::size_t siz
 	write(file, (unsigned char const *)data, size * sizeof data[0]);
 }
 
-unsigned long get24(std::istringstream &file) {
-	unsigned long tmp = file.get() & 0xFF;
+gb_ulong get24(std::istringstream &file) {
+	gb_ulong tmp = file.get() & 0xFF;
 	tmp =   tmp << 8 | (file.get() & 0xFF);
 	return  tmp << 8 | (file.get() & 0xFF);
 }
 
-unsigned long read(std::istringstream &file) {
-	unsigned long size = get24(file);
+gb_ulong read(std::istringstream &file) {
+	gb_ulong size = get24(file);
 	if (size > 4) {
 		file.ignore(size - 4);
 		size = 4;
 	}
 
-	unsigned long out = 0;
+	gb_ulong out = 0;
 	switch (size) {
 	case 4: out = (out | (file.get() & 0xFF)) << 8; // fall through.
 	case 3: out = (out | (file.get() & 0xFF)) << 8; // fall through.
@@ -134,7 +135,7 @@ inline void read(std::istringstream &file, unsigned short &data) {
 	data = read(file) & 0xFFFF;
 }
 
-inline void read(std::istringstream &file, unsigned long &data) {
+inline void read(std::istringstream &file, gb_ulong &data) {
 	data = read(file);
 }
 
@@ -438,7 +439,7 @@ SaverList::SaverList()
 
 namespace {
 
-struct RgbSum { unsigned long rb, g; };
+struct RgbSum { gb_ulong rb, g; };
 
 void addPairs(RgbSum *const sum, uint_least32_t const *const p) {
 	sum[0].rb += (p[0] & 0xFF00FF) + (p[3] & 0xFF00FF);

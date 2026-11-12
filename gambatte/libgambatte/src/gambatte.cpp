@@ -16,6 +16,7 @@
 //   51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.
 //
 
+#include "gbint.h"
 #include "gambatte.h"
 #include "cpu.h"
 #include "initstate.h"
@@ -108,7 +109,7 @@ std::ptrdiff_t GB::runFor(gambatte::uint_least32_t *const videoBuf, std::ptrdiff
 	p_->cpu.setVideoBuffer(videoBuf, pitch);
 	p_->cpu.setSoundBuffer(soundBuf);
 
-	long const cyclesSinceBlit = p_->cpu.runFor(samples * 2);
+	gb_long const cyclesSinceBlit = p_->cpu.runFor(samples * 2);
 	samples = p_->cpu.fillSoundBuffer();
 	return cyclesSinceBlit >= 0
 	     ? static_cast<std::ptrdiff_t>(samples) - (cyclesSinceBlit >> 1)
@@ -187,11 +188,11 @@ void GB::setRemoteCallback(unsigned char (*callback)()) {
 	p_->cpu.setRemoteCallback(callback);
 }
 
-void GB::setCartBusPullUpTime(unsigned long const cartBusPullUpTime) {
+void GB::setCartBusPullUpTime(gb_ulong const cartBusPullUpTime) {
 	p_->cpu.setCartBusPullUpTime(cartBusPullUpTime);
 }
 
-void GB::setRtcDivisorOffset(long const rtcDivisorOffset) {
+void GB::setRtcDivisorOffset(gb_long const rtcDivisorOffset) {
 	p_->cpu.setRtcDivisorOffset(rtcDivisorOffset);
 }
 
@@ -211,11 +212,11 @@ bool GB::hasMbc3Rtc() const {
 	return p_->cpu.loaded() && p_->cpu.hasMbc3Rtc();
 }
 
-void GB::getRtcRegs(unsigned long dest[11]) {
+void GB::getRtcRegs(gb_ulong dest[11]) {
 	p_->cpu.getRtcRegs(dest);
 }
 
-void GB::setRtcRegs(unsigned long src[11]) {
+void GB::setRtcRegs(gb_ulong src[11]) {
 	p_->cpu.setRtcRegs(src);
 }
 
@@ -383,7 +384,7 @@ bool GB::getMemoryArea(int which, unsigned char **data, int *length) {
 		return false;
 }
 
-void GB::setDmgPaletteColor(int palNum, int colorNum, unsigned long rgb32) {
+void GB::setDmgPaletteColor(int palNum, int colorNum, gb_ulong rgb32) {
 	p_->cpu.setDmgPaletteColor(palNum, colorNum, rgb32);
 }
 
@@ -426,7 +427,7 @@ void GB::saveExactState(char *stateBuf) {
 bool GB::loadExactState(char const *stateBuf, std::size_t size) {
 	NewStateExternalBuffer loader(const_cast<char *>(stateBuf), size);
 	SyncState<true>(&loader);
-	return !loader.Overflow() && loader.GetLength() == static_cast<long>(size);
+	return !loader.Overflow() && loader.GetLength() == static_cast<gb_long>(size);
 }
 
 bool GB::saveState(gambatte::uint_least32_t const *videoBuf, std::ptrdiff_t pitch) {

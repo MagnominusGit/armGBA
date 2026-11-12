@@ -19,6 +19,7 @@
 #ifndef MBC_H
 #define MBC_H
 
+#include "gbint.h"
 #include <cstring>
 #include "../memptrs.h"
 #include "../time.h"
@@ -46,7 +47,7 @@ class Mbc {
 public:
 	virtual ~Mbc() {}
 	virtual bool disabledRam() const = 0;
-	virtual void romWrite(unsigned p, unsigned data, unsigned long cycleCounter) = 0;
+	virtual void romWrite(unsigned p, unsigned data, gb_ulong cycleCounter) = 0;
 	virtual void saveState(SaveState::Mem &ss) const = 0;
 	virtual void loadState(SaveState::Mem const &ss) = 0;
 	virtual bool isAddressWithinAreaRombankCanBeMappedTo(unsigned address, unsigned rombank) const = 0;
@@ -72,7 +73,7 @@ class Mbc0 : public DefaultMbc {
 public:
 	explicit Mbc0(MemPtrs &memptrs);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned const p, unsigned const data, unsigned long const /*cc*/);
+	virtual void romWrite(unsigned const p, unsigned const data, gb_ulong const /*cc*/);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual void SyncState(NewState *ns, bool isReader);
@@ -86,7 +87,7 @@ class Mbc1 : public Mbc {
 public:
 	explicit Mbc1(MemPtrs &memptrs, unsigned char rombankMask = 0x1Fu, unsigned char rombankShift = 0x05u);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned const p, unsigned const data, unsigned long const /*cc*/);
+	virtual void romWrite(unsigned const p, unsigned const data, gb_ulong const /*cc*/);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual bool isAddressWithinAreaRombankCanBeMappedTo(unsigned addr, unsigned bank) const;
@@ -121,7 +122,7 @@ class Mbc2 : public DefaultMbc {
 public:
 	explicit Mbc2(MemPtrs &memptrs);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned const p, unsigned const data, unsigned long const /*cc*/);
+	virtual void romWrite(unsigned const p, unsigned const data, gb_ulong const /*cc*/);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual void SyncState(NewState *ns, bool isReader);
@@ -136,7 +137,7 @@ class Mbc3 : public DefaultMbc {
 public:
 	Mbc3(MemPtrs &memptrs, Rtc *const rtc, unsigned char rombankMask = 0x7Fu, unsigned char rambankMask = 0x03u);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned const p, unsigned const data, unsigned long const cc);
+	virtual void romWrite(unsigned const p, unsigned const data, gb_ulong const cc);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual void SyncState(NewState *ns, bool isReader);
@@ -166,7 +167,7 @@ class Mbc5 : public DefaultMbc {
 public:
 	explicit Mbc5(MemPtrs &memptrs);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned const p, unsigned const data, unsigned long const /*cc*/);
+	virtual void romWrite(unsigned const p, unsigned const data, gb_ulong const /*cc*/);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual void SyncState(NewState *ns, bool isReader);
@@ -185,7 +186,7 @@ class M161 : public Mbc {
 public:
 	explicit M161(MemPtrs &memptrs);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned const /*p*/, unsigned const data, unsigned long const /*cc*/);
+	virtual void romWrite(unsigned const /*p*/, unsigned const data, gb_ulong const /*cc*/);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual bool isAddressWithinAreaRombankCanBeMappedTo(unsigned addr, unsigned bank) const;
@@ -203,7 +204,7 @@ class Mmm01 : public Mbc {
 public:
 	explicit Mmm01(MemPtrs &memptrs);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned const p, unsigned const data, unsigned long const /*cc*/);
+	virtual void romWrite(unsigned const p, unsigned const data, gb_ulong const /*cc*/);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual bool isAddressWithinAreaRombankCanBeMappedTo(unsigned addr, unsigned bank) const;
@@ -233,7 +234,7 @@ class HuC1 : public DefaultMbc {
 public:
 	explicit HuC1(MemPtrs &memptrs, Infrared *const ir_);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned const p, unsigned const data, unsigned long const /*cc*/);
+	virtual void romWrite(unsigned const p, unsigned const data, gb_ulong const /*cc*/);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual void SyncState(NewState *ns, bool isReader);
@@ -253,7 +254,7 @@ class HuC3 : public DefaultMbc {
 public:
 	explicit HuC3(MemPtrs &memptrs, HuC3Chip *const huc3);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned const p, unsigned const data, unsigned long const /*cc*/);
+	virtual void romWrite(unsigned const p, unsigned const data, gb_ulong const /*cc*/);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual void SyncState(NewState *ns, bool isReader);
@@ -273,7 +274,7 @@ class PocketCamera : public DefaultMbc {
 public:
 	explicit PocketCamera(MemPtrs &memptrs, Camera *const camera);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned const p, unsigned const data, unsigned long const /*cc*/);
+	virtual void romWrite(unsigned const p, unsigned const data, gb_ulong const /*cc*/);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual void SyncState(NewState *ns, bool isReader);
@@ -293,7 +294,7 @@ class WisdomTree : public Mbc {
 public:
 	explicit WisdomTree(MemPtrs &memptrs);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned const p, unsigned const /*data*/, unsigned long const /*cc*/);
+	virtual void romWrite(unsigned const p, unsigned const /*data*/, gb_ulong const /*cc*/);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual bool isAddressWithinAreaRombankCanBeMappedTo(unsigned addr, unsigned bank) const;
@@ -313,7 +314,7 @@ public:
 	// banks: the ROM's own; one more follows them in memory for a bank unpacked through the lock
 	UnlMbc5(MemPtrs &memptrs, Kind kind, unsigned banks);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned p, unsigned data, unsigned long cc);
+	virtual void romWrite(unsigned p, unsigned data, gb_ulong cc);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual void SyncState(NewState *ns, bool isReader);
@@ -350,9 +351,9 @@ private:
 class CartIo {
 public:
 	virtual ~CartIo() {}
-	virtual unsigned read(unsigned p, unsigned long cc) const = 0;
-	virtual void write(unsigned p, unsigned data, unsigned long cc) = 0;
-	virtual void resetCc(unsigned long, unsigned long) {}
+	virtual unsigned read(unsigned p, gb_ulong cc) const = 0;
+	virtual void write(unsigned p, unsigned data, gb_ulong cc) = 0;
+	virtual void resetCc(gb_ulong, gb_ulong) {}
 };
 
 // armGBA: Bandai's TAMA5 (Game de Hakken!! Tamagotchi - Osutchi to Mesutchi)
@@ -360,20 +361,20 @@ class Tama5 : public Mbc, public CartIo {
 public:
 	explicit Tama5(MemPtrs &memptrs);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned p, unsigned data, unsigned long cc);
+	virtual void romWrite(unsigned p, unsigned data, gb_ulong cc);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual bool isAddressWithinAreaRombankCanBeMappedTo(unsigned addr, unsigned bank) const;
 	virtual void SyncState(NewState *ns, bool isReader);
-	virtual unsigned read(unsigned p, unsigned long cc) const;
-	virtual void write(unsigned p, unsigned data, unsigned long cc);
-	virtual void resetCc(unsigned long oldCc, unsigned long newCc);
+	virtual unsigned read(unsigned p, gb_ulong cc) const;
+	virtual void write(unsigned p, unsigned data, gb_ulong cc);
+	virtual void resetCc(gb_ulong oldCc, gb_ulong newCc);
 
 private:
 	MemPtrs &memptrs_;
 
 	unsigned char * chip() const;
-	void tick(unsigned long cc) const;
+	void tick(gb_ulong cc) const;
 	void setRombank() const;
 };
 
@@ -391,7 +392,7 @@ public:
 	// cartridge's game carries too
 	Vf001(MemPtrs &memptrs, unsigned banks, bool maybeGgb81);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned p, unsigned data, unsigned long cc);
+	virtual void romWrite(unsigned p, unsigned data, gb_ulong cc);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual void SyncState(NewState *ns, bool isReader);
@@ -430,13 +431,13 @@ class Mbc7 : public Mbc, public CartIo {
 public:
 	explicit Mbc7(MemPtrs &memptrs);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned p, unsigned data, unsigned long cc);
+	virtual void romWrite(unsigned p, unsigned data, gb_ulong cc);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual bool isAddressWithinAreaRombankCanBeMappedTo(unsigned addr, unsigned bank) const;
 	virtual void SyncState(NewState *ns, bool isReader);
-	virtual unsigned read(unsigned p, unsigned long cc) const;
-	virtual void write(unsigned p, unsigned data, unsigned long cc);
+	virtual unsigned read(unsigned p, gb_ulong cc) const;
+	virtual void write(unsigned p, unsigned data, gb_ulong cc);
 
 private:
 	MemPtrs &memptrs_;
@@ -454,7 +455,7 @@ class Mbc6 : public DefaultMbc {
 public:
 	Mbc6(MemPtrs &memptrs, unsigned banks);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned p, unsigned data, unsigned long cc);
+	virtual void romWrite(unsigned p, unsigned data, gb_ulong cc);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual void SyncState(NewState *ns, bool isReader);
@@ -476,13 +477,13 @@ class Pkjd : public Mbc, public CartIo {
 public:
 	explicit Pkjd(MemPtrs &memptrs);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned p, unsigned data, unsigned long cc);
+	virtual void romWrite(unsigned p, unsigned data, gb_ulong cc);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual bool isAddressWithinAreaRombankCanBeMappedTo(unsigned addr, unsigned bank) const;
 	virtual void SyncState(NewState *ns, bool isReader);
-	virtual unsigned read(unsigned p, unsigned long cc) const;
-	virtual void write(unsigned p, unsigned data, unsigned long cc);
+	virtual unsigned read(unsigned p, gb_ulong cc) const;
+	virtual void write(unsigned p, unsigned data, gb_ulong cc);
 
 private:
 	MemPtrs &memptrs_;
@@ -498,7 +499,7 @@ class Sachen : public Mbc {
 public:
 	explicit Sachen(MemPtrs &memptrs);
 	virtual bool disabledRam() const;
-	virtual void romWrite(unsigned const p, unsigned const data, unsigned long const /*cc*/);
+	virtual void romWrite(unsigned const p, unsigned const data, gb_ulong const /*cc*/);
 	virtual void saveState(SaveState::Mem &ss) const;
 	virtual void loadState(SaveState::Mem const &ss);
 	virtual bool isAddressWithinAreaRombankCanBeMappedTo(unsigned addr, unsigned bank) const;
