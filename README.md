@@ -663,15 +663,15 @@ Where the hardware gives no answer, these rules apply:
 ## Testing
 
 - **Lockstep:** twenty games compared frame by frame with the stepping CPU on all three backends,
-  and every game of the Game Boy Advance set (4590) for 1500 frames on x86-64.
+  and all of my Game Boy Advance games for 1500 frames on x86-64.
 - **`tests/cpufuzz`:** random ARM and Thumb programs against mGBA.
 - **Hardware test ROMs:** all 28 pass (jsmolka's gba-tests, FuzzARM, NanoBoyAdvance's).
 - **mGBA test suite:** every scored category passes in full except Misc edge, at 6 of 12.
 - **Game Boy test ROMs:** 213 of 236 screens match a SameBoy-based build. The rest are SameSuite's
   APU tests, which time the sound channels to a fraction of a CPU cycle.
-- **Game Boy games:** every game of the Game Boy and Game Boy Color sets was started and compared
-  with SameBoy: 2776 of 2796 and 2983 of 3055 match. The rest are not games (BIOS files, cheat
-  cartridges), betas, and unlicensed carts that differ on the other cores too.
+- **Game Boy games:** all of my Game Boy and Game Boy Color games were started and compared with
+  SameBoy: 99% and 97% of them match. The rest are not games (BIOS files, cheat cartridges), betas,
+  and unlicensed carts that differ on the other cores too.
 - **Save states and runahead:** frame-exact on x86-64 and AArch64 for GBA, GBC and GB. A Game Boy
   state made as one model loads as another: the machine becomes the state's model until the next
   restart.
@@ -684,28 +684,28 @@ the cores ROCKNIX ships alongside for reference. Full speed is about 60. Game Bo
 
 Anbernic RG353M (RK3566, Cortex-A55 1.8 GHz), 14 October 2026:
 
-| Game | armGBA | mGBA |
+| Game Boy Advance game | armGBA | mGBA |
 | --- | --- | --- |
-| Payback | 232 | 148 |
-| Mario Kart: Super Circuit | 372 | 248 |
-| Final Fantasy Tactics Advance | 353 | 255 |
-| Advance Wars | 320 | 202 |
-| Golden Sun | 549 | 347 |
+| A 3D action game drawn in software | 232 | 148 |
+| A racing game on a rotated, scaled background | 372 | 248 |
+| A tactics role-playing game | 353 | 255 |
+| A turn-based strategy game | 320 | 202 |
+| A role-playing game with large battle effects | 549 | 347 |
 
-| Game | armGBA | Gambatte | mGBA |
+| Game Boy or Game Boy Color game | armGBA | Gambatte | mGBA |
 | --- | --- | --- | --- |
-| Tetris | 1918 | 1669 | 857 |
-| Pokémon Red | 2555 | 1877 | 1206 |
-| Super Mario Land 2 | 2260 | 1869 | 1021 |
-| The Legend of Zelda: Link's Awakening | 1932 | 1593 | 903 |
-| Pokémon Crystal | 1737 | 1481 | 911 |
-| The Legend of Zelda: Link's Awakening DX | 1440 | 1375 | 679 |
-| Shantae | 869 | 901 | 481 |
-| Wario Land 3 | 1532 | 1449 | 734 |
+| A puzzle game (Game Boy) | 1918 | 1669 | 857 |
+| A role-playing game (Game Boy) | 2555 | 1877 | 1206 |
+| A platformer (Game Boy) | 2260 | 1869 | 1021 |
+| An action adventure (Game Boy) | 1932 | 1593 | 903 |
+| A role-playing game (Game Boy Color) | 1737 | 1481 | 911 |
+| The same action adventure, remade for the Game Boy Color | 1440 | 1375 | 679 |
+| A platformer (Game Boy Color) | 869 | 901 | 481 |
+| Another platformer (Game Boy Color) | 1532 | 1449 | 734 |
 
-With Threaded Video, Payback on the RG353M runs at 276, and at 288 with One Frame Late. Every game
-here runs several times faster than full speed, which leaves room for runahead, fast-forward and
-slower chips.
+With Threaded Video, the 3D action game on the RG353M runs at 276, and at 288 with One Frame Late.
+Every game here runs several times faster than full speed, which leaves room for runahead,
+fast-forward and slower chips.
 
 ## How it works
 
