@@ -81,14 +81,36 @@ private:
 #define EVS(x,v,n) else if (!isReader && (x) == (v)) _ttmp = (n); else if (isReader && _ttmp == (n)) (x) = (v)
 #define EES(x,d) else if (isReader) (x) = (d); if (!isReader) ns->Save(&_ttmp, sizeof _ttmp, #x); } while (0)
 
+// armGBA: pointer offsets, longs and arrays of longs are saved as 64 bits, so a 32-bit build's
+// state is the same as a 64-bit build's.
 #define RSS(x,b) do { if (isReader)\
-{ std::ptrdiff_t _ttmp; ns->Load(&_ttmp, sizeof _ttmp, #x); (x) = (_ttmp == (std::ptrdiff_t)0xdeadbeef ? 0 : (b) + _ttmp); }\
+{ long long _ttmp; ns->Load(&_ttmp, sizeof _ttmp, #x); (x) = (_ttmp == 0xdeadbeef ? 0 : (b) + (std::ptrdiff_t)_ttmp); }\
 	else\
-{ std::ptrdiff_t _ttmp = (x) == 0 ? 0xdeadbeef : (x) - (b); ns->Save(&_ttmp, sizeof _ttmp, #x); } } while (0)
+{ long long _ttmp = (x) == 0 ? 0xdeadbeef : (long long)((x) - (b)); ns->Save(&_ttmp, sizeof _ttmp, #x); } } while (0)
 
 #define PSS(x,s) do { if (isReader) ns->Load((x), (s), #x); else ns->Save((x), (s), #x); } while (0)
 
-#define NSS(x) do { if (isReader) ns->Load(&(x), sizeof x, #x); else ns->Save(&(x), sizeof x, #x); } while (0)
+template<typename T>
+inline void nssSync(NewState *ns, T &x, char const *name, bool isReader) {
+	if (isReader) ns->Load(&x, sizeof x, name); else ns->Save(&x, sizeof x, name);
+}
+
+template<typename L>
+inline void nssLong(NewState *ns, L &x, char const *name, bool isReader) {
+	long long wide = x;
+	if (isReader) { ns->Load(&wide, sizeof wide, name); x = static_cast<L>(wide); }
+	else ns->Save(&wide, sizeof wide, name);
+}
+
+inline void nssSync(NewState *ns, long &x, char const *name, bool isReader) { nssLong(ns, x, name, isReader); }
+inline void nssSync(NewState *ns, unsigned long &x, char const *name, bool isReader) { nssLong(ns, x, name, isReader); }
+
+template<std::size_t N>
+inline void nssSync(NewState *ns, long (&x)[N], char const *name, bool isReader) { for (std::size_t i = 0; i < N; ++i) nssLong(ns, x[i], name, isReader); }
+template<std::size_t N>
+inline void nssSync(NewState *ns, unsigned long (&x)[N], char const *name, bool isReader) { for (std::size_t i = 0; i < N; ++i) nssLong(ns, x[i], name, isReader); }
+
+#define NSS(x) ::gambatte::nssSync(ns, x, #x, isReader)
 
 #define SSS(x) do { ns->EnterSection(#x); (x).SyncState<isReader>(ns); ns->ExitSection(#x); } while (0)
 
