@@ -45,6 +45,7 @@ public:
 	void resetCc(gb_ulong cc, gb_ulong newCc) { lfsr_.resetCc(cc, newCc); }
 	void saveState(SaveState &state, gb_ulong cc);
 	void loadState(SaveState const &state);
+	void restoreCounting(SaveState const &state) { lfsr_.restoreCounting(state.spu.ch4.lfsr.counting); }
 	template<bool isReader>void SyncState(NewState *ns);
 
 private:
@@ -63,6 +64,7 @@ private:
 		void loadState(SaveState const &state);
 		void disableMaster() { killCounter(); master_ = false; reg_ = 0x7FFF; }
 		void killCounter() { counter_ = counter_disabled; }
+		void restoreCounting(unsigned char counting);
 		void reviveCounter(gb_ulong cc);
 		template<bool isReader>void SyncState(NewState *ns);
 

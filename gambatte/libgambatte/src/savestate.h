@@ -185,6 +185,9 @@ struct SaveState {
 			// armGBA: the frequency's top three bits, which the sweep changes without NRx4 knowing,
 			// with bit 3 set; 0 in a state from before this was kept
 			unsigned char freqHigh;
+			// armGBA: 2 when the unit's events run, 1 when its output is static; 0 in a state from before
+			// this was kept
+			unsigned char events;
 			unsigned char pos;
 			unsigned char /*bool*/ high;
 		};
@@ -238,6 +241,9 @@ struct SaveState {
 			struct {
 				gb_ulong counter;
 				unsigned short reg;
+				// armGBA: 2 when the LFSR counts, 1 when its output is static; 0 in a state from before
+				// this was kept
+				unsigned char counting;
 			} lfsr;
 			Env env;
 			LCounter lcounter;

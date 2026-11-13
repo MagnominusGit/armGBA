@@ -149,13 +149,15 @@ void DutyUnit::saveState(SaveState::SPU::Duty &dstate, gb_ulong const cc) {
 	dstate.nextPosUpdate = nextPosUpdate_;
 	dstate.nr3 = freq() & 0xFF;
 	dstate.freqHigh = 0x08 | (freq() >> 8 & 7);
+	dstate.events = enableEvents_ ? 2 : 1;
 	dstate.pos = pos_;
 	dstate.high = high_;
 }
 
 void DutyUnit::loadState(SaveState::SPU::Duty const &dstate,
 		unsigned const nr1, unsigned const nr4, gb_ulong const cc) {
-	nextPosUpdate_ = std::max(dstate.nextPosUpdate, cc);
+	// armGBA: as saved, even when past, as the machine had it
+	nextPosUpdate_ = dstate.nextPosUpdate;
 	pos_ = dstate.pos % duty_pattern_len;
 	high_ = dstate.high;
 	duty_ = nr1 >> 6;
@@ -167,6 +169,15 @@ void DutyUnit::loadState(SaveState::SPU::Duty const &dstate,
 
 void DutyUnit::resetCounters(gb_ulong cc) {
 	resetCc(cc, cc - counter_max);
+}
+
+// armGBA: whether the unit's events ran when saved, once the rest of the sound has loaded and tested
+// its output
+void DutyUnit::restoreEvents(unsigned char const events) {
+	if (events) {
+		enableEvents_ = events == 2;
+		setCounter();
+	}
 }
 
 void DutyUnit::killCounter() {

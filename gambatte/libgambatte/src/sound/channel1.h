@@ -48,6 +48,7 @@ public:
 	void init(bool cgb);
 	void saveState(SaveState &state, gb_ulong cc);
 	void loadState(SaveState const &state);
+	void restoreEvents(SaveState const &state) { dutyUnit_.restoreEvents(state.spu.ch1.duty.events); }
 	template<bool isReader>void SyncState(NewState *ns);
 
 private:

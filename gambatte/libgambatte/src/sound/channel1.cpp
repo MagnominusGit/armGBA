@@ -99,7 +99,8 @@ void Channel1::SweepUnit::saveState(SaveState &state) const {
 }
 
 void Channel1::SweepUnit::loadState(SaveState const &state) {
-	counter_ = std::max(state.spu.ch1.sweep.counter, state.spu.cycleCounter);
+	// armGBA: as saved, even when past, as the machine had it
+	counter_ = state.spu.ch1.sweep.counter;
 	shadow_ = state.spu.ch1.sweep.shadow;
 	nr0_ = state.spu.ch1.sweep.nr0;
 	neg_ = state.spu.ch1.sweep.neg;

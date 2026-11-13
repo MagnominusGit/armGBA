@@ -73,7 +73,8 @@ void LengthCounter::saveState(SaveState::SPU::LCounter &lstate) const {
 }
 
 void LengthCounter::loadState(SaveState::SPU::LCounter const &lstate, gb_ulong const cc) {
-	counter_ = std::max(lstate.counter, cc);
+	// armGBA: as saved, even when past, as the machine had it
+	counter_ = lstate.counter;
 	lengthCounter_ = lstate.lengthCounter;
 }
 

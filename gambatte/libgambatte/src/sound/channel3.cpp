@@ -136,7 +136,8 @@ void Channel3::loadState(SaveState const &state) {
 	prevOut_ = state.spu.prevOut3;
 	lengthCounter_.loadState(state.spu.ch3.lcounter, state.spu.cycleCounter);
 
-	waveCounter_ = std::max(state.spu.ch3.waveCounter, state.spu.cycleCounter);
+	// armGBA: as saved, even when past, as the machine had it
+	waveCounter_ = state.spu.ch3.waveCounter;
 	lastReadTime_ = state.spu.ch3.lastReadTime;
 	nr3_ = state.spu.ch3.nr3;
 	nr4_ = state.spu.ch3.nr4;

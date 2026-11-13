@@ -128,6 +128,9 @@ void PSG::loadState(SaveState const &state) {
 	setSoVolume(state.mem.ioamhram.get()[0x124]);
 	mapSo(state.mem.ioamhram.get()[0x125]);
 	enabled_ = state.mem.ioamhram.get()[0x126] >> 7 & 1;
+	ch1_.restoreEvents(state);
+	ch2_.restoreEvents(state);
+	ch4_.restoreCounting(state);
 }
 
 inline void PSG::accumulateChannels(gb_ulong const cycles) {

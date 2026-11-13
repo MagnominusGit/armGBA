@@ -1730,7 +1730,10 @@ void loadSpriteList(PPUPriv &p, SaveState const &ss) {
 		while (p.spriteList[p.nextSprite].spx < ss.ppu.xpos)
 			++p.nextSprite;
 
-		p.currentSprite = std::min(p.nextSprite, ss.ppu.currentSprite);
+		// armGBA: as saved when it's a slot, as the machine had it
+		p.currentSprite = ss.ppu.currentSprite <= lcd_max_num_sprites_per_line
+			? ss.ppu.currentSprite
+			: std::min(p.nextSprite, ss.ppu.currentSprite);
 	} else {
 		// armGBA: outside a line being drawn these are left over from the last one, and come back as saved
 		for (int i = 0; i < lcd_max_num_sprites_per_line; ++i) {

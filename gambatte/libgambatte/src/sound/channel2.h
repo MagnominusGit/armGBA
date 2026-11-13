@@ -45,6 +45,7 @@ public:
 	void resetCc(gb_ulong cc, gb_ulong ncc) { dutyUnit_.resetCc(cc, ncc); }
 	void saveState(SaveState &state, gb_ulong cc);
 	void loadState(SaveState const &state);
+	void restoreEvents(SaveState const &state) { dutyUnit_.restoreEvents(state.spu.ch2.duty.events); }
 	template<bool isReader>void SyncState(NewState *ns);
 
 private:

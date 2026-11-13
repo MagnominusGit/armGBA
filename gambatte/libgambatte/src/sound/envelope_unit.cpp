@@ -45,7 +45,8 @@ void EnvelopeUnit::saveState(SaveState::SPU::Env &estate) const {
 }
 
 void EnvelopeUnit::loadState(SaveState::SPU::Env const &estate, unsigned nr2, gb_ulong cc) {
-	counter_ = std::max(estate.counter, cc);
+	// armGBA: as saved, even when past, as the machine had it
+	counter_ = estate.counter;
 	volume_ = estate.volume;
 	nr2_ = nr2;
 	clock_ = estate.clock;

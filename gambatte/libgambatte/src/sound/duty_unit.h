@@ -42,6 +42,7 @@ public:
 	void saveState(SaveState::SPU::Duty &dstate, gb_ulong cc);
 	void loadState(SaveState::SPU::Duty const &dstate, unsigned nr1, unsigned nr4, gb_ulong cc);
 	void killCounter();
+	void restoreEvents(unsigned char events);
 	void reviveCounter(gb_ulong cc);
 
 	//intended for use by SweepUnit only.

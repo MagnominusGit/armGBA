@@ -124,6 +124,13 @@ void Channel4::Lfsr::reset(gb_ulong cc) {
 	backupCounter_ = cc + toPeriod(nr3_);
 }
 
+// armGBA: whether the LFSR counted when saved, once the rest of the sound has loaded and tested its
+// output
+void Channel4::Lfsr::restoreCounting(unsigned char const counting) {
+	if (counting)
+		counter_ = counting == 2 ? backupCounter_ : 1 * counter_disabled;
+}
+
 void Channel4::Lfsr::resetCc(gb_ulong cc, gb_ulong newCc) {
 	updateBackupCounter(cc);
 	backupCounter_ -= cc - newCc;
@@ -138,11 +145,13 @@ void Channel4::Lfsr::resetCounters(gb_ulong cc) {
 void Channel4::Lfsr::saveState(SaveState &state, gb_ulong cc) {
 	updateBackupCounter(cc);
 	state.spu.ch4.lfsr.counter = backupCounter_;
+	state.spu.ch4.lfsr.counting = counter_ == counter_disabled ? 1 : 2;
 	state.spu.ch4.lfsr.reg = reg_;
 }
 
 void Channel4::Lfsr::loadState(SaveState const &state) {
-	counter_ = backupCounter_ = std::max(state.spu.ch4.lfsr.counter, state.spu.cycleCounter);
+	// armGBA: as saved, even when past, as the machine had it
+	counter_ = backupCounter_ = state.spu.ch4.lfsr.counter;
 	reg_ = state.spu.ch4.lfsr.reg;
 	master_ = state.spu.ch4.master;
 	nr3_ = state.mem.ioamhram.get()[0x122];
