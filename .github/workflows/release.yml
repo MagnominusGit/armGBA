@@ -1,9 +1,8 @@
-# The standalone app's AppImages and APK, built by Armulators' workflow, for each release.
+# The standalone app's AppImages and APK, built by Armulators' workflow when run by hand. Releases
+# carry the files built locally, so publishing one doesn't run it.
 name: release
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
