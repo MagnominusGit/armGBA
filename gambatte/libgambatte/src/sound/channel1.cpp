@@ -197,6 +197,7 @@ void Channel1::init(bool cgb) {
 }
 
 void Channel1::saveState(SaveState &state, gb_ulong cc) {
+	state.spu.prevOut1 = prevOut_;
 	sweepUnit_.saveState(state);
 	dutyUnit_.saveState(state.spu.ch1.duty, cc);
 	envelopeUnit_.saveState(state.spu.ch1.env);
@@ -207,6 +208,7 @@ void Channel1::saveState(SaveState &state, gb_ulong cc) {
 }
 
 void Channel1::loadState(SaveState const &state) {
+	prevOut_ = state.spu.prevOut1;
 	sweepUnit_.loadState(state);
 	dutyUnit_.loadState(state.spu.ch1.duty, state.mem.ioamhram.get()[0x111],
 		state.spu.ch1.nr4, state.spu.cycleCounter);

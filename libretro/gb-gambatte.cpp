@@ -1394,6 +1394,32 @@ size_t printerAt() {
 	return s->stateSize - sizeof(printer);
 }
 
+// The sums towards the next frontend sample, just before the printer's state, so sound carries on
+// from a loaded state as it would have. Older states have zeros there.
+size_t mixAt() {
+	return printerAt() - 3 * sizeof(int32_t);
+}
+
+void saveMix(void* data, size_t length) {
+	if (sizeof(gambatte::uint_least32_t) + length <= mixAt()) {
+		int32_t const mix[3] = { static_cast<int32_t>(s->sumLeft), static_cast<int32_t>(s->sumRight), static_cast<int32_t>(s->summed) };
+		std::memcpy(static_cast<char*>(data) + mixAt(), mix, sizeof(mix));
+	}
+}
+
+void loadMix(const void* data, size_t size) {
+	gambatte::uint_least32_t length;
+	std::memcpy(&length, data, sizeof(length));
+	length &= ~0x80000000u;
+	int32_t mix[3] = { 0, 0, 0 };
+	if (size >= s->stateSize && sizeof(length) + length <= mixAt()) {
+		std::memcpy(mix, static_cast<const char*>(data) + mixAt(), sizeof(mix));
+	}
+	s->sumLeft = mix[0];
+	s->sumRight = mix[1];
+	s->summed = mix[2] >= 0 && static_cast<unsigned>(mix[2]) < ratio ? mix[2] : 0;
+}
+
 void savePrinter(void* data, size_t length) {
 	if (s == &consoles[0] && sizeof(gambatte::uint_least32_t) + length <= printerAt()) {
 		std::memcpy(static_cast<char*>(data) + printerAt(), &printer, sizeof(printer));
@@ -1426,6 +1452,7 @@ bool saveExact(void* data) {
 		std::memcpy(data, &marked, sizeof(marked));
 		s->gb->saveExactState(static_cast<char*>(data) + sizeof(length));
 		std::memset(static_cast<char*>(data) + sizeof(length) + length, 0, s->stateSize - sizeof(length) - length);
+		saveMix(data, length);
 		savePrinter(data, length);
 	}
 	setColors();
@@ -1448,6 +1475,7 @@ bool saveOne(void* data, size_t size) {
 	s->gb->saveState(0, 0, static_cast<char*>(data) + sizeof(length));
 	// The room left for the state to grow is zero, so the same machine always makes the same state.
 	std::memset(static_cast<char*>(data) + sizeof(length) + length, 0, s->stateSize - sizeof(length) - length);
+	saveMix(data, length);
 	savePrinter(data, length);
 	return true;
 }
@@ -1516,6 +1544,7 @@ bool loadOne(const void* data, size_t size) {
 	if (!readState(data, size)) {
 		return false;
 	}
+	loadMix(data, size);
 	loadPrinter(data, size);
 	if (keepClock) {
 		s->gb->setRtcRegs(clock);

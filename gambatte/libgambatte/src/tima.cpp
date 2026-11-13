@@ -46,11 +46,12 @@ void Tima::saveState(SaveState &state) const {
 
 void Tima::loadState(SaveState const &state, TimaInterruptRequester timaIrq) {
 	divLastUpdate_ = state.mem.divLastUpdate - 0x100 * state.mem.ioamhram.get()[0x104];
-	lastUpdate_ = std::min(state.mem.timaLastUpdate, state.cpu.cycleCounter);
 	tmatime_ = state.mem.tmatime;
 	tima_ = state.mem.ioamhram.get()[0x105];
 	tma_  = state.mem.ioamhram.get()[0x106];
 	tac_  = state.mem.ioamhram.get()[0x107];
+	// armGBA: a stopped timer's last update isn't used until it starts again, and comes back as saved
+	lastUpdate_ = tac_ & 4 ? std::min(state.mem.timaLastUpdate, state.cpu.cycleCounter) : state.mem.timaLastUpdate;
 
 	gb_ulong nextIrqEventTime = disabled_time;
 	if (tac_ & 4) {

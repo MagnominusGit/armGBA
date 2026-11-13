@@ -222,6 +222,7 @@ void Channel4::reset(gb_ulong cc) {
 }
 
 void Channel4::saveState(SaveState &state, gb_ulong cc) {
+	state.spu.prevOut4 = prevOut_;
 	lfsr_.saveState(state, cc);
 	envelopeUnit_.saveState(state.spu.ch4.env);
 	lengthCounter_.saveState(state.spu.ch4.lcounter);
@@ -231,6 +232,7 @@ void Channel4::saveState(SaveState &state, gb_ulong cc) {
 }
 
 void Channel4::loadState(SaveState const &state) {
+	prevOut_ = state.spu.prevOut4;
 	lfsr_.loadState(state);
 	envelopeUnit_.loadState(state.spu.ch4.env, state.mem.ioamhram.get()[0x121],
 		state.spu.cycleCounter);

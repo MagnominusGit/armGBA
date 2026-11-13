@@ -316,6 +316,7 @@ SaverList::SaverList()
 	{ static char const label[] = { e,d,M,NO0,t,i,m, NUL }; ADD(ppu.enableDisplayM0Time); }
 	{ static char const label[] = { m,NO0,t,i,m,e, NUL }; ADD(ppu.lastM0Time); }
 	{ static char const label[] = { n,m,NO0,i,r,q, NUL }; ADD(ppu.nextM0Irq); }
+	{ static char const label[] = { m,NO0,s,c,h,e,d, NUL }; ADD(ppu.m0IrqScheduled); }
 	{ static char const label[] = { b,g,t,w,       NUL }; ADD(ppu.tileword); }
 	{ static char const label[] = { b,g,n,t,w,     NUL }; ADD(ppu.ntileword); }
 	{ static char const label[] = { w,i,n,y,p,o,s, NUL }; ADD(ppu.winYPos); }
@@ -339,12 +340,18 @@ SaverList::SaverList()
 	{ static char const label[] = { i,s,c,g,b,     NUL }; ADD(ppu.notCgbDmg); }
 	{ static char const label[] = { s,p,u,c,n,t,r, NUL }; ADD(spu.cycleCounter); }
 	{ static char const label[] = { s,p,u,c,n,t,l, NUL }; ADD(spu.lastUpdate); }
+	{ static char const label[] = { s,p,u,r,s,u,m, NUL }; ADD(spu.rsum); }
+	{ static char const label[] = { c,h,NO1,o,u,t, NUL }; ADD(spu.prevOut1); }
+	{ static char const label[] = { c,h,NO2,o,u,t, NUL }; ADD(spu.prevOut2); }
+	{ static char const label[] = { c,h,NO3,o,u,t, NUL }; ADD(spu.prevOut3); }
+	{ static char const label[] = { c,h,NO4,o,u,t, NUL }; ADD(spu.prevOut4); }
 	{ static char const label[] = { s,w,p,c,n,t,r, NUL }; ADD(spu.ch1.sweep.counter); }
 	{ static char const label[] = { s,w,p,s,h,d,w, NUL }; ADD(spu.ch1.sweep.shadow); }
 	{ static char const label[] = { s,w,p,n,e,g,   NUL }; ADD(spu.ch1.sweep.neg); }
 	{ static char const label[] = { d,u,t,NO1,c,t,r, NUL }; ADD(spu.ch1.duty.nextPosUpdate); }
 	{ static char const label[] = { d,u,t,NO1,p,o,s, NUL }; ADD(spu.ch1.duty.pos); }
 	{ static char const label[] = { d,u,t,NO1,h,i,   NUL }; ADD(spu.ch1.duty.high); }
+	{ static char const label[] = { d,u,t,NO1,f,h,i, NUL }; ADD(spu.ch1.duty.freqHigh); }
 	{ static char const label[] = { e,n,v,NO1,c,t,r, NUL }; ADD(spu.ch1.env.counter); }
 	{ static char const label[] = { e,n,v,NO1,v,o,l, NUL }; ADD(spu.ch1.env.volume); }
 	{ static char const label[] = { e,n,v,NO1,c,l,k, NUL }; ADD(spu.ch1.env.clock); }
@@ -357,6 +364,7 @@ SaverList::SaverList()
 	{ static char const label[] = { d,u,t,NO2,c,t,r, NUL }; ADD(spu.ch2.duty.nextPosUpdate); }
 	{ static char const label[] = { d,u,t,NO2,p,o,s, NUL }; ADD(spu.ch2.duty.pos); }
 	{ static char const label[] = { d,u,t,NO2,h,i,   NUL }; ADD(spu.ch2.duty.high); }
+	{ static char const label[] = { d,u,t,NO2,f,h,i, NUL }; ADD(spu.ch2.duty.freqHigh); }
 	{ static char const label[] = { e,n,v,NO2,c,t,r, NUL }; ADD(spu.ch2.env.counter); }
 	{ static char const label[] = { e,n,v,NO2,v,o,l, NUL }; ADD(spu.ch2.env.volume); }
 	{ static char const label[] = { e,n,v,NO2,c,l,k, NUL }; ADD(spu.ch2.env.clock); }

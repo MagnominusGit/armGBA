@@ -94,6 +94,7 @@ void Channel2::reset() {
 }
 
 void Channel2::saveState(SaveState &state, gb_ulong cc) {
+	state.spu.prevOut2 = prevOut_;
 	dutyUnit_.saveState(state.spu.ch2.duty, cc);
 	envelopeUnit_.saveState(state.spu.ch2.env);
 	lengthCounter_.saveState(state.spu.ch2.lcounter);
@@ -103,6 +104,7 @@ void Channel2::saveState(SaveState &state, gb_ulong cc) {
 }
 
 void Channel2::loadState(SaveState const &state) {
+	prevOut_ = state.spu.prevOut2;
 	dutyUnit_.loadState(state.spu.ch2.duty, state.mem.ioamhram.get()[0x116],
 		state.spu.ch2.nr4, state.spu.cycleCounter);
 	envelopeUnit_.loadState(state.spu.ch2.env, state.mem.ioamhram.get()[0x117],

@@ -109,6 +109,7 @@ void PSG::setStatePtrs(SaveState &state) {
 void PSG::saveState(SaveState &state) {
 	state.spu.cycleCounter = cycleCounter_;
 	state.spu.lastUpdate = (lastUpdate_ + 1) % 4;
+	state.spu.rsum = rsum_ ^ 0x8000;
 	ch1_.saveState(state, cycleCounter_);
 	ch2_.saveState(state, cycleCounter_);
 	ch3_.saveState(state);
@@ -123,6 +124,7 @@ void PSG::loadState(SaveState const &state) {
 
 	cycleCounter_ = state.spu.cycleCounter;
 	lastUpdate_ = state.cpu.cycleCounter - (1 - state.spu.lastUpdate) % 4u;
+	rsum_ = state.spu.rsum ^ 0x8000;
 	setSoVolume(state.mem.ioamhram.get()[0x124]);
 	mapSo(state.mem.ioamhram.get()[0x125]);
 	enabled_ = state.mem.ioamhram.get()[0x126] >> 7 & 1;

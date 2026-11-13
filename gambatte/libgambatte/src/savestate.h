@@ -149,6 +149,9 @@ struct SaveState {
 		gb_ulong enableDisplayM0Time;
 		unsigned short lastM0Time;
 		unsigned short nextM0Irq;
+		// armGBA: 2 when a mode 0 interrupt event is scheduled, 1 when none is; 0 in a state from before
+		// this was kept, which counts on the STAT register instead
+		unsigned char m0IrqScheduled;
 		unsigned short tileword;
 		unsigned short ntileword;
 		unsigned char spAttribList[10];
@@ -179,6 +182,9 @@ struct SaveState {
 		struct Duty {
 			gb_ulong nextPosUpdate;
 			unsigned char nr3;
+			// armGBA: the frequency's top three bits, which the sweep changes without NRx4 knowing,
+			// with bit 3 set; 0 in a state from before this was kept
+			unsigned char freqHigh;
 			unsigned char pos;
 			unsigned char /*bool*/ high;
 		};
@@ -241,6 +247,14 @@ struct SaveState {
 
 		gb_ulong cycleCounter;
 		unsigned char lastUpdate;
+		// armGBA: the mixer's running sum (xor its power-on value) and each channel's last output, which
+		// the next samples are worked out from; a state from before these were kept loads with the
+		// mixer as at power-on
+		gb_ulong rsum;
+		gb_ulong prevOut1;
+		gb_ulong prevOut2;
+		gb_ulong prevOut3;
+		gb_ulong prevOut4;
 	} spu;
 
 	struct Time {

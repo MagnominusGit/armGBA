@@ -120,6 +120,7 @@ void Channel3::setStatePtrs(SaveState &state) {
 }
 
 void Channel3::saveState(SaveState &state) const {
+	state.spu.prevOut3 = prevOut_;
 	lengthCounter_.saveState(state.spu.ch3.lcounter);
 
 	state.spu.ch3.waveCounter = waveCounter_;
@@ -132,6 +133,7 @@ void Channel3::saveState(SaveState &state) const {
 }
 
 void Channel3::loadState(SaveState const &state) {
+	prevOut_ = state.spu.prevOut3;
 	lengthCounter_.loadState(state.spu.ch3.lcounter, state.spu.cycleCounter);
 
 	waveCounter_ = std::max(state.spu.ch3.waveCounter, state.spu.cycleCounter);

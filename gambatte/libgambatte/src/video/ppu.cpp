@@ -1731,6 +1731,15 @@ void loadSpriteList(PPUPriv &p, SaveState const &ss) {
 			++p.nextSprite;
 
 		p.currentSprite = std::min(p.nextSprite, ss.ppu.currentSprite);
+	} else {
+		// armGBA: outside a line being drawn these are left over from the last one, and come back as saved
+		for (int i = 0; i < lcd_max_num_sprites_per_line; ++i) {
+			p.spriteList[i].attrib = ss.ppu.spAttribList[i];
+			p.spwordList[i] = ss.ppu.spByte1List[i] * 0x100 + ss.ppu.spByte0List[i];
+		}
+
+		p.nextSprite = std::min(1u * ss.ppu.nextSprite, 1u * lcd_max_num_sprites_per_line);
+		p.currentSprite = ss.ppu.currentSprite;
 	}
 }
 
@@ -1779,6 +1788,9 @@ void PPU::loadState(SaveState const &ss, unsigned char const *const oamram) {
 	p_.xpos = std::min(1u * xpos_end, 1u * ss.ppu.xpos);
 	p_.endx = (p_.xpos & -1u * tile_len) + ss.ppu.endx % tile_len;
 	p_.endx = std::min(1u * xpos_end, p_.endx <= p_.xpos ? p_.endx + 1u * tile_len : p_.endx);
+	// armGBA: a finished line's endx comes back as saved
+	if (ss.ppu.xpos >= xpos_end)
+		p_.endx = ss.ppu.endx;
 	p_.reg0 = ss.ppu.reg0 & 0xFF;
 	p_.reg1 = ss.ppu.reg1 & 0xFF;
 	p_.tileword = ss.ppu.tileword & 0xFFFF;

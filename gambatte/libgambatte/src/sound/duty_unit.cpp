@@ -148,6 +148,7 @@ void DutyUnit::saveState(SaveState::SPU::Duty &dstate, gb_ulong const cc) {
 	setCounter();
 	dstate.nextPosUpdate = nextPosUpdate_;
 	dstate.nr3 = freq() & 0xFF;
+	dstate.freqHigh = 0x08 | (freq() >> 8 & 7);
 	dstate.pos = pos_;
 	dstate.high = high_;
 }
@@ -158,7 +159,8 @@ void DutyUnit::loadState(SaveState::SPU::Duty const &dstate,
 	pos_ = dstate.pos % duty_pattern_len;
 	high_ = dstate.high;
 	duty_ = nr1 >> 6;
-	period_ = toPeriod((nr4 << 8 & 0x700) | dstate.nr3);
+	unsigned const high = dstate.freqHigh & 0x08 ? dstate.freqHigh & 7 : nr4 & 7;
+	period_ = toPeriod(high << 8 | dstate.nr3);
 	enableEvents_ = true;
 	setCounter();
 }

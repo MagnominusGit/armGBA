@@ -154,7 +154,8 @@ void LCD::setStatePtrs(SaveState &state) {
 
 void LCD::saveState(SaveState &state) const {
 	state.mem.hdmaTransfer = hdmaIsEnabled();
-	state.ppu.nextM0Irq = eventTimes_(memevent_m0irq) - ppu_.now();
+	state.ppu.m0IrqScheduled = eventTimes_(memevent_m0irq) == disabled_time ? 1 : 2;
+	state.ppu.nextM0Irq = state.ppu.m0IrqScheduled == 2 ? eventTimes_(memevent_m0irq) - ppu_.now() : 0;
 	state.ppu.pendingLcdstatIrq = eventTimes_(memevent_oneshot_statirq) != disabled_time;
 
 	lycIrq_.saveState(state);
@@ -187,14 +188,20 @@ void LCD::loadState(SaveState const &state, unsigned char const *const oamram) {
 		eventTimes_.setm<memevent_m1irq>(mode1IrqSchedule(ppu_.lyCounter(), ppu_.now()));
 		eventTimes_.setm<memevent_m2irq>(
 			mode2IrqSchedule(statReg_, ppu_.lyCounter(), ppu_.now()));
-		eventTimes_.setm<memevent_m0irq>(statReg_ & lcdstat_m0irqen
+		eventTimes_.setm<memevent_m0irq>((state.ppu.m0IrqScheduled ? state.ppu.m0IrqScheduled == 2 : statReg_ & lcdstat_m0irqen)
 			? ppu_.now() + state.ppu.nextM0Irq
 			: 1 * disabled_time);
 		eventTimes_.setm<memevent_hdma>(state.mem.hdmaTransfer
 			? nextM0Time_.predictedNextM0Time()
 			: 1 * disabled_time);
-	} else for (int i = 0; i < num_memevents; ++i)
-		eventTimes_.set(MemEvent(i), disabled_time);
+	} else {
+		for (int i = 0; i < num_memevents; ++i)
+			eventTimes_.set(MemEvent(i), disabled_time);
+
+		// armGBA: a mode 0 event left from before the screen went off is kept, as turning it on looks at it
+		if (state.ppu.m0IrqScheduled == 2)
+			eventTimes_.setm<memevent_m0irq>(ppu_.now() + state.ppu.nextM0Irq);
+	}
 
 	refreshPalettes();
 }
