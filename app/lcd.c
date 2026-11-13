@@ -204,7 +204,7 @@ void lcdRendererGoing(void) {
 	lcdGlStop();
 }
 
-// LCD Effects stands for the core's CPU LCD Effects: the core draws its effects only on the CPU.
+// The app's LCD Effects stands for the core's: the core draws its effects only on the CPU.
 const char* lcdOptionRead(const struct Option* option) {
 	if (strcmp(option->key, "armgba_lcd_effects")) {
 		return NULL;
@@ -212,7 +212,7 @@ const char* lcdOptionRead(const struct Option* option) {
 	return lcdSettings.effects == LCD_OFF || gpuOn() ? "disabled" : "enabled";
 }
 
-// LCD Effects replaces CPU LCD Effects' row. With the effects on the GPU, the core's own rows go too
+// The app's LCD Effects replaces the core's row. With the effects on the GPU, the core's own rows go too
 // (LCD Scale, Pixel Gaps, its pixel shadow and LCD Effect Threads), and the settings the GPU shares
 // show as the screen has them: LCD Ghosting; Interlaced Rows and LCD Subpixels on the Color's and
 // Advance's screens; Pixel Shadow Distance with the GPU's shadow on.

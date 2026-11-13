@@ -88,7 +88,7 @@ standalone frontend shows as one page with headers.
 | | Game Boy on GBA: Screen | Game Boy | Game Boy Advance, Game Boy Color (Game Boy Advance model) |
 | | Frame Skip | Both | Off, Auto, 1, 2, 3 (not in netplay) |
 | | Fast-Forward Skip | Game Boy Advance | Off, On (on by default; not in netplay) |
-| Video: LCD Effects | CPU LCD Effects | Both | Off, On (each effect below keeps its setting) |
+| Video: LCD Effects | LCD Effects | Both | Off, On (each effect below keeps its setting) |
 | | LCD Ghosting | Both | Off, 25%, 50%, 75%, 100% |
 | | Interlaced Rows | Both | Off, On (Color's and Advance's screens) |
 | | LCD Scale | Both | Off, Fit Screen, 2x to 8x in steps of 0.5x |
@@ -110,7 +110,7 @@ standalone frontend shows as one page with headers.
 | | Shared Controls (Link Mode Off) | Both | Off, Everyone (every player's buttons at once), Pass Around (one player at a time, taking over with the Switch Controller Combo) |
 | Link: Players | Number of Players (applies on restart) | Both | 2, 3, 4 (Together) |
 | | Player 2's Game (applies on restart) | Both | Same Game, then the games beside player 1's (Together) |
-| Link: Connection | Cartridge (applies on restart) | Game Boy Advance | Inserted, Removed (Separate, GameCube) |
+| Link: Connection | Player 1's Cartridge (applies on restart) | Game Boy Advance | Inserted, Removed (Separate, GameCube) |
 | | GBA Link Port (applies on restart) | Game Boy Advance | Link Cable, Wireless Adapter |
 | | Game Boy Link Port (applies on restart) | Game Boy | Link Cable, Four Player Adapter (Together) |
 | | Game Boy Link Timing | Game Boy | Standard, Exact (Separate) |
@@ -180,7 +180,7 @@ correction on), its LCD grid and its ghosting.
 
 ### LCD effects
 
-CPU LCD Effects turns every effect the core draws on the CPU off or on at once, and each effect
+LCD Effects turns every effect the core draws on the CPU off or on at once, and each effect
 keeps its own setting. The effects work independently, except that Pixel Gaps, LCD Subpixels and the
 Game Boy pixel shadow draw inside each pixel, so they need LCD Scale's larger picture and show only
 with it.
@@ -232,7 +232,7 @@ and the green one between them, so each channel is made up for as far as its own
 and the colors stay true.
 
 RetroArch's shader presets in `shaders/` draw every one of these effects on the GPU instead, at any
-size and without integer scaling, so turn CPU LCD Effects off when using them. There is one preset
+size and without integer scaling, so turn LCD Effects off when using them. There is one preset
 for each screen, `.slangp` and `.glslp`: `gb`, `gb-pocket`, `gb-light` and `gb-gray` (with the
 shadow), `gbc` and `gba`. Each runs two passes. The first draws LCD Ghosting and Interlaced Rows at
 the console's resolution from the last frame shown, with the same math as the CPU and each screen's
@@ -252,7 +252,7 @@ Fit Screen does, so every gap is drawn alike at any size. Both grids are at full
 and fade out towards 1x, where a gap is under a pixel wide.
 
 The standalone frontend draws the same effects on the GPU itself, with the same shaders. Its LCD
-Effects setting, in place of CPU LCD Effects, is Off, CPU (the core draws every effect), GPU (the
+Effects setting, in place of the core's LCD Effects, is Off, CPU (the core draws every effect), GPU (the
 app draws every effect) or GPU Fast (the `-fast` presets' shaders, without subpixels or the pixel
 shadow), never some of each, and each effect keeps its setting. On the GPU, LCD
 Ghosting moves on once for each picture the core sends, and Pixel Gaps and the pixel shadow are set
@@ -365,7 +365,7 @@ also work on a row without a value). It opens again where it was left.
   cheats (RetroArch's `.cht` files can be added), its saves (the core's Saves options: backing up,
   loading and sending), Restart, Take Screenshot, recording and Close Game.
 - **Core:** the core's options, in RetroArch's categories, with LCD Effects (Off, CPU, GPU or GPU Fast) in
-  Video in place of CPU LCD Effects.
+  Video in place of the core's LCD Effects.
 - **Extras:** netplay and RetroAchievements.
 
 Rows ending in "..." open a page. Rows with a value step through it, except Back Up Save, Load Save

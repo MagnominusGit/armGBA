@@ -714,7 +714,7 @@ static void readOptions(void) {
 	threadedVideo = threaded;
 	videoThreads = threads;
 	colorCorrection = optionIs("armgba_color_correction", "enabled") && buildCorrectedColors();
-	// CPU LCD Effects off leaves each effect's setting as it is, and off.
+	// LCD Effects off leaves each effect's setting as it is, and off.
 	bool const effects = optionIs("armgba_lcd_effects", "enabled");
 	static const struct Choice ghostingChoices[] = { { "25", 1 }, { "half", 2 }, { "75", 3 }, { "enabled", 4 } };
 	ghosting = effects ? optionChoice("armgba_lcd_ghosting", ghostingChoices, COUNT(ghostingChoices), 0) : 0;
