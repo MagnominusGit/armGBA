@@ -32,7 +32,10 @@ Remote::Remote()
 }
 
 void Remote::update(gb_ulong const cc) {
-	cyclesElapsed_ += (cc - lastUpdate_) >> ds_;
+	// armGBA: the count stops at its top, long after the signal has ended, and doesn't wrap round
+	// to send the signal again.
+	gb_ulong const passed = (cc - lastUpdate_) >> ds_;
+	cyclesElapsed_ = cyclesElapsed_ + passed < cyclesElapsed_ ? 0xFFFFFFFFu : cyclesElapsed_ + passed;
 	lastUpdate_ = cc;
 }
 
@@ -44,7 +47,8 @@ bool Remote::getRemoteSignal(gb_ulong const cc) {
 
 	update(cc);
 	unsigned char modulation = (cyclesElapsed_ / 105) & 1; // 4194304 Hz CPU, 40000 Hz remote signal
-	gb_ulong timeUs = cyclesElapsed_ * 36 / 151; // actually *1000000/4194304
+	// armGBA: in 64 bits; in 32 the product overflowed after 28 seconds and the signal came again.
+	unsigned long long timeUs = cyclesElapsed_ * 36ull / 151; // actually *1000000/4194304
 	// sony protocol
 	if (timeUs < 10000) // initialization allowance
 		return 0;
