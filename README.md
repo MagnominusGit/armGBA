@@ -1,6 +1,6 @@
 # armGBA
 
-A Game Boy Advance, Game Boy and Game Boy Color libretro core for low-power handhelds.
+A Game Boy Advance, Game Boy, Game Boy Color and Mega Duck libretro core for low-power handhelds.
 
 armGBA builds on other projects. Parts of its Game Boy Advance side come from mGBA (Jeffrey Pfau and
 contributors), notably the renderer, cheat engine, sound channels and save chips, and mGBA is the
@@ -72,6 +72,9 @@ standalone frontend shows as one page with headers.
 | | Low Memory (applies when a game is opened) | Game Boy Advance | Off, On |
 | | Game Boy Model (applies on restart) | Game Boy | Auto, Game Boy, Game Boy Pocket / Light, Game Boy Color, Game Boy Advance |
 | | Game Boy Boot ROM (applies on restart) | Game Boy | Nintendo's (System Folder), armGBA's (Built In), Off |
+| | Mega Duck Laptop (applies on restart) | Mega Duck | Auto (for `.md0`), On, Off |
+| | Mega Duck Laptop Printer (applies on restart) | Mega Duck | Two Pass, One Pass, None |
+| | Mega Duck Laptop Speech (applies on restart) | Mega Duck | Spanish (Super Quique), German (Super Junior) |
 | Clock | Clock Source | Both | Real Time, Game Time |
 | | Clock Speed (with Game Time) | Both | Stopped, 0.1x, 0.25x, 0.5x, 0.75x, 1x, 1.25x, 1.5x, 2x, 3x, 4x, 6x, 10x, 24x, 60x (1x by default) |
 | | Clock Offset: Days | Both (not HuC3) | -30 to +30 days, 0 by default |
@@ -535,6 +538,35 @@ status, the print command's palette and exposure, compressed image data, and a p
 is saved as a PNG in the save folder. Printing takes a second for every eight rows, as SameBoy has
 it, since the real printer's speed isn't documented.
 
+### Mega Duck
+
+The Mega Duck (and Cougar Boy) is an original Game Boy with its I/O registers moved, some of their
+bits rearranged, its own cartridges and no boot ROM. armGBA runs it on the same Gambatte core, as
+bbbbbr's megaduck-info documents the hardware:
+
+- A `.bin` without a Game Boy or Game Boy Advance header is a Mega Duck game. `.duck`, `.md0`,
+  `.md1`, `.md2`, `.md20s` and `.md25s` name the cartridge kind, as megaduck-info has them; a `.bin`
+  gets both handheld kinds at once (a 32 KiB bank at B000, a 16 KiB bank at 0001), as their
+  registers don't overlap. Bank 0 written to 0001 is bank 1, as the MiSTer core has it.
+- LCDC's bits in the Mega Duck's order, NR12, NR22, NR42 and NR43 with their halves swapped, and
+  NR32's full and quarter volume the other way round.
+- It starts at 0000 with VRAM clear and the screen off.
+- MD0 (the laptops' system ROMs and programs), MD20S and MD25S cartridges have their RAM (32 KiB,
+  128 KiB on MD25S), kept as a save file.
+
+The 23 retail Mega Duck games and 15 made since that it was tested with run, including the ones
+SameDuck draws wrongly: Canyon Racer, Commin 5 in 1, Duck Adventures' levels, Vex's counter and the
+status bars of Ant Soldiers, Beast Fighter and Worm Visitor.
+
+The laptops (CEFA Super Quique, Hartung Super Junior) are there too, with the Mega Duck Laptop option:
+their keyboard (the frontend's keyboard, Ctrl with F1 to F10 and the top row for the piano keys),
+clock, printer (pages saved as pictures, as the Game Boy Printer's are) and speech (the six phrases,
+from megaduck-info's recordings in the system folder: `megaduck_laptop_speech_spanish_1.wav` to `_6`,
+or `_german_`). Their controller on the serial port is Super Junior SameDuck's emulation of it. A
+cartridge in the laptop's slot is loaded with the "Mega Duck Laptop (Cartridge in the Slot)"
+subsystem, with the system ROM, and runs when the laptop asks for it, with the rest of the machine
+kept as it was. The laptops' system ROMs aren't included.
+
 ### Link play
 
 Link Mode picks how consoles link. Off, the default, is one console, with RetroArch's usual netplay.
@@ -779,6 +811,8 @@ Code taken from other projects, each under its own license (see License):
 - **SameBoy** (Lior Halphon, MIT): the Game Boy screen palettes other than Grayscale, and the Game
   Boy Color and Game Boy Advance color correction curves. A SameBoy-based build is also the
   reference the Game Boy side is tested against.
+- **Super Junior SameDuck** (bbbbbr, SameBoy's Expat license): the Mega Duck laptops' controller in
+  `libretro/megaduck/megaduck_laptop*.c`, and its keyboard map.
 - **libretro** (MIT): `libretro/libretro.h`.
 - **RetroArch** (MIT, public domain): libretro-common and the LZMA SDK as RetroArch carries them, in
   `libretro/deps/` (see its README), and rcheevos, in Armulators' `deps/`.
@@ -795,6 +829,8 @@ Read for how the hardware behaves, without code taken:
   their period, and its Grayscale palette.
 - **pret/pokecrystal** and **pret/pokegold**: how the games they decompile check the clock.
 - **gpSP**: fast-forward on a held button.
+- **megaduck-info** (bbbbbr and others, CC0), **SameDuck** (LIJI32), **GBDK-2020** and the **MiSTer**
+  Game Boy core: the Mega Duck's registers, cartridges and laptop protocol.
 
 Test ROMs: jsmolka's gba-tests, DenSinH's FuzzARM, NanoBoyAdvance's hardware tests, mGBA's test
 suite and its Game Boy test collection (Blargg's tests, Gekkio's Mooneye, LIJI's SameSuite).
@@ -822,3 +858,4 @@ Gambatte. Each part keeps its own notice:
 | `app/`, `app.cmake`, `shaders/`, `bios/`, `gbboot/` | Mozilla Public License 2.0 |
 | `armulators/` | its own notices: GNU GPL, version 2 or later, with the fonts under the SIL Open Font License 1.1 and its `deps/` MIT and public domain |
 | The Game Boy palettes (other than Grayscale) and color curves in `libretro/gb-gambatte.cpp` | MIT, from SameBoy (Lior Halphon) |
+| `libretro/megaduck/megaduck_laptop*` | Expat, from Super Junior SameDuck (`libretro/megaduck/LICENSE`) |
