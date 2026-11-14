@@ -13,7 +13,7 @@ void MD_send_buf_enqueue(GB_megaduck_laptop_t * periph, uint8_t byte_to_enqueue)
         printf("   ..  Periph: Enqueue 0x%02x as [%d]\n", byte_to_enqueue, periph->ext_clk_send_buf_size);
     #endif
 
-    if (periph->ext_clk_send_buf_size <= MEGADUCK_BUF_SZ)
+    if (periph->ext_clk_send_buf_size < MEGADUCK_BUF_SZ)  // armGBA: <=, which wrote past the end
         periph->ext_clk_send_buf[ periph->ext_clk_send_buf_size++ ] = byte_to_enqueue;
 }
 

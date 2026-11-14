@@ -578,7 +578,8 @@ The cartridge's hardware isn't documented; armGBA follows what its program does 
 
 The game on top keeps its own save, under its own name, so it's the same save as when the game runs
 by itself. States keep the Action Replay's registers, and load only with the same Action Replay and
-game. The Action Replay's PC link and its game-save backups aren't emulated.
+game. An Action Replay plays on one console, as a Mega Duck does: Link Mode Together starts no
+other consoles with one. The Action Replay's PC link and its game-save backups aren't emulated.
 
 The Game Boy ones show the game the boot ROM's logo, then their menu. With codes on, the console's
 VBlank interrupt runs the Action Replay's handler first, which applies the codes (compiled into its

@@ -271,6 +271,7 @@ static bool contrastStick(void);
 static void readReplayPress(bool act);
 static bool switchStart(int port);
 static bool l3Free(void);
+static void stopFastForward(void);
 // The stick click that's the Action Replay's button, or REPLAY_BUTTON_OFF; and how many more frames
 // Open Action Replay Menu holds it.
 enum { REPLAY_BUTTON_OFF = ~0u, REPLAY_PRESS_FRAMES = 6 };
@@ -2020,6 +2021,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 	readSaveActions(false);
 	readReplayPress(false);
 	replayPressing = 0;
+	stopFastForward();
 	megaDuckGame = false;
 	libretroGbSetMegaDuck(-1);
 	libretroGbSetMegaDuckSlot(NULL, 0, 0);
@@ -2099,6 +2101,7 @@ bool retro_load_game_special(unsigned type, const struct retro_game_info* info, 
 	readSaveActions(false);
 	readReplayPress(false);
 	replayPressing = 0;
+	stopFastForward();
 	megaDuckGame = false;
 	libretroGbSetMegaDuck(-1);
 	if (type == SUBSYSTEM_ADVANCE_LINK && count == 2 && (info[0].data || info[0].path) && (info[1].data || info[1].path)) {
@@ -2112,10 +2115,16 @@ bool retro_load_game_special(unsigned type, const struct retro_game_info* info, 
 	if (type == SUBSYSTEM_MEGADUCK_LAPTOP && count == 2 && info[0].data && info[1].data && info[0].size && info[1].size) {
 		return loadMegaDuckLaptop(&info[0], &info[1]);
 	}
-	if (type == SUBSYSTEM_ACTION_REPLAY && count == 2 && (info[0].data || info[0].path) && (info[1].data || info[1].path)) {
+	if (type == SUBSYSTEM_ACTION_REPLAY && count == 2 && info[0].data && (info[1].data || info[1].path)) {
+		// Only an Action Replay goes underneath; anything else isn't loaded at all.
+		bool const gameBoyReplay = isGameBoyActionReplay(info[0].data, info[0].size);
+		if (!gameBoyReplay && !actionReplayDetect(info[0].data, info[0].size)) {
+			showMessage("armGBA: the Action Replay subsystem's first file isn't an Action Replay");
+			return false;
+		}
 		gameBoy = false;
 		replayGameGiven = &info[1];
-		bool const loaded = info[0].data && isGameBoyActionReplay(info[0].data, info[0].size) ? loadGameBoy(&info[0], NULL) : loadAdvance(&info[0], NULL);
+		bool const loaded = gameBoyReplay ? loadGameBoy(&info[0], NULL) : loadAdvance(&info[0], NULL);
 		replayGameGiven = NULL;
 		return loaded && actionReplayLoaded;
 	}
@@ -2134,6 +2143,7 @@ void retro_unload_game(void) {
 		rememberReplayChoice();
 		keepReplayFlash(true);
 	}
+	stopFastForward();
 	actionReplayLoaded = false;
 	replayGamePath[0] = '\0';
 	writeCoreSaves(true);
@@ -2744,8 +2754,25 @@ static void hintSharedControls(void) {
 // L2 or R2 held fast-forwards at RetroArch's maximum run speed; with the consoles here only L2, as
 // the L2 Button option says, or not with L2 and R2 set to Turbo L and R; or by L3's Fast-Forward
 // Toggle. Not in netplay, where the other consoles would wait.
+static bool fastForwardHeld;
+
+static void setFastForward(bool on) {
+	fastForwardHeld = on;
+	struct retro_fastforwarding_override override = { .ratio = -1.0f, .fastforward = on, .notification = true, .inhibit_toggle = on };
+	environment(RETRO_ENVIRONMENT_SET_FASTFORWARDING_OVERRIDE, &override);
+}
+
+// A game closing or starting: fast-forward and L3's soft reset stop, so the next game starts at
+// normal speed.
+static void stopFastForward(void) {
+	fastForwardLatched = false;
+	softResetFrames = 0;
+	if (fastForwardHeld) {
+		setFastForward(false);
+	}
+}
+
 static void readFastForward(void) {
-	static bool held;
 	bool now = false;
 	for (int port = 0; port < (togetherRunning() ? playersHere : 1); ++port) {
 		now |= (!togetherRunning() || l2FastForward) && !switchStart(port) && inputState(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2);
@@ -2753,12 +2780,9 @@ static void readFastForward(void) {
 	}
 	now = (now && !TRIGGERS_TURBO) || fastForwardLatched;
 	now &= !linkSession() && !netplaySeen;
-	if (now == held) {
-		return;
+	if (now != fastForwardHeld) {
+		setFastForward(now);
 	}
-	held = now;
-	struct retro_fastforwarding_override override = { .ratio = -1.0f, .fastforward = now, .notification = true, .inhibit_toggle = now };
-	environment(RETRO_ENVIRONMENT_SET_FASTFORWARDING_OVERRIDE, &override);
 }
 
 // Holding the Restart Combo for a second restarts that player's console, as its power switch

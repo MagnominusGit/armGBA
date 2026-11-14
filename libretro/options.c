@@ -185,9 +185,9 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  NULL, "system", { { "on", "On" }, { "off", "Off" }, { NULL, NULL } }, "on" },
 	{ "armgba_action_replay_button", "Action Replay Button", NULL,
 	  "A stick click that's the Action Replay's button: on the Game Boy, it opens the in-game menu, as Open "
-	  "Action Replay Menu does; on the Game Boy Advance, the button codes work while it's held, as with "
-	  "Hold Action Replay Button. Off leaves both stick clicks to their own uses; R3 or L3 takes that one "
-	  "from them.",
+	  "Action Replay Menu does; on the Game Boy Advance, it holds the button down for the button codes, "
+	  "as Action Replay Button Press says. Off leaves both stick clicks to their own uses; R3 or L3 takes "
+	  "that one from them.",
 	  NULL, "system", { { "r3", "R3" }, { "l3", "L3" }, { "off", "Off" }, { NULL, NULL } }, "r3" },
 	{ "armgba_threaded_video", "Threaded Video", NULL,
 	  "Draws on a second CPU core for speed. One Frame Late is faster but a frame behind.", NULL, "video",
@@ -450,9 +450,10 @@ int optionChoice(const char* key, const struct Choice* choices, size_t count, in
 	return fallback;
 }
 
+// An Action Replay or a Mega Duck plays alone, whatever Link Mode says.
 bool togetherWanted(void) {
 	const char* value = option("armgba_link_mode");
-	return value && !strcmp(value, "together");
+	return !actionReplayLoaded && !megaDuckGame && value && !strcmp(value, "together");
 }
 
 bool separateWanted(void) {

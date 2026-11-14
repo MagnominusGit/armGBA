@@ -1589,10 +1589,13 @@ void saveLaptop(void* data, size_t length) {
 
 // Whether a state has the laptop's part.
 bool hasLaptop(const void* data, size_t size) {
+	if (!duckLaptopConnected() || size < s->stateSize || size < sizeof(gambatte::uint_least32_t)) {
+		return false;
+	}
 	gambatte::uint_least32_t length;
 	std::memcpy(&length, data, sizeof(length));
 	length &= ~0x80000000u;
-	return duckLaptopConnected() && size >= s->stateSize && sizeof(length) + length <= laptopAt();
+	return sizeof(length) + length <= laptopAt();
 }
 
 void loadLaptop(const void* data, size_t size) {

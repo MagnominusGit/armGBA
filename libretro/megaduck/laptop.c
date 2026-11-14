@@ -386,7 +386,10 @@ static bool loadWav(const char* path, unsigned rate) {
 			data = file + at + 8;
 			dataSize = chunkSize <= (uint32_t) (size - at - 8) ? chunkSize : (uint32_t) (size - at - 8);
 		}
-		at += 8 + chunkSize + (chunkSize & 1);
+		if (chunkSize > (uint32_t) (size - at - 8)) {
+			break;
+		}
+		at += 8 + (long) chunkSize + (chunkSize & 1);
 	}
 	if (!data || !channels || !sourceRate || (bits != 8 && bits != 16)) {
 		free(file);
