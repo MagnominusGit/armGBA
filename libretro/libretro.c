@@ -1342,11 +1342,20 @@ static bool hasGameBoyExtension(const char* path) {
 	return dot && (!strcasecmp(dot, ".gb") || !strcasecmp(dot, ".gbc"));
 }
 
+// A Game Boy Advance game: it starts on an ARM branch over its header (xx 00 00 EA), or a branch and
+// the header's fixed 96 at B2, or the start of the Nintendo logo at 4. Of 4,599 Game Boy Advance files
+// (No-Intro's, hacks, homebrew, prototypes, BIOSes) all but a DS expansion cartridge pass; none of 38
+// Mega Duck games does, as they start on Game Boy code (F3 di, C3 jp).
+static bool looksAdvance(const uint8_t* rom) {
+	static const uint8_t logo[] = { 0x24, 0xFF, 0xAE, 0x51, 0x69, 0x9A, 0xA2, 0x21 };
+	return (rom[3] == 0xEA && rom[2] == 0 && rom[1] == 0) || (rom[3] == 0xEA && rom[0xB2] == 0x96) || !memcmp(rom + 4, logo, sizeof(logo));
+}
+
 // A Mega Duck game: -1 if it isn't one, else the kind of cartridge for libretroGbSetMegaDuck. Its own
 // extensions name the kind (.duck none, .md0, .md1, .md2, .md20s, .md25s, as megaduck-info and Super
-// Junior SameDuck have them). A .bin, as some Game Boy Advance games are too, is a Mega Duck's without
-// the header either Game Boy has: no Game Boy Advance's fixed 96 at B2, no Nintendo logo at 104; its
-// cartridges hold 32 KiB to 2 MiB (16 KiB for some made since).
+// Junior SameDuck have them). A .bin, as some Game Boy Advance games are too, is a Mega Duck's when it
+// isn't a Game Boy Advance game and has no Game Boy's Nintendo logo at 104; its cartridges hold 32 KiB
+// to 2 MiB (16 KiB for some made since).
 static int megaDuckKind(const struct retro_game_info* game) {
 	static const char* const kinds[] = { ".duck", ".md0", ".md1", ".md2", ".md20s", ".md25s" };
 	const char* dot = game->path ? strrchr(game->path, '.') : NULL;
@@ -1363,7 +1372,7 @@ static int megaDuckKind(const struct retro_game_info* game) {
 	}
 	static const uint8_t logo[] = { 0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B };
 	const uint8_t* rom = game->data;
-	return rom[0xB2] != 0x96 && memcmp(rom + 0x104, logo, sizeof(logo)) ? 0 : -1;
+	return !looksAdvance(rom) && memcmp(rom + 0x104, logo, sizeof(logo)) ? 0 : -1;
 }
 
 static bool isMegaDuck(const struct retro_game_info* game) {
