@@ -1331,10 +1331,10 @@ static bool hasGameBoyExtension(const char* path) {
 
 // A Mega Duck game is a .bin, as some Game Boy Advance games are, without the header either Game Boy
 // has: no Game Boy Advance's fixed 96 at B2, no Nintendo logo at 104. Its cartridges hold 32 KiB to
-// 2 MiB.
+// 2 MiB (16 KiB for some made since).
 static bool isMegaDuck(const struct retro_game_info* game) {
 	const char* dot = game->path ? strrchr(game->path, '.') : NULL;
-	if (!dot || strcasecmp(dot, ".bin") || !game->data || game->size < 0x8000 || game->size > 0x200000) {
+	if (!dot || strcasecmp(dot, ".bin") || !game->data || game->size < 0x4000 || game->size > 0x200000) {
 		return false;
 	}
 	static const uint8_t logo[] = { 0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B };
