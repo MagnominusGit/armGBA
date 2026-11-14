@@ -74,7 +74,7 @@ standalone frontend shows as one page with headers.
 | | Game Boy Boot ROM (applies on restart) | Game Boy | Nintendo's (System Folder), armGBA's (Built In), Off |
 | | Mega Duck Laptop (applies on restart) | Mega Duck | Auto (for `.md0`), On, Off |
 | | Mega Duck Laptop Printer (applies on restart) | Mega Duck | Two Pass, One Pass, None |
-| | Mega Duck Laptop Speech (applies on restart) | Mega Duck | Spanish (Super Quique), German (Super Junior) |
+| | Mega Duck Laptop Speech (applies on restart) | Mega Duck | Spanish (Super QuiQue), German (Super Junior) |
 | | Mega Duck Laptop Cartridge (applies on restart) | Mega Duck | None, or a Mega Duck game in the laptop program's folder |
 | | Action Replay Cartridge (applies on restart) | Both (an Action Replay loaded) | None, or a game for the Action Replay's console in its folder, those played last first |
 | | Action Replay Switch | Game Boy (an Action Replay loaded) | On, Off |
@@ -631,17 +631,18 @@ The 23 retail Mega Duck games and 15 made since that it was tested with run, inc
 SameDuck draws wrongly: Canyon Racer, Commin 5 in 1, Duck Adventures' levels, Vex's counter and the
 status bars of Ant Soldiers, Beast Fighter and Worm Visitor.
 
-The laptops (CEFA Super Quique, Hartung Super Junior) are there too, with the Mega Duck Laptop option:
-their keyboard (the frontend's keyboard, Ctrl with F1 to F10 and the top row for the piano keys),
-clock (starting on local time), printer (each print saved as a picture once the page fills or the
-printer has been idle for 3 seconds, as the Game Boy Printer's prints are) and speech (the six phrases,
-from megaduck-info's recordings in the system folder: `megaduck_laptop_speech_spanish_1.wav` to `_6`,
-or `_german_`). Their controller on the serial port is Super Junior SameDuck's emulation of it. A
-key tapped faster than the laptop asks for the keys stays down until it has reported it. A cartridge
-in the laptop's slot is picked with Mega Duck Laptop Cartridge, from the laptop program's folder (or
-loaded with the "Mega Duck Laptop (Cartridge in the Slot)" subsystem), and runs when the laptop asks
-for it, with the rest of the machine kept as it was. In the standalone app the keyboard types on the
-laptop; Insert switches it back to playing the buttons. The laptops' system ROMs aren't included.
+The laptops (CEFA Toys Super QuiQue, Hartung Super Junior) are there too, with the Mega Duck Laptop
+option: their keyboard (the frontend's keyboard, Ctrl with F1 to F10 and the top row for the piano
+keys), clock (starting on local time), printer (each print saved as a picture once the page fills or
+the printer has been idle for 3 seconds, as the Game Boy Printer's prints are) and speech (the six
+phrases, from megaduck-info's recordings in the system folder:
+`megaduck_laptop_speech_spanish_1.wav` to `_6`, or `_german_`). Their controller on the serial port
+is Super Junior SameDuck's emulation of it. A key tapped faster than the laptop asks for the keys
+stays down until it has reported it. A cartridge in the laptop's slot is picked with Mega Duck
+Laptop Cartridge, from the laptop program's folder (or loaded with the "Mega Duck Laptop (Cartridge
+in the Slot)" subsystem), and runs when the laptop asks for it, with the rest of the machine kept as
+it was. In the standalone app the keyboard types on the laptop; Insert switches it back to playing
+the buttons. The laptops' system ROMs aren't included.
 
 ### Link play
 
