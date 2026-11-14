@@ -360,6 +360,9 @@ void GB_megaduck_laptop_peripheral_update(GB_gameboy_t *gb, uint8_t cycles) {
     // be re-opened if needed in the absence of the print init command.
     if (periph->t_states_print_done_timeout > MEGADUCK_LAPTOP_PRINT_DONE_IDLE) {
         periph->t_states_print_done_timeout -= MEGADUCK_LAPTOP_TICK_COUNT_RESET;
+        // armGBA: the job is over, so its page is saved
+        if (periph->t_states_print_done_timeout <= MEGADUCK_LAPTOP_PRINT_DONE_IDLE)
+            MD_printer_flush();
     }
 
     if (periph->ext_clk_send_buf_size > 0) {

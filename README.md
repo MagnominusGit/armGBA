@@ -562,7 +562,8 @@ status bars of Ant Soldiers, Beast Fighter and Worm Visitor.
 
 The laptops (CEFA Super Quique, Hartung Super Junior) are there too, with the Mega Duck Laptop option:
 their keyboard (the frontend's keyboard, Ctrl with F1 to F10 and the top row for the piano keys),
-clock, printer (pages saved as pictures, as the Game Boy Printer's are) and speech (the six phrases,
+clock (starting on local time), printer (each print saved as a picture once the page fills or the
+printer has been idle for 3 seconds, as the Game Boy Printer's prints are) and speech (the six phrases,
 from megaduck-info's recordings in the system folder: `megaduck_laptop_speech_spanish_1.wav` to `_6`,
 or `_german_`). Their controller on the serial port is Super Junior SameDuck's emulation of it. A
 key tapped faster than the laptop asks for the keys stays down until it has reported it. A cartridge

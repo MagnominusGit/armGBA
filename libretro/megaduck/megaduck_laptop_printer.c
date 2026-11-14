@@ -76,6 +76,7 @@ typedef struct {
     int      cache_count;
     int      cache_used;
     int      tile_row_packet_count;
+    bool     unsaved;  // armGBA: tiles printed since the page was last saved
     uint8_t  tile_cache[ER_TILE_CACHE_SZ];
     uint8_t  image[PRINTER_WIDTH_PX * PRINTER_HEIGHT_PX];
 
@@ -129,6 +130,7 @@ uint8_t MD_printer_init(GB_megaduck_laptop_t * periph) {
     uint8_t printer_reply;
 
     if (printer.connected) {
+        MD_printer_flush();
         printer.state       = PRINTER_STATE_INITIALIZED;
         printer.tilepos_x   = 0;
         printer.tilepos_y   = 0;
@@ -195,6 +197,8 @@ static void process_tile(uint8_t * tile_buf) {
             }
         }
     }
+
+    printer.unsaved = true;
 
     // After tile is processed ("printed")
     // then advance the print head by one tile. 
@@ -374,6 +378,14 @@ void MD_printer_process_buf(GB_megaduck_laptop_t * periph) {
 }
 
 
+// armGBA: saves a job that ended before the page filled, which SameDuck leaves in its preview
+// window: on the next printer init, or once the printer has been idle for a while.
+void MD_printer_flush(void) {
+    if (printer.unsaved)
+        save_image_to_png(PRINTER_DEFAULT_PNG_FILENAME);
+}
+
+
 void MD_printer_save_image_to_png(void) {
     // Note: If save is triggered mid-print job then the image may continue
     //       being transmitted and built since the system ROM doesn't
@@ -385,6 +397,7 @@ void MD_printer_save_image_to_png(void) {
 // Save an indexed color image in png format
 static bool save_image_to_png(char * filename_out) {
     (void) filename_out;
+    printer.unsaved = false;
     duckLaptopPrinted(printer.image, PRINTER_WIDTH_PX, PRINTER_HEIGHT_PX);
     return true;
 }

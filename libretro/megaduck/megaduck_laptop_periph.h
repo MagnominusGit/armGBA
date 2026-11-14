@@ -42,3 +42,4 @@ void MD_printer_process_bulk_data(GB_megaduck_laptop_t * periph);
 void MD_printer_finalize_bulk_data(void);
 void MD_printer_process_buf(GB_megaduck_laptop_t * periph);
 void MD_printer_save_image_to_png(void);
+void MD_printer_flush(void);
