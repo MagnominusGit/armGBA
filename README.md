@@ -534,6 +534,25 @@ Replay (Game on Top)" subsystem.
 The Action Replay's menus work as on the cartridge: it finds the game in its code lists, codes are
 added and switched on there, and Start Game runs the game with them.
 
+Beside the Action Replay's save, armGBA writes its codes as text, named as the save is with .txt: each
+game's codes by the names the menus give them, on or off, and the codes as they're written down (for
+the Game Boy ones, also the game chosen last). It's written as the Action Replay loads and again each
+time its codes change; editing it changes nothing. For example:
+
+```
+Pokemon Crystal
+  on   CatchAnyPkmn  910004D2
+  off  EnmyLvlMod    910013D2
+
+Castlevania
+  on   (m)                   5CD81D0E 1D40E4FD
+                             5281002B 31E6BFBE
+  on   Inf Health            3505FF60 4DCF2565
+```
+
+The Action Replay v3 and MAX keep their codes in the newer, encrypted form, shown as they're kept;
+whether that's how they were printed isn't checked.
+
 The cartridge's hardware isn't documented; armGBA follows what its program does with it:
 
 - its flash chip, where it keeps its code lists and settings, kept by armGBA in the Action Replay's

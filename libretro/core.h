@@ -108,6 +108,10 @@ void ereaderForget(void);
 void printoutPage(const uint8_t* pixels, int rows, bool cut, uint32_t number);
 void printoutFinish(void);
 
+// replaycodes.c: the Action Replay's codes, from what it keeps (its flash chip, or the Pro Action
+// Replay's RAM), written as text to file under title; nothing is written for what isn't known.
+void replayCodesWrite(const char* file, const char* title, const uint8_t* kept, size_t size, bool gameBoy);
+
 // saves.c: each player's save memory and files, the saves the core keeps itself (the other
 // players', and player 1's with a pair file or Player 1's Save Folder), and the Saves options.
 void* saveMemory(int player, size_t* size);

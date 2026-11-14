@@ -1569,6 +1569,25 @@ static char replayFlashFile[SAVE_PATH_SIZE];
 static bool attachActionReplay(const struct retro_game_info* game);
 static int replayFlashWait;
 
+// The Action Replay's codes as text, beside what it keeps and named as it is, with .txt.
+static void writeReplayCodes(void) {
+	size_t size;
+	const uint8_t* const kept = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayFlash(&size);
+	char file[SAVE_PATH_SIZE];
+	snprintf(file, sizeof(file), "%s", replayFlashFile);
+	char* const dot = strrchr(file, '.');
+	char* const slash = strrchr(file, '/');
+	if (!kept || !*file || !dot || (slash && dot < slash) || (size_t) (dot - file) + 5 > sizeof(file)) {
+		return;
+	}
+	strcpy(dot, ".txt");
+	char title[SAVE_PATH_SIZE];
+	snprintf(title, sizeof(title), "%s", slash ? replayFlashFile + (slash - file) + 1 : replayFlashFile);
+	*strrchr(title, '.') = '\0';
+	makeFolders(file);
+	replayCodesWrite(file, title, kept, size, gameBoy);
+}
+
 // Reads what the Action Replay at path keeps (its flash chip, or RAM) over what it starts with.
 static void readReplayFlashInto(const char* path, uint8_t* flash, size_t size) {
 	char rtc[SAVE_PATH_SIZE];
@@ -1578,6 +1597,7 @@ static void readReplayFlashInto(const char* path, uint8_t* flash, size_t size) {
 		readFileInto(replayFlashFile, flash, size);
 	}
 	replayFlashWait = 0;
+	writeReplayCodes();
 }
 
 static void readReplayFlash(const char* path) {
@@ -1597,6 +1617,7 @@ static void writeReplayFlash(void) {
 	if (flash && *replayFlashFile) {
 		makeFolders(replayFlashFile);
 		writeWholeFile(replayFlashFile, flash, size);
+		writeReplayCodes();
 	}
 	replayFlashWait = 0;
 }
