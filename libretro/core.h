@@ -60,6 +60,8 @@ extern bool gbaTogether;
 extern bool gbOnAdvance;
 // Whether the Game Boy cartridge has a tilt sensor (MBC7).
 extern bool tiltCartridge;
+// A Mega Duck game is loaded
+extern bool megaDuckGame;
 enum { THREADED_OFF, THREADED_ON, THREADED_LATE };
 extern int threadedVideo;
 // The threads that draw with Threaded Video: 1 or 2.

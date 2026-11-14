@@ -77,6 +77,8 @@ struct GB::Priv {
 		// armGBA: the Mega Duck has no boot ROM; it powers on into the cartridge at 0000
 		if (loadflags & MEGA_DUCK)
 			state.mem.biosMode = false;
+		if (loadflags & MEGA_DUCK_LAPTOP)
+			state.cpu.sp = 0xFFFF;
 
 		if (loadflags & NO_BIOS)
 			setPostBiosState(state, loadflags & CGB_MODE, loadflags & GBA_FLAG, loadflags & MGB_FLAG, cpu.romTitle()[15] & 0x80, cpu.romTitle());
@@ -382,6 +384,10 @@ void GB::loadSavedata(char const *data) {
 void GB::saveSavedata(char *dest) {
 	if (p_->cpu.loaded())
 		p_->cpu.saveSavedata(dest);
+}
+
+bool GB::swapMegaDuckCartridge(char const *romdata, std::size_t size, unsigned kind) {
+	return p_->cpu.swapMegaDuckCartridge(reinterpret_cast<unsigned char const *>(romdata), size, kind);
 }
 
 bool GB::getMemoryArea(int which, unsigned char **data, int *length) {

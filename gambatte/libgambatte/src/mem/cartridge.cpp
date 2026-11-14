@@ -314,7 +314,7 @@ void Cartridge::setSaveDir(std::string const &dir) {
 
 LoadRes Cartridge::loadROM(Array<unsigned char> &buffer,
                            bool const cgbMode,
-                           bool const megaDuck,
+                           unsigned const megaDuck,
                            std::string const &filepath)
 {
 	enum Cartridgetype { type_plain,
@@ -453,13 +453,16 @@ LoadRes Cartridge::loadROM(Array<unsigned char> &buffer,
 	if (type == type_mbc1 && rombanks > 32 && (rambanks > 1 || (romHeader[0x148] < 8 && (2u << romHeader[0x148]) < rombanks)))
 		type = type_mbc3;
 
-	// armGBA: a Mega Duck cartridge has no header: none of the above applies to it, nor saves
+	// armGBA: a Mega Duck cartridge has no header: none of the above applies to it. Those with RAM
+	// (32 KiB, 128 KiB on MD25S) keep it as a battery-backed Game Boy cartridge's is kept.
+	MegaDuck::Kind const duckKind = megaDuck ? MegaDuck::Kind(megaDuck - 1) : MegaDuck::automatic;
 	if (megaDuck) {
 		type = type_megaduck;
 		badMmm01 = false;
-		rambanks = 1;
-		romHeader[0x147] = 0;
-		romHeader[0x149] = 0;
+		bool const ram = duckKind == MegaDuck::md0 || duckKind == MegaDuck::md20s || duckKind == MegaDuck::md25s;
+		rambanks = !ram ? 0 : duckKind == MegaDuck::md25s ? 16 : 4;
+		romHeader[0x147] = ram ? 0x03 : 0;
+		romHeader[0x149] = !ram ? 0 : duckKind == MegaDuck::md25s ? 0x04 : 0x03;
 	}
 
 	if (badMmm01) {
@@ -549,7 +552,7 @@ LoadRes Cartridge::loadROM(Array<unsigned char> &buffer,
 	case type_mbc7: { Mbc7 *const chip = new Mbc7(memptrs_); io_ = chip; mbc_.reset(chip); } break;
 	case type_unl: mbc_.reset(new UnlMbc5(memptrs_, unl, rombanks)); break;
 	case type_pkjd: { Pkjd *const chip = new Pkjd(memptrs_); io_ = chip; mbc_.reset(chip); } break;
-	case type_megaduck: { MegaDuck *const chip = new MegaDuck(memptrs_); io_ = chip; mbc_.reset(chip); } break;
+	case type_megaduck: { MegaDuck *const chip = new MegaDuck(memptrs_, duckKind); io_ = chip; mbc_.reset(chip); } break;
 	}
 
 	return LOADRES_OK;
@@ -873,4 +876,23 @@ SYNCFUNC(Cartridge) {
 	SSS(huc3_);
 	SSS(camera_);
 	TSS(mbc_);
+
+}
+
+// armGBA: the cartridge in the Mega Duck laptop's slot takes the running ROM's place. The ROM it
+// replaces was loaded padded to the bigger of the two, so nothing moves (the memory card's RAM stays
+// where the frontend reads it from); a smaller cartridge shows again over the rest, as it would
+// on its own, and its own mapper starts as at power on.
+bool Cartridge::swapMegaDuckRom(unsigned char const *const data, std::size_t const size, unsigned const kind) {
+	std::size_t const room = memptrs_.romdataend() - memptrs_.romdata();
+	if (!size || size > room || kind > MegaDuck::md25s)
+		return false;
+
+	for (std::size_t at = 0; at < room; at += size)
+		std::memcpy(memptrs_.romdata() + at, data, std::min(size, room - at));
+
+	MegaDuck *const chip = new MegaDuck(memptrs_, MegaDuck::Kind(kind));
+	io_ = chip;
+	mbc_.reset(chip);
+	return true;
 }

@@ -11,19 +11,20 @@ set(APP_VERSION 1.6)
 set(APP_BUILD_OPTION ARMGBA_SDL)
 set(APP_BUILD_TARGET armgba-sdl)
 # For the desktop: what it is, and the files it opens.
-set(APP_COMMENT "Game Boy Advance, Game Boy and Game Boy Color emulator")
+set(APP_COMMENT "Game Boy Advance, Game Boy, Game Boy Color and Mega Duck emulator")
 set(APP_MIME application/x-gba-rom application/x-gameboy-rom application/x-gameboy-color-rom application/zip)
 # The console's screen: the window is a multiple of it before a game says its own.
 set(APP_WINDOW 240 160)
 # The game list's files (archives too), and what's looked for inside an archive.
-set(APP_EXTENSIONS gba gb gbc zip 7z gba2 gb2 bin)
-set(APP_ARCHIVED gba gb gbc bin gba2 gb2)
+set(APP_EXTENSIONS gba gb gbc zip 7z gba2 gb2 bin duck md0 md1 md2 md20s md25s)
+set(APP_ARCHIVED gba gb gbc bin gba2 gb2 duck md0 md1 md2 md20s md25s)
 # The systems: each one's key (its folder setting is <key>_folder), name, and the folder names it's
 # found by in the Games folder (its key and these, any case).
-set(APP_SYSTEMS gb gbc gba)
+set(APP_SYSTEMS gb gbc gba megaduck)
 set(APP_SYSTEM_gb "Game Boy" gameboy "game boy")
 set(APP_SYSTEM_gbc "Game Boy Color" gameboycolor "game boy color")
 set(APP_SYSTEM_gba "Game Boy Advance" gameboyadvance "game boy advance")
+set(APP_SYSTEM_megaduck "Mega Duck" megaduck "mega duck" cougarboy "cougar boy")
 # The keyboard's default keys, as SDL names them (NONE for none), in libretro's order: B, Y, Select,
 # Start, Up, Down, Left, Right, A, X, L, R, L2, R2, L3, R3; then, for keys that move the sticks, the
 # left stick's up, down, left and right and the right stick's. APP_BUTTON_NAMES names them in the

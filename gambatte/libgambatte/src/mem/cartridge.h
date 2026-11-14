@@ -88,9 +88,12 @@ public:
 	void loadSavedata(char const *data, gb_ulong cycleCounter);
 	void saveSavedata(char *dest, gb_ulong cycleCounter);
 	bool getMemoryArea(int which, unsigned char **data, int *length) const;
+	// armGBA: the Mega Duck laptop's slot (see GB::swapMegaDuckCartridge)
+	bool swapMegaDuckRom(unsigned char const *data, std::size_t size, unsigned kind);
 	std::string const saveBasePath() const;
 	void setSaveDir(std::string const &dir);
-	LoadRes loadROM(Array<unsigned char> &buffer, bool cgbMode, bool megaDuck, std::string const &filepath);
+	// armGBA: megaDuck is 0 for a Game Boy cartridge, else 1 + its MegaDuck::Kind
+	LoadRes loadROM(Array<unsigned char> &buffer, bool cgbMode, unsigned megaDuck, std::string const &filepath);
 	char const * romTitle() const { return reinterpret_cast<char const *>(romHeader + 0x134); }
 	// armGBA: the logo a Sachen multicart shows the boot ROM while its lock is closed, or none
 	unsigned char const * sachenLogo() const { return sachen_ ? sachenLogo_ : 0; }

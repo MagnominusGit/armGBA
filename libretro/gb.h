@@ -43,8 +43,20 @@ void libretroGbUnload(void);
 // Takes effect when a game is loaded or reset.
 void libretroGbSetBootRom(enum LibretroGbBoot);
 // Whether the next game loaded is a Mega Duck's: an original Game Boy with the Mega Duck's registers
-// and cartridges, starting without a boot ROM, as it has none.
-void libretroGbSetMegaDuck(bool);
+// and cartridges, starting without a boot ROM, as it has none. -1 for a Game Boy game, else the kind of
+// cartridge: 0 either handheld kind (a .bin), 1 none (.duck), 2 MD0, 3 MD1, 4 MD2, 5 MD20S, 6 MD25S.
+void libretroGbSetMegaDuck(int);
+// The Mega Duck laptop's controller (keyboard, clock, printer, speech) on the serial port, for the next
+// Mega Duck game loaded: printer 0 none, 1 one pass, 2 two passes; language 0 Spanish (Super Quique), 1
+// German (Super Junior), for its speech.
+void libretroGbSetMegaDuckLaptop(bool on, int printer, int language);
+// The cartridge in the laptop's slot, which it runs when asked (NULL for none): its ROM takes the running
+// one's place, which must have been loaded at least as big. kind as libretroGbSetMegaDuck has it.
+void libretroGbSetMegaDuckSlot(const void* rom, size_t size, int kind);
+// A key of the frontend's keyboard, for the laptop
+void libretroGbKeyboard(bool down, unsigned keycode, uint32_t character, uint16_t modifiers);
+// The console's sound with the laptop's speech over it
+const int16_t* libretroGbMixSpeech(const int16_t* samples, size_t frames);
 // Resets the game. With a different model than it started as, or the boot ROM switched, it restarts
 // that way.
 void libretroGbReset(enum LibretroGbModel);

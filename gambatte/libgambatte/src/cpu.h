@@ -40,6 +40,7 @@ public:
 	void saveSavedata() { mem_.saveSavedata(cycleCounter_); }
 
 	bool getMemoryArea(int which, unsigned char **data, int *length) { return mem_.getMemoryArea(which, data, length); }
+	bool swapMegaDuckCartridge(unsigned char const *data, std::size_t size, unsigned kind) { return mem_.swapMegaDuckCartridge(data, size, kind); }
 
 	void setVideoBuffer(uint_least32_t *videoBuf, std::ptrdiff_t pitch) {
 		mem_.setVideoBuffer(videoBuf, pitch);

@@ -260,6 +260,7 @@ bool netplayJoined;
 
 // Whether the Game Boy cartridge has a tilt sensor (MBC7).
 bool tiltCartridge;
+bool megaDuckGame;
 // Whether the GameCube link was last shown as connected.
 static bool gamecubeShown;
 
@@ -281,6 +282,7 @@ static bool gbMapColor;
 enum {
 	SUBSYSTEM_LINK = 1,
 	SUBSYSTEM_ADVANCE_LINK = 2,
+	SUBSYSTEM_MEGADUCK_LAPTOP = 3,
 	MEMORY_SECOND_SAVE = 0x100,
 	MEMORY_SECOND_RTC = 0x101,
 };
@@ -338,9 +340,14 @@ void retro_set_environment(retro_environment_t callback) {
 		{ "Player 1's Game", "gba|bin", false, false, true, firstMemory, 1 },
 		{ "Player 2's Game", "gba|bin", false, false, true, secondMemory, 1 },
 	};
+	static const struct retro_subsystem_rom_info laptopRoms[] = {
+		{ "Laptop System ROM", "md0|bin", false, false, true, firstMemory, 1 },
+		{ "Cartridge in the Slot", "bin|duck|md1|md2|md20s|md25s", false, false, true, NULL, 0 },
+	};
 	static const struct retro_subsystem_info subsystems[] = {
 		{ "Two Game Boys (Link Cable)", "gblink", roms, 2, SUBSYSTEM_LINK },
 		{ "Two Game Boy Advances (Link Cable)", "gbalink", advanceRoms, 2, SUBSYSTEM_ADVANCE_LINK },
+		{ "Mega Duck Laptop (Cartridge in the Slot)", "megaducklaptop", laptopRoms, 2, SUBSYSTEM_MEGADUCK_LAPTOP },
 		{ NULL, NULL, NULL, 0, 0 },
 	};
 	callback(RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO, (void*) subsystems);
@@ -389,7 +396,7 @@ void retro_get_system_info(struct retro_system_info* info) {
 	memset(info, 0, sizeof(*info));
 	info->library_name = "armGBA";
 	info->library_version = "1.6";
-	info->valid_extensions = "gba|bin|gb|gbc|gb2|gba2";
+	info->valid_extensions = "gba|bin|gb|gbc|gb2|gba2|duck|md0|md1|md2|md20s|md25s";
 	info->need_fullpath = false;
 	info->block_extract = false;
 }
@@ -1329,17 +1336,53 @@ static bool hasGameBoyExtension(const char* path) {
 	return dot && (!strcasecmp(dot, ".gb") || !strcasecmp(dot, ".gbc"));
 }
 
-// A Mega Duck game is a .bin, as some Game Boy Advance games are, without the header either Game Boy
-// has: no Game Boy Advance's fixed 96 at B2, no Nintendo logo at 104. Its cartridges hold 32 KiB to
-// 2 MiB (16 KiB for some made since).
-static bool isMegaDuck(const struct retro_game_info* game) {
+// A Mega Duck game: -1 if it isn't one, else the kind of cartridge for libretroGbSetMegaDuck. Its own
+// extensions name the kind (.duck none, .md0, .md1, .md2, .md20s, .md25s, as megaduck-info and Super
+// Junior SameDuck have them). A .bin, as some Game Boy Advance games are too, is a Mega Duck's without
+// the header either Game Boy has: no Game Boy Advance's fixed 96 at B2, no Nintendo logo at 104; its
+// cartridges hold 32 KiB to 2 MiB (16 KiB for some made since).
+static int megaDuckKind(const struct retro_game_info* game) {
+	static const char* const kinds[] = { ".duck", ".md0", ".md1", ".md2", ".md20s", ".md25s" };
 	const char* dot = game->path ? strrchr(game->path, '.') : NULL;
-	if (!dot || strcasecmp(dot, ".bin") || !game->data || game->size < 0x4000 || game->size > 0x200000) {
-		return false;
+	if (!dot || !game->data) {
+		return -1;
+	}
+	for (int i = 0; i < (int) (sizeof(kinds) / sizeof(kinds[0])); ++i) {
+		if (!strcasecmp(dot, kinds[i])) {
+			return game->size >= 0x150 && game->size <= 0x800000 ? 1 + i : -1;
+		}
+	}
+	if (strcasecmp(dot, ".bin") || game->size < 0x4000 || game->size > 0x200000) {
+		return -1;
 	}
 	static const uint8_t logo[] = { 0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B };
 	const uint8_t* rom = game->data;
-	return rom[0xB2] != 0x96 && memcmp(rom + 0x104, logo, sizeof(logo));
+	return rom[0xB2] != 0x96 && memcmp(rom + 0x104, logo, sizeof(logo)) ? 0 : -1;
+}
+
+static bool isMegaDuck(const struct retro_game_info* game) {
+	return megaDuckKind(game) >= 0;
+}
+
+static void RETRO_CALLCONV keyboardEvent(bool down, unsigned keycode, uint32_t character, uint16_t modifiers) {
+	if (megaDuckGame) {
+		libretroGbKeyboard(down, keycode, character, modifiers);
+	}
+}
+
+// The Mega Duck laptop's options, for the game about to load: Auto puts the laptop on for its system
+// ROM and cartridges (.md0)
+static void readMegaDuckOptions(int kind, bool forceOn) {
+	const char* const laptop = option("armgba_megaduck_laptop");
+	bool const on = forceOn || (laptop && !strcmp(laptop, "enabled") ? true : laptop && !strcmp(laptop, "disabled") ? false : kind == 2);
+	static const struct Choice printerChoices[] = { { "none", 0 }, { "one pass", 1 }, { "two pass", 2 } };
+	static const struct Choice speechChoices[] = { { "spanish", 0 }, { "german", 1 } };
+	libretroGbSetMegaDuckLaptop(on, optionChoice("armgba_megaduck_printer", printerChoices, COUNT(printerChoices), 2),
+	                            optionChoice("armgba_megaduck_speech", speechChoices, COUNT(speechChoices), 0));
+	if (on) {
+		struct retro_keyboard_callback keyboard = { keyboardEvent };
+		environment(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &keyboard);
+	}
 }
 
 static bool isPairFile(const char* path) {
@@ -1539,16 +1582,58 @@ bool retro_load_game(const struct retro_game_info* game) {
 		return loadPairFile(game);
 	}
 	gameBoy = false;
-	libretroGbSetMegaDuck(isMegaDuck(game));
+	megaDuckGame = isMegaDuck(game);
+	libretroGbSetMegaDuck(megaDuckKind(game));
+	if (megaDuckGame) {
+		readMegaDuckOptions(megaDuckKind(game), false);
+	}
+	libretroGbSetMegaDuckSlot(NULL, 0, 0);
 	if (hasGameBoyExtension(game->path) || isMegaDuck(game)) {
 		return loadGameBoy(game, NULL);
 	}
 	return loadAdvance(game, NULL);
 }
 
+// The laptop with a cartridge in its slot: the laptop's system ROM (or another MD0 program, its kind
+// unless its extension says otherwise) runs, padded to the bigger of the two so the cartridge's ROM
+// can take its place when the laptop runs it.
+static bool loadMegaDuckLaptop(const struct retro_game_info* system, const struct retro_game_info* slot) {
+	int systemKind = megaDuckKind(system);
+	if (systemKind <= 0) {
+		systemKind = 2;
+	}
+	int slotKind = megaDuckKind(slot);
+	if (slotKind < 0) {
+		slotKind = 0;
+	}
+	size_t room = 0x4000;
+	while (room < system->size || room < slot->size) {
+		room *= 2;
+	}
+	static uint8_t* padded;
+	free(padded);
+	padded = malloc(room);
+	if (!padded) {
+		return false;
+	}
+	for (size_t at = 0; at < room; at += system->size) {
+		memcpy(padded + at, system->data, room - at < system->size ? room - at : system->size);
+	}
+	struct retro_game_info game = *system;
+	game.data = padded;
+	game.size = room;
+	gameBoy = false;
+	megaDuckGame = true;
+	libretroGbSetMegaDuck(systemKind);
+	readMegaDuckOptions(systemKind, true);
+	libretroGbSetMegaDuckSlot(slot->data, slot->size, slotKind);
+	return loadGameBoy(&game, NULL);
+}
+
 bool retro_load_game_special(unsigned type, const struct retro_game_info* info, size_t count) {
 	readSaveActions(false);
-	libretroGbSetMegaDuck(false);
+	megaDuckGame = false;
+	libretroGbSetMegaDuck(-1);
 	if (type == SUBSYSTEM_ADVANCE_LINK && count == 2 && (info[0].data || info[0].path) && (info[1].data || info[1].path)) {
 		gameBoy = false;
 		return loadAdvance(&info[0], &info[1]);
@@ -1556,6 +1641,9 @@ bool retro_load_game_special(unsigned type, const struct retro_game_info* info, 
 	if (type == SUBSYSTEM_LINK && count == 2 && info[0].data && info[1].data && hasGameBoyExtension(info[0].path) && hasGameBoyExtension(info[1].path)) {
 		gameBoy = false;
 		return loadGameBoy(&info[0], &info[1]);
+	}
+	if (type == SUBSYSTEM_MEGADUCK_LAPTOP && count == 2 && info[0].data && info[1].data) {
+		return loadMegaDuckLaptop(&info[0], &info[1]);
 	}
 	return false;
 }
@@ -2239,6 +2327,9 @@ static void readScreensKeys(void) {
 static void sendSound(const int16_t* samples, size_t frames) {
 	static int16_t filtered[2 * 4096];
 	static int32_t last[2];
+	if (megaDuckGame && !rerunning()) {
+		samples = libretroGbMixSpeech(samples, frames);
+	}
 	if (!lowPass || rerunning()) {
 		audioBatch(samples, frames);
 		return;

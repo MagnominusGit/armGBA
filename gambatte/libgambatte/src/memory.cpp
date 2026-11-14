@@ -1517,7 +1517,7 @@ LoadRes Memory::loadROM(Array<unsigned char> &buffer, unsigned flags, std::strin
 
 	megaDuck_ = flags & GB::LoadFlag::MEGA_DUCK;
 
-	if (LoadRes const fail = cart_.loadROM(buffer, cgbMode, megaDuck_, filepath))
+	if (LoadRes const fail = cart_.loadROM(buffer, cgbMode, megaDuck_ ? 1 + (flags / GB::LoadFlag::MEGA_DUCK_MAPPER & 7) : 0, filepath))
 		return fail;
 
 	agbFlag_ = flags & GB::LoadFlag::GBA_FLAG;

@@ -64,6 +64,7 @@ public:
 	}
 
 	bool getMemoryArea(int which, unsigned char **data, int *length);
+	bool swapMegaDuckCartridge(unsigned char const *data, std::size_t size, unsigned kind) { return cart_.swapMegaDuckRom(data, size, kind); }
 
 	gb_ulong stop(gb_ulong cycleCounter, bool &prefetched);
 	void stall(gb_ulong cycleCounter, gb_ulong cycles);

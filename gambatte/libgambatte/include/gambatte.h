@@ -65,8 +65,12 @@ public:
 		NO_BIOS          = 32, /**< Use heuristics to boot without a BIOS. */
 		MGB_FLAG         = 64, /**< armGBA: without a BIOS and outside CGB mode, the Game Boy
 		                            Pocket's initial CPU register values. */
-		MEGA_DUCK        = 256 /**< armGBA: a Mega Duck: no boot ROM, its I/O registers where the
+		MEGA_DUCK        = 256, /**< armGBA: a Mega Duck: no boot ROM, its I/O registers where the
 		                            Mega Duck has them, and its mapper. */
+		MEGA_DUCK_MAPPER = 512, /**< armGBA: times the Mega Duck cartridge's kind (0 for both handheld
+		                            kinds at once, 1 none, 2 MD0, 3 MD1, 4 MD2, 5 MD20S, 6 MD25S). */
+		MEGA_DUCK_LAPTOP = 4096 /**< armGBA: a Mega Duck laptop, whose stack pointer starts at FFFF
+		                            (as Super Junior SameDuck has it) rather than 0000. */
 	};
 
 	/**
@@ -300,6 +304,11 @@ public:
 
 	/** 0 = vram, 1 = rom, 2 = wram, 3 = cartram, 4 = oam, 5 = hram */
 	bool getMemoryArea(int which, unsigned char **data, int *length);
+
+	/** armGBA: the Mega Duck laptop runs the cartridge in its slot. Its ROM takes the running one's
+	  * place, which must be at least as big; RAM, VRAM, the memory card and the CPU stay as they are.
+	  * kind as GB::MEGA_DUCK_MAPPER numbers it. */
+	bool swapMegaDuckCartridge(char const *romdata, std::size_t size, unsigned kind);
 
 	/**
 	  * Saves emulator state to the state slot selected with selectState().

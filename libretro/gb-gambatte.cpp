@@ -14,6 +14,7 @@ extern "C" {
 #include "dmg07.h"
 #include "link.h"
 #include "printer.h"
+#include "megaduck/laptop.h"
 #include "armgba-boot.h"
 
 #include "gambatte.h"
@@ -62,6 +63,9 @@ enum {
 };
 
 void linkClocked();
+unsigned laptopControl();
+void laptopIn(uint8_t byte);
+bool laptopSlot();
 // How many native samples make one frontend sample.
 unsigned ratio;
 unsigned cgbColors[32768];
@@ -70,7 +74,15 @@ std::string systemPath;
 bool hasSystemPath;
 // The boot ROM choice from the option.
 LibretroGbBoot bootWanted = LIBRETRO_GB_BOOT_NINTENDO;
-bool megaDuck = false;
+// -1, or the kind of Mega Duck cartridge (see libretroGbSetMegaDuck)
+int megaDuckKind = -1;
+// The Mega Duck laptop's controller on the serial port (see libretroGbSetMegaDuckLaptop)
+bool laptopWanted = false;
+int laptopPrinter = 2;
+DuckLaptopLanguage laptopLanguage = DUCK_LAPTOP_SPANISH;
+// The cartridge in the laptop's slot, if any, and its kind
+std::vector<unsigned char> laptopCartridge;
+int laptopCartridgeKind = 0;
 
 // A cartridge's clock, kept by the frontend as the .rtc file. Other cores read their part of it:
 // - 8 bytes: the Unix time the clock would have started from, gambatte-libretro's whole file;
@@ -708,6 +720,7 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	const unsigned char* const bytes = &s->game[0];
 	size_t const size = s->game.size();
 	const char* const systemDirectory = hasSystemPath ? systemPath.c_str() : 0;
+	bool const megaDuck = megaDuckKind >= 0;
 	bool const sachen = !megaDuck && isSachen(bytes, size);
 	if (megaDuck) {
 		model = LIBRETRO_GB_DMG;
@@ -732,8 +745,12 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	if (model == LIBRETRO_GB_AGB) {
 		s->loadFlags |= gambatte::GB::GBA_FLAG;
 	}
+	bool const laptop = megaDuck && laptopWanted && players == 1;
 	if (megaDuck) {
-		s->loadFlags |= gambatte::GB::MEGA_DUCK;
+		s->loadFlags |= gambatte::GB::MEGA_DUCK | megaDuckKind * gambatte::GB::MEGA_DUCK_MAPPER;
+		if (laptop) {
+			s->loadFlags |= gambatte::GB::MEGA_DUCK_LAPTOP;
+		}
 	} else if (boot.empty() && builtIn.empty()) {
 		s->loadFlags |= gambatte::GB::NO_BIOS;
 	}
@@ -743,7 +760,8 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 		s->gb->setRtcSpeed(clockPercent);
 	}
 	s->gb->setLinkCallback(players > 1 ? 0 : linkClocked);
-	s->linked = players == 1 && printerOn;
+	duckLaptopConnect(laptop, laptopPrinter, laptopLanguage, laptopControl, laptopIn, laptopSlot);
+	s->linked = players == 1 && (printerOn || laptop);
 	if (s->gb->load(reinterpret_cast<const char*>(bytes), size, s->loadFlags) != gambatte::LOADRES_OK) {
 		std::snprintf(error, errorSize, "armGBA can't run this Game Boy game");
 		return false;
@@ -781,12 +799,16 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 void linkClocked() {
 	s->gb->linkStatus(LINK_ACK);
 	int const out = s->gb->linkStatus(LINK_OUT);
+	if (duckLaptopConnected()) {
+		s->gb->linkStatus(duckLaptopClockedByConsole(static_cast<uint8_t>(out)));
+		return;
+	}
 	bool const toPrinter = printerOn && !linkGbConnected();
 	s->gb->linkStatus(toPrinter ? printerTransfer(&printer, out, s->gb->timeNow(), printed) : linkGbTransfer(out));
 }
 
 void updateLink() {
-	bool const linked = linkGbConnected() || printerOn;
+	bool const linked = linkGbConnected() || printerOn || duckLaptopConnected();
 	if (s->linked != linked) {
 		s->linked = linked;
 		s->gb->linkStatus(s->linked ? LINK_ON : LINK_OFF);
@@ -897,8 +919,28 @@ void libretroGbSetBootRom(enum LibretroGbBoot boot) {
 	bootWanted = boot;
 }
 
-void libretroGbSetMegaDuck(bool on) {
-	megaDuck = on;
+void libretroGbSetMegaDuck(int kind) {
+	megaDuckKind = kind;
+}
+
+void libretroGbSetMegaDuckLaptop(bool on, int printer, int language) {
+	laptopWanted = on;
+	laptopPrinter = printer;
+	laptopLanguage = language ? DUCK_LAPTOP_GERMAN : DUCK_LAPTOP_SPANISH;
+}
+
+void libretroGbSetMegaDuckSlot(const void* rom, size_t size, int kind) {
+	const unsigned char* const bytes = static_cast<const unsigned char*>(rom);
+	laptopCartridge.assign(bytes, bytes + (rom ? size : 0));
+	laptopCartridgeKind = kind;
+}
+
+void libretroGbKeyboard(bool down, unsigned keycode, uint32_t character, uint16_t modifiers) {
+	duckLaptopKeyboard(down, keycode, character, modifiers);
+}
+
+const int16_t* libretroGbMixSpeech(const int16_t* samples, size_t frames) {
+	return duckLaptopConnected() ? duckLaptopMixSpeech(samples, frames) : samples;
 }
 
 void libretroGbSetScreen(int which) {
@@ -1100,6 +1142,33 @@ void runExactlyParts() {
 	}
 }
 
+// The laptop's controller: the console's SC, and a byte it clocks in
+unsigned laptopControl() {
+	return static_cast<unsigned>(s->gb->linkStatus(LINK_CONTROL));
+}
+
+void laptopIn(uint8_t byte) {
+	s->gb->linkStatus(byte);
+}
+
+bool laptopSlot() {
+	return !laptopCartridge.empty()
+	    && s->gb->swapMegaDuckCartridge(reinterpret_cast<const char*>(&laptopCartridge[0]), laptopCartridge.size(), laptopCartridgeKind);
+}
+
+// With a Mega Duck laptop, runs until a picture is drawn in parts that end where its controller does
+// something next.
+void runWithLaptop() {
+	bool drawn = false;
+	for (long done = 0; !drawn && done < 4L * FRAME_SAMPLES;) {
+		std::size_t count = std::max<long>(1, std::min<long>((duckLaptopCyclesToNext() + 1) / 2, FRAME_SAMPLES));
+		drawn = s->gb->runFor(s->pixels, LIBRETRO_GB_WIDTH, s->native, count) >= 0;
+		mixDown(count);
+		done += count;
+		duckLaptopRan(2 * static_cast<long>(count));
+	}
+}
+
 // Runs until a picture is drawn; linked, in sixteen parts with the cable checked between them.
 void runUntilDrawn() {
 	int const parts = s->linked ? 16 : 1;
@@ -1133,9 +1202,11 @@ extern "C" {
 const uint32_t* libretroGbRunFrame(uint16_t keys, const int16_t** out, size_t* frames) {
 	beginFrame(keys);
 	updateLink();
-	bool const exactly = s->linked && linkExactOn();
+	bool const exactly = s->linked && linkExactOn() && !duckLaptopConnected();
 	if (exactly) {
 		runExactly();
+	} else if (duckLaptopConnected()) {
+		runWithLaptop();
 	} else {
 		runUntilDrawn();
 	}
@@ -1430,6 +1501,28 @@ void loadMix(const void* data, size_t size) {
 	s->summed = mix[2] >= 0 && static_cast<unsigned>(mix[2]) < ratio ? mix[2] : 0;
 }
 
+// The Mega Duck laptop's controller, just before the sums: where a transfer is, so that rollback,
+// run-ahead and a loaded state carry on with the laptop as they would have. A state without it
+// leaves the controller as it is.
+size_t laptopAt() {
+	return mixAt() - duckLaptopStateSize();
+}
+
+void saveLaptop(void* data, size_t length) {
+	if (duckLaptopConnected() && sizeof(gambatte::uint_least32_t) + length <= laptopAt()) {
+		duckLaptopSaveState(static_cast<uint8_t*>(data) + laptopAt());
+	}
+}
+
+void loadLaptop(const void* data, size_t size) {
+	gambatte::uint_least32_t length;
+	std::memcpy(&length, data, sizeof(length));
+	length &= ~0x80000000u;
+	if (duckLaptopConnected() && size >= s->stateSize && sizeof(length) + length <= laptopAt()) {
+		duckLaptopLoadState(static_cast<const uint8_t*>(data) + laptopAt());
+	}
+}
+
 void savePrinter(void* data, size_t length) {
 	if (s == &consoles[0] && sizeof(gambatte::uint_least32_t) + length <= printerAt()) {
 		std::memcpy(static_cast<char*>(data) + printerAt(), &printer, sizeof(printer));
@@ -1463,6 +1556,7 @@ bool saveExact(void* data) {
 		s->gb->saveExactState(static_cast<char*>(data) + sizeof(length));
 		std::memset(static_cast<char*>(data) + sizeof(length) + length, 0, s->stateSize - sizeof(length) - length);
 		saveMix(data, length);
+		saveLaptop(data, length);
 		savePrinter(data, length);
 	}
 	setColors();
@@ -1486,6 +1580,7 @@ bool saveOne(void* data, size_t size) {
 	// The room left for the state to grow is zero, so the same machine always makes the same state.
 	std::memset(static_cast<char*>(data) + sizeof(length) + length, 0, s->stateSize - sizeof(length) - length);
 	saveMix(data, length);
+	saveLaptop(data, length);
 	savePrinter(data, length);
 	return true;
 }
@@ -1555,6 +1650,7 @@ bool loadOne(const void* data, size_t size) {
 		return false;
 	}
 	loadMix(data, size);
+	loadLaptop(data, size);
 	loadPrinter(data, size);
 	if (keepClock) {
 		s->gb->setRtcRegs(clock);
