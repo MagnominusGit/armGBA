@@ -228,6 +228,11 @@ static int16_t mixedSamples[2 * 4096];
 
 // Player 2's game: the choices offered, and the game running (empty for player 1's).
 static struct retro_core_option_v2_definition* secondOption;
+// Mega Duck Laptop Cartridge, whose choices are the Mega Duck cartridges beside the laptop program
+static struct retro_core_option_v2_definition* slotOption;
+static struct ListedGame slotGames[SECOND_CHOICES];
+static size_t slotCount;
+static char slotFirst[PATH_SIZE];
 struct ListedGame secondGames[SECOND_CHOICES];
 size_t secondCount;
 char firstPath[PATH_SIZE];
@@ -360,6 +365,7 @@ void retro_set_environment(retro_environment_t callback) {
 	// The options whose choices the core fills in, with a frontend that takes them.
 	if (optionsGive(callback)) {
 		secondOption = optionDefinition("armgba_player2_game");
+		slotOption = optionDefinition("armgba_megaduck_slot");
 		findSaveOptions();
 	}
 	// Low Memory: the frontend gives the core the game's path, and the core maps the file.
@@ -1364,6 +1370,8 @@ static bool isMegaDuck(const struct retro_game_info* game) {
 	return megaDuckKind(game) >= 0;
 }
 
+static bool loadMegaDuckLaptop(const struct retro_game_info* system, const struct retro_game_info* slot);
+
 static void RETRO_CALLCONV keyboardEvent(bool down, unsigned keycode, uint32_t character, uint16_t modifiers) {
 	if (megaDuckGame) {
 		libretroGbKeyboard(down, keycode, character, modifiers);
@@ -1372,7 +1380,7 @@ static void RETRO_CALLCONV keyboardEvent(bool down, unsigned keycode, uint32_t c
 
 // The Mega Duck laptop's options, for the game about to load: Auto puts the laptop on for its system
 // ROM and cartridges (.md0)
-static void readMegaDuckOptions(int kind, bool forceOn) {
+static bool readMegaDuckOptions(int kind, bool forceOn) {
 	const char* const laptop = option("armgba_megaduck_laptop");
 	bool const on = forceOn || (laptop && !strcmp(laptop, "enabled") ? true : laptop && !strcmp(laptop, "disabled") ? false : kind == 2);
 	static const struct Choice printerChoices[] = { { "none", 0 }, { "one pass", 1 }, { "two pass", 2 } };
@@ -1382,6 +1390,68 @@ static void readMegaDuckOptions(int kind, bool forceOn) {
 	if (on) {
 		struct retro_keyboard_callback keyboard = { keyboardEvent };
 		environment(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &keyboard);
+	}
+	return on;
+}
+
+// Mega Duck Laptop Cartridge: the Mega Duck cartridges beside the laptop program, remembered for each
+// program as Player 2's Game is
+static void slotMemoryFile(char* out, size_t outSize) {
+	const char* saveDirectory = NULL;
+	environment(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &saveDirectory);
+	if (saveDirectory && *saveDirectory) {
+		snprintf(out, outSize, "%s/armGBA laptop cartridges.txt", saveDirectory);
+		return;
+	}
+	snprintf(out, outSize, "%s", slotFirst);
+	char* slash = strrchr(out, '/');
+	snprintf(slash ? slash + 1 : out, outSize - (slash ? (size_t) (slash + 1 - out) : 0), "armGBA laptop cartridges.txt");
+}
+
+static const char* chosenSlot(void) {
+	const char* value = option("armgba_megaduck_slot");
+	for (size_t i = 0; value && i < slotCount; ++i) {
+		if (!strcmp(value, slotGames[i].path)) {
+			return slotGames[i].path;
+		}
+	}
+	return NULL;
+}
+
+static void offerSlotGames(const char* path) {
+	gamesFree(slotGames, slotCount);
+	slotCount = path ? gamesList(path, GAMES_MEGA_DUCK, slotGames, SECOND_CHOICES) : 0;
+	snprintf(slotFirst, sizeof(slotFirst), "%s", path ? path : "");
+	slotFirst[strcspn(slotFirst, "#")] = '\0';
+	if (!coreOptions || !slotOption) {
+		return;
+	}
+	size_t n = 0;
+	slotOption->values[n++] = (struct retro_core_option_value) { "none", "None" };
+	for (size_t i = 0; i < slotCount; ++i) {
+		slotOption->values[n++] = (struct retro_core_option_value) { slotGames[i].path, slotGames[i].label };
+	}
+	slotOption->values[n] = (struct retro_core_option_value) { NULL, NULL };
+	setOptions();
+	char memory[PATH_SIZE];
+	char choice[PATH_SIZE];
+	slotMemoryFile(memory, sizeof(memory));
+	if (choiceRecall(memory, slotFirst, choice, sizeof(choice))) {
+		for (size_t i = 0; i < slotCount; ++i) {
+			if (!strcmp(choice, slotGames[i].path)) {
+				struct retro_variable variable = { "armgba_megaduck_slot", choice };
+				environment(RETRO_ENVIRONMENT_SET_VARIABLE, &variable);
+			}
+		}
+	}
+}
+
+static void rememberSlotChoice(void) {
+	const char* value = option("armgba_megaduck_slot");
+	if (*slotFirst && value && (!strcmp(value, "none") || chosenSlot())) {
+		char memory[PATH_SIZE];
+		slotMemoryFile(memory, sizeof(memory));
+		choiceRemember(memory, slotFirst, value);
 	}
 }
 
@@ -1584,10 +1654,21 @@ bool retro_load_game(const struct retro_game_info* game) {
 	gameBoy = false;
 	megaDuckGame = isMegaDuck(game);
 	libretroGbSetMegaDuck(megaDuckKind(game));
-	if (megaDuckGame) {
-		readMegaDuckOptions(megaDuckKind(game), false);
-	}
 	libretroGbSetMegaDuckSlot(NULL, 0, 0);
+	if (megaDuckGame) {
+		offerSlotGames(game->path);
+		const char* const slot = chosenSlot();
+		if (readMegaDuckOptions(megaDuckKind(game), false) && slot) {
+			size_t size = 0;
+			void* data = gameRead(slot, &size);
+			if (data) {
+				struct retro_game_info slotGame = { slot, data, size, NULL };
+				bool const loaded = loadMegaDuckLaptop(game, &slotGame);
+				free(data);
+				return loaded;
+			}
+		}
+	}
 	if (hasGameBoyExtension(game->path) || isMegaDuck(game)) {
 		return loadGameBoy(game, NULL);
 	}
@@ -1652,6 +1733,9 @@ void retro_unload_game(void) {
 	useSensors(false, false);
 	if (!secondFromFrontend) {
 		rememberSecondChoice();
+	}
+	if (megaDuckGame) {
+		rememberSlotChoice();
 	}
 	writeCoreSaves(true);
 	forgetSaves();

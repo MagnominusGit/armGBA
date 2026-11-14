@@ -24,8 +24,9 @@ struct ListedGame {
 //   and "of";
 // - the rest, by name.
 // A Game Boy game's list takes in both the gb and gbc folders beside each other. The loaded game
-// itself is left out. Returns how many, at most max; free with gamesFree.
-size_t gamesList(const char* loadedPath, bool gameBoy, struct ListedGame* out, size_t max);
+// itself is left out. Returns how many, at most max; free with gamesFree. kind: what to list.
+enum { GAMES_ADVANCE, GAMES_GAME_BOY, GAMES_MEGA_DUCK };
+size_t gamesList(const char* loadedPath, int kind, struct ListedGame* out, size_t max);
 void gamesFree(struct ListedGame* games, size_t count);
 // Reads a game file, taking the game out of a .zip or .7z. Returns NULL if it can't.
 void* gameRead(const char* path, size_t* size);

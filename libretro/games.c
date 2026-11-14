@@ -182,9 +182,11 @@ static void addFolder(const char* folder, const char* skip, const char* const* e
 	closedir(dir);
 }
 
-size_t gamesList(const char* loadedPath, bool gameBoy, struct ListedGame* out, size_t max) {
+size_t gamesList(const char* loadedPath, int kind, struct ListedGame* out, size_t max) {
 	static const char* const gameBoyFiles[] = { "gb", "gbc", "zip", "7z", NULL };
 	static const char* const advanceFiles[] = { "gba", "zip", "7z", NULL };
+	static const char* const megaDuckFiles[] = { "bin", "duck", "md1", "md2", "md20s", "md25s", "zip", "7z", NULL };
+	bool const gameBoy = kind == GAMES_GAME_BOY;
 	char loadedFile[4096];
 	char folder[4096];
 	filePart(loadedPath, loadedFile, sizeof(loadedFile));
@@ -196,7 +198,7 @@ size_t gamesList(const char* loadedPath, bool gameBoy, struct ListedGame* out, s
 	struct Ranked* list = NULL;
 	size_t count = 0;
 	size_t room = 0;
-	const char* const* extensions = gameBoy ? gameBoyFiles : advanceFiles;
+	const char* const* extensions = kind == GAMES_MEGA_DUCK ? megaDuckFiles : gameBoy ? gameBoyFiles : advanceFiles;
 	addFolder(folder, loadedFile, extensions, loaded, loadedCount, &list, &count, &room);
 	// Game Boy and Game Boy Color games link with each other, and usually sit in folders beside
 	// each other.
