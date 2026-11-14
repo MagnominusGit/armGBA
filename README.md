@@ -75,6 +75,7 @@ standalone frontend shows as one page with headers.
 | | Mega Duck Laptop (applies on restart) | Mega Duck | Auto (for `.md0`), On, Off |
 | | Mega Duck Laptop Printer (applies on restart) | Mega Duck | Two Pass, One Pass, None |
 | | Mega Duck Laptop Speech (applies on restart) | Mega Duck | Spanish (Super Quique), German (Super Junior) |
+| | Mega Duck Laptop Cartridge (applies on restart) | Mega Duck | None, or a Mega Duck game in the laptop program's folder |
 | Clock | Clock Source | Both | Real Time, Game Time |
 | | Clock Speed (with Game Time) | Both | Stopped, 0.1x, 0.25x, 0.5x, 0.75x, 1x, 1.25x, 1.5x, 2x, 3x, 4x, 6x, 10x, 24x, 60x (1x by default) |
 | | Clock Offset: Days | Both (not HuC3) | -30 to +30 days, 0 by default |
@@ -325,6 +326,7 @@ below, the Hotkey included.
 | F9 | Start or stop recording |
 | F11 | Full screen |
 | F12 | Screenshot |
+| Insert | With a Mega Duck laptop: the keyboard types on it, or plays the buttons |
 
 Controllers work too, one per player. Their hotkeys are ROCKNIX's, held with the Hotkey (Home, or
 Select on a controller without one):
@@ -563,9 +565,11 @@ their keyboard (the frontend's keyboard, Ctrl with F1 to F10 and the top row for
 clock, printer (pages saved as pictures, as the Game Boy Printer's are) and speech (the six phrases,
 from megaduck-info's recordings in the system folder: `megaduck_laptop_speech_spanish_1.wav` to `_6`,
 or `_german_`). Their controller on the serial port is Super Junior SameDuck's emulation of it. A
-cartridge in the laptop's slot is loaded with the "Mega Duck Laptop (Cartridge in the Slot)"
-subsystem, with the system ROM, and runs when the laptop asks for it, with the rest of the machine
-kept as it was. The laptops' system ROMs aren't included.
+key tapped faster than the laptop asks for the keys stays down until it has reported it. A cartridge
+in the laptop's slot is picked with Mega Duck Laptop Cartridge, from the laptop program's folder (or
+loaded with the "Mega Duck Laptop (Cartridge in the Slot)" subsystem), and runs when the laptop asks
+for it, with the rest of the machine kept as it was. In the standalone app the keyboard types on the
+laptop; Insert switches it back to playing the buttons. The laptops' system ROMs aren't included.
 
 ### Link play
 
