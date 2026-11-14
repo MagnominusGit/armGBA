@@ -42,6 +42,9 @@ bool libretroGbLoad(const void* rom, size_t size, const char* systemDirectory, e
 void libretroGbUnload(void);
 // Takes effect when a game is loaded or reset.
 void libretroGbSetBootRom(enum LibretroGbBoot);
+// Whether the next game loaded is a Mega Duck's: an original Game Boy with the Mega Duck's registers
+// and cartridges, starting without a boot ROM, as it has none.
+void libretroGbSetMegaDuck(bool);
 // Resets the game. With a different model than it started as, or the boot ROM switched, it restarts
 // that way.
 void libretroGbReset(enum LibretroGbModel);

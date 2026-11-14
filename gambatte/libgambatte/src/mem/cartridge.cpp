@@ -314,6 +314,7 @@ void Cartridge::setSaveDir(std::string const &dir) {
 
 LoadRes Cartridge::loadROM(Array<unsigned char> &buffer,
                            bool const cgbMode,
+                           bool const megaDuck,
                            std::string const &filepath)
 {
 	enum Cartridgetype { type_plain,
@@ -333,7 +334,8 @@ LoadRes Cartridge::loadROM(Array<unsigned char> &buffer,
 	                     type_unl,
 	                     type_mbc6,
 	                     type_mbc7,
-	                     type_vf001 };
+	                     type_vf001,
+	                     type_megaduck };
 	UnlMbc5::Kind unl = UnlMbc5::licheng;
 	Cartridgetype type = type_plain;
 	unsigned rambanks = 1;
@@ -451,6 +453,15 @@ LoadRes Cartridge::loadROM(Array<unsigned char> &buffer,
 	if (type == type_mbc1 && rombanks > 32 && (rambanks > 1 || (romHeader[0x148] < 8 && (2u << romHeader[0x148]) < rombanks)))
 		type = type_mbc3;
 
+	// armGBA: a Mega Duck cartridge has no header: none of the above applies to it, nor saves
+	if (megaDuck) {
+		type = type_megaduck;
+		badMmm01 = false;
+		rambanks = 1;
+		romHeader[0x147] = 0;
+		romHeader[0x149] = 0;
+	}
+
 	if (badMmm01) {
 		if (rombanks != (buffer.size() / rombank_size())) // probably just bad
 			return LOADRES_BAD_FILE_OR_UNKNOWN_MBC;
@@ -538,6 +549,7 @@ LoadRes Cartridge::loadROM(Array<unsigned char> &buffer,
 	case type_mbc7: { Mbc7 *const chip = new Mbc7(memptrs_); io_ = chip; mbc_.reset(chip); } break;
 	case type_unl: mbc_.reset(new UnlMbc5(memptrs_, unl, rombanks)); break;
 	case type_pkjd: { Pkjd *const chip = new Pkjd(memptrs_); io_ = chip; mbc_.reset(chip); } break;
+	case type_megaduck: { MegaDuck *const chip = new MegaDuck(memptrs_); io_ = chip; mbc_.reset(chip); } break;
 	}
 
 	return LOADRES_OK;

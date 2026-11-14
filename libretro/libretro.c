@@ -1329,6 +1329,19 @@ static bool hasGameBoyExtension(const char* path) {
 	return dot && (!strcasecmp(dot, ".gb") || !strcasecmp(dot, ".gbc"));
 }
 
+// A Mega Duck game is a .bin, as some Game Boy Advance games are, without the header either Game Boy
+// has: no Game Boy Advance's fixed 96 at B2, no Nintendo logo at 104. Its cartridges hold 32 KiB to
+// 2 MiB.
+static bool isMegaDuck(const struct retro_game_info* game) {
+	const char* dot = game->path ? strrchr(game->path, '.') : NULL;
+	if (!dot || strcasecmp(dot, ".bin") || !game->data || game->size < 0x8000 || game->size > 0x200000) {
+		return false;
+	}
+	static const uint8_t logo[] = { 0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B };
+	const uint8_t* rom = game->data;
+	return rom[0xB2] != 0x96 && memcmp(rom + 0x104, logo, sizeof(logo));
+}
+
 static bool isPairFile(const char* path) {
 	const char* dot = path ? strrchr(path, '.') : NULL;
 	return dot && (!strcasecmp(dot, ".gb2") || !strcasecmp(dot, ".gba2"));
@@ -1366,9 +1379,10 @@ static bool loadGameBoy(const struct retro_game_info* game, const struct retro_g
 	gameBoy = true;
 	gbStretched = false;
 	readPlayerOneSave();
-	tiltCartridge = game->size > 0x147 && ((const uint8_t*) game->data)[0x147] == 0x22;
+	tiltCartridge = !isMegaDuck(game) && game->size > 0x147 && ((const uint8_t*) game->data)[0x147] == 0x22;
 	linkSetGameBoy(true);
-	if (second || togetherWanted() || pairFile) {
+	// The Mega Duck plays alone
+	if (!isMegaDuck(game) && (second || togetherWanted() || pairFile)) {
 		startOthers(second, game->data, game->size);
 	}
 	offerLinkNetplay();
@@ -1525,7 +1539,8 @@ bool retro_load_game(const struct retro_game_info* game) {
 		return loadPairFile(game);
 	}
 	gameBoy = false;
-	if (hasGameBoyExtension(game->path)) {
+	libretroGbSetMegaDuck(isMegaDuck(game));
+	if (hasGameBoyExtension(game->path) || isMegaDuck(game)) {
 		return loadGameBoy(game, NULL);
 	}
 	return loadAdvance(game, NULL);
@@ -1533,6 +1548,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 
 bool retro_load_game_special(unsigned type, const struct retro_game_info* info, size_t count) {
 	readSaveActions(false);
+	libretroGbSetMegaDuck(false);
 	if (type == SUBSYSTEM_ADVANCE_LINK && count == 2 && (info[0].data || info[0].path) && (info[1].data || info[1].path)) {
 		gameBoy = false;
 		return loadAdvance(&info[0], &info[1]);

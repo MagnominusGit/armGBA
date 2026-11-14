@@ -71,6 +71,7 @@ Memory::Memory(Interrupter const &interrupter)
 , linkCallback_(0)
 , linked_(false)
 , linkClockTrigger_(false)
+, megaDuck_(false)
 {
 	intreq_.setEventTime<intevent_blit>(1 * lcd_vres * lcd_cycles_per_line);
 	intreq_.setEventTime<intevent_end>(0);
@@ -644,6 +645,70 @@ void Memory::endOamDma(gb_ulong cc) {
 	lcd_.oamChange(ioamhram_, cc);
 }
 
+// armGBA: the Mega Duck is a Game Boy with its I/O registers moved and some of their bits rearranged
+// (as SameDuck has them). Each Mega Duck register is the Game Boy register here, or none (-1).
+namespace {
+
+signed char const megaDuckIo[0x80] = {
+	// 00-0F: joypad, serial, timer and IF, where the Game Boy has them
+	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+	// 10-1F: LCDC STAT SCY SCX OBP0 OBP1 WY WX LY LYC DMA BGP
+	0x40, 0x41, 0x42, 0x43, 0x48, 0x49, 0x4A, 0x4B, 0x44, 0x45, 0x46, 0x47,   -1,   -1,   -1,   -1,
+	// 20-2F: NR10 NR12 NR11 NR13 NR14 NR21 (NR20) NR22 NR23 NR24 NR30 NR31 NR32 NR34 NR33 (NR40)
+	0x10, 0x12, 0x11, 0x13, 0x14, 0x16, 0x15, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1E, 0x1D, 0x1F,
+	// 30-3F: wave RAM
+	0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F,
+	// 40-4F: NR41 NR43 NR42 NR44 NR50 NR52 NR51, then nothing up to the Game Boy Color's registers
+	0x20, 0x22, 0x21, 0x23, 0x24, 0x26, 0x25,   -1,   -1,   -1,   -1,   -1, 0x4C, 0x4D, 0x4E, 0x4F,
+	0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F,
+	0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F,
+	0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7A, 0x7B, 0x7C, 0x7D, 0x7E, 0x7F,
+};
+
+// LCDC bit by bit: the Mega Duck's bit 6 is the Game Boy's bit 0 (background on), 3 is 6 (window
+// map), 2 is 3 (background map), 1 is 2 (sprite size) and 0 is 1 (sprites on); 7, 5 and 4 match.
+unsigned megaDuckLcdcToDmg(unsigned v) {
+	return (v & 0xB0) | (v >> 6 & 0x01) | (v << 3 & 0x40) | (v << 1 & 0x08) | (v << 1 & 0x04) | (v << 1 & 0x02);
+}
+
+unsigned dmgLcdcToMegaDuck(unsigned v) {
+	return (v & 0xB0) | (v << 6 & 0x40) | (v >> 3 & 0x08) | (v >> 1 & 0x04) | (v >> 1 & 0x02) | (v >> 1 & 0x01);
+}
+
+// The envelopes (NR12, NR22, NR42) and the noise's frequency (NR43) have their two halves swapped.
+// The wave's volume (NR32 bits 6-5) has full and a quarter the other way round: 11 is full, 01 a
+// quarter (as GBDK-2020 has it; SameDuck doesn't).
+unsigned megaDuckValue(unsigned dmgReg, unsigned v, bool toDmg) {
+	switch (dmgReg) {
+	case 0x40: return toDmg ? megaDuckLcdcToDmg(v) : dmgLcdcToMegaDuck(v);
+	case 0x12:
+	case 0x17:
+	case 0x21:
+	case 0x22: return (v << 4 & 0xF0) | (v >> 4 & 0x0F);
+	case 0x1C: return (v & ~0x60u) | (0u - (v & 0x60)) & 0x60;
+	}
+
+	return v;
+}
+
+} // unnamed namespace
+
+unsigned Memory::megaDuckFfRead(unsigned const p, gb_ulong const cc) {
+	int const reg = megaDuckIo[p];
+	return reg < 0 ? 0xFF : megaDuckValue(reg, nontrivial_ff_read(reg, cc), false);
+}
+
+unsigned Memory::megaDuckFfPeek(unsigned const p, gb_ulong const cc) {
+	int const reg = megaDuckIo[p];
+	return reg < 0 ? 0xFF : megaDuckValue(reg, nontrivial_ff_peek(reg, cc), false);
+}
+
+void Memory::megaDuckFfWrite(unsigned const p, unsigned const data, gb_ulong const cc) {
+	int const reg = megaDuckIo[p];
+	if (reg >= 0)
+		nontrivial_ff_write(reg, megaDuckValue(reg, data, true), cc);
+}
+
 unsigned Memory::nontrivial_ff_read(unsigned const p, gb_ulong const cc) {
 	if (lastOamDmaUpdate_ != disabled_time)
 		updateOamDma(cc);
@@ -797,7 +862,7 @@ unsigned Memory::nontrivial_read(unsigned const p, gb_ulong const cc) {
 
 		gb_long const ffp = static_cast<gb_long>(p) - mm_io_begin;
 		if (ffp >= 0)
-			return nontrivial_ff_read(ffp, cc);
+			return megaDuck_ && ffp < 0x80 ? megaDuckFfRead(ffp, cc) : nontrivial_ff_read(ffp, cc);
 
 		if (!lcd_.oamReadable(cc) || oamDmaPos_ < oam_size)
 			return 0xFF;
@@ -893,7 +958,7 @@ unsigned Memory::nontrivial_peek(unsigned const p, gb_ulong const cc) {
 
 		gb_long const ffp = static_cast<gb_long>(p) - mm_io_begin;
 		if (ffp >= 0)
-			return nontrivial_ff_peek(ffp, cc);
+			return megaDuck_ && ffp < 0x80 ? megaDuckFfPeek(ffp, cc) : nontrivial_ff_peek(ffp, cc);
 
 		if (oamDmaPos_ < oam_size)
 			return 0xFF;
@@ -1125,7 +1190,7 @@ void Memory::nontrivial_ff_write(unsigned const p, unsigned data, gb_ulong const
 
 			if (!(data & 0x80)) {
 				for (unsigned i = 0x10; i < 0x26; ++i)
-					ff_write<false>(i, 0, cc);
+					nontrivial_ff_write(i, 0, cc);
 
 				psg_.setEnabled(false);
 			} else {
@@ -1439,7 +1504,9 @@ void Memory::nontrivial_write(unsigned const p, unsigned const data, gb_ulong co
 				lcd_.oamChange(cc);
 				ioamhram_[(p - mm_oam_begin) & (validOam ? 0xFF : 0xE7)] = data;
 			}
-		} else
+		} else if (megaDuck_ && ffp < 0x80)
+			megaDuckFfWrite(ffp, data, cc);
+		else
 			nontrivial_ff_write(ffp, data, cc);
 	} else
 		ioamhram_[p - mm_oam_begin] = data;
@@ -1448,7 +1515,9 @@ void Memory::nontrivial_write(unsigned const p, unsigned const data, gb_ulong co
 LoadRes Memory::loadROM(Array<unsigned char> &buffer, unsigned flags, std::string const &filepath) {
 	bool const cgbMode = flags & GB::LoadFlag::CGB_MODE;
 
-	if (LoadRes const fail = cart_.loadROM(buffer, cgbMode, filepath))
+	megaDuck_ = flags & GB::LoadFlag::MEGA_DUCK;
+
+	if (LoadRes const fail = cart_.loadROM(buffer, cgbMode, megaDuck_, filepath))
 		return fail;
 
 	agbFlag_ = flags & GB::LoadFlag::GBA_FLAG;

@@ -63,8 +63,10 @@ public:
 		                            what its header advertises. */
 		READONLY_SAV     = 16, /**< Prevent implicit saveSavedata calls for the ROM. */
 		NO_BIOS          = 32, /**< Use heuristics to boot without a BIOS. */
-		MGB_FLAG         = 64  /**< armGBA: without a BIOS and outside CGB mode, the Game Boy
+		MGB_FLAG         = 64, /**< armGBA: without a BIOS and outside CGB mode, the Game Boy
 		                            Pocket's initial CPU register values. */
+		MEGA_DUCK        = 256 /**< armGBA: a Mega Duck: no boot ROM, its I/O registers where the
+		                            Mega Duck has them, and its mapper. */
 	};
 
 	/**

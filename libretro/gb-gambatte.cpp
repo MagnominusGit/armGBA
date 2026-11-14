@@ -70,6 +70,7 @@ std::string systemPath;
 bool hasSystemPath;
 // The boot ROM choice from the option.
 LibretroGbBoot bootWanted = LIBRETRO_GB_BOOT_NINTENDO;
+bool megaDuck = false;
 
 // A cartridge's clock, kept by the frontend as the .rtc file. Other cores read their part of it:
 // - 8 bytes: the Unix time the clock would have started from, gambatte-libretro's whole file;
@@ -707,14 +708,17 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	const unsigned char* const bytes = &s->game[0];
 	size_t const size = s->game.size();
 	const char* const systemDirectory = hasSystemPath ? systemPath.c_str() : 0;
-	bool const sachen = isSachen(bytes, size);
-	if (model == LIBRETRO_GB_AUTO) {
+	bool const sachen = !megaDuck && isSachen(bytes, size);
+	if (megaDuck) {
+		model = LIBRETRO_GB_DMG;
+	} else if (model == LIBRETRO_GB_AUTO) {
 		model = headerModel(bytes, size, sachen);
 	}
 	// Starts through Nintendo's boot ROM when the system directory has it, else armGBA's; with Boot
-	// ROM off, in the state a boot ROM would have left the machine.
-	std::string const boot = !sachen && bootWanted == LIBRETRO_GB_BOOT_NINTENDO ? bootRom(systemDirectory, model) : std::string();
-	std::vector<unsigned char> const builtIn = !sachen && bootWanted != LIBRETRO_GB_BOOT_OFF && boot.empty() ? armgbaBoot(model)
+	// ROM off, in the state a boot ROM would have left the machine. A Mega Duck has none.
+	bool const bootable = !sachen && !megaDuck;
+	std::string const boot = bootable && bootWanted == LIBRETRO_GB_BOOT_NINTENDO ? bootRom(systemDirectory, model) : std::string();
+	std::vector<unsigned char> const builtIn = bootable && bootWanted != LIBRETRO_GB_BOOT_OFF && boot.empty() ? armgbaBoot(model)
 	                                                                                                       : std::vector<unsigned char>();
 	s->bootUsed = bootWanted;
 	std::vector<unsigned char> const bootBytes = boot.empty() ? std::vector<unsigned char>() : readBoot(boot);
@@ -728,7 +732,9 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	if (model == LIBRETRO_GB_AGB) {
 		s->loadFlags |= gambatte::GB::GBA_FLAG;
 	}
-	if (boot.empty() && builtIn.empty()) {
+	if (megaDuck) {
+		s->loadFlags |= gambatte::GB::MEGA_DUCK;
+	} else if (boot.empty() && builtIn.empty()) {
 		s->loadFlags |= gambatte::GB::NO_BIOS;
 	}
 	if (!s->gb) {
@@ -889,6 +895,10 @@ void libretroGbSetColorPanel(bool color) {
 
 void libretroGbSetBootRom(enum LibretroGbBoot boot) {
 	bootWanted = boot;
+}
+
+void libretroGbSetMegaDuck(bool on) {
+	megaDuck = on;
 }
 
 void libretroGbSetScreen(int which) {

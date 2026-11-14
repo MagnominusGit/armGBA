@@ -495,6 +495,27 @@ private:
 	void setBanks() const;
 };
 
+// armGBA: the Mega Duck's cartridges, with their two ways to change banks
+class MegaDuck : public Mbc, public CartIo {
+public:
+	explicit MegaDuck(MemPtrs &memptrs);
+	virtual bool disabledRam() const;
+	virtual void romWrite(unsigned p, unsigned data, gb_ulong cc);
+	virtual void saveState(SaveState::Mem &ss) const;
+	virtual void loadState(SaveState::Mem const &ss);
+	virtual bool isAddressWithinAreaRombankCanBeMappedTo(unsigned addr, unsigned bank) const;
+	virtual void SyncState(NewState *ns, bool isReader);
+	virtual unsigned read(unsigned p, gb_ulong cc) const;
+	virtual void write(unsigned p, unsigned data, gb_ulong cc);
+
+private:
+	MemPtrs &memptrs_;
+	unsigned short rombank0_;
+	unsigned short rombank_;
+
+	void setBanks() const;
+};
+
 class Sachen : public Mbc {
 public:
 	explicit Sachen(MemPtrs &memptrs);

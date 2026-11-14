@@ -569,7 +569,7 @@ void CPU::process(gb_ulong const cycles) {
 				result[9] = h;
 				result[10] = l;
 				result[11] = prefetched_;
-				result[13] = mem_.ff_read<false>(0x44, cc());
+				result[13] = mem_.dmgFfRead(0x44, cc());
 			}
 
 			if (!prefetched_) {

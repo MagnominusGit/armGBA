@@ -90,7 +90,7 @@ public:
 	bool getMemoryArea(int which, unsigned char **data, int *length) const;
 	std::string const saveBasePath() const;
 	void setSaveDir(std::string const &dir);
-	LoadRes loadROM(Array<unsigned char> &buffer, bool cgbMode, std::string const &filepath);
+	LoadRes loadROM(Array<unsigned char> &buffer, bool cgbMode, bool megaDuck, std::string const &filepath);
 	char const * romTitle() const { return reinterpret_cast<char const *>(romHeader + 0x134); }
 	// armGBA: the logo a Sachen multicart shows the boot ROM while its lock is closed, or none
 	unsigned char const * sachenLogo() const { return sachen_ ? sachenLogo_ : 0; }

@@ -74,6 +74,10 @@ struct GB::Priv {
 		cpu.saveState(state);
 		setInitState(state, loadflags & CGB_MODE, loadflags & SGB_MODE, loadflags & GBA_FLAG, samplesToStall << 1, cpu.romTitle());
 
+		// armGBA: the Mega Duck has no boot ROM; it powers on into the cartridge at 0000
+		if (loadflags & MEGA_DUCK)
+			state.mem.biosMode = false;
+
 		if (loadflags & NO_BIOS)
 			setPostBiosState(state, loadflags & CGB_MODE, loadflags & GBA_FLAG, loadflags & MGB_FLAG, cpu.romTitle()[15] & 0x80, cpu.romTitle());
 

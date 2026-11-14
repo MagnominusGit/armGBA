@@ -139,6 +139,14 @@ public:
 		if (callbacksActive && readCallback_)
 			readCallback_(p, callbackCycleOffset(cc));
 
+		if (p >= 0x80)
+			return ioamhram_[p + 0x100];
+
+		return megaDuck_ ? megaDuckFfRead(p, cc) : nontrivial_ff_read(p, cc);
+	}
+
+	// armGBA: an I/O register by its Game Boy address, on a Mega Duck too (the machine's own reads)
+	unsigned dmgFfRead(unsigned p, gb_ulong cc) {
 		return p < 0x80 ? nontrivial_ff_read(p, cc) : ioamhram_[p + 0x100];
 	}
 
@@ -279,6 +287,8 @@ public:
 	void ff_write(unsigned p, unsigned data, gb_ulong cc) {
 		if (p - 0x80u < 0x7Fu)
 			ioamhram_[p + 0x100] = data;
+		else if (megaDuck_ && p < 0x80)
+			megaDuckFfWrite(p, data, cc);
 		else
 			nontrivial_ff_write(p, data, cc);
 
@@ -454,6 +464,7 @@ private:
 	bool biosMode_;
 	bool agbFlag_;
 	bool gbIsSgb_;
+	bool megaDuck_;
 	bool stopped_;
 	enum HdmaState { hdma_low, hdma_high, hdma_requested } haltHdmaState_;
 
@@ -477,6 +488,11 @@ private:
 	unsigned nontrivial_ff_read(unsigned p, gb_ulong cycleCounter);
 	unsigned nontrivial_read(unsigned p, gb_ulong cycleCounter);
 	unsigned nontrivial_ff_peek(unsigned p, gb_ulong cycleCounter);
+	// armGBA: the Mega Duck's I/O registers, at its own addresses and with its own bit layouts, on
+	// the Game Boy's
+	unsigned megaDuckFfRead(unsigned p, gb_ulong cycleCounter);
+	unsigned megaDuckFfPeek(unsigned p, gb_ulong cycleCounter);
+	void megaDuckFfWrite(unsigned p, unsigned data, gb_ulong cycleCounter);
 	unsigned nontrivial_peek(unsigned p, gb_ulong cycleCounter);
 	void nontrivial_ff_write(unsigned p, unsigned data, gb_ulong cycleCounter);
 	void nontrivial_write(unsigned p, unsigned data, gb_ulong cycleCounter);
