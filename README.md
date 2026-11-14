@@ -33,7 +33,7 @@ interrupts, DMA, timers and what's on screen all happen when they would on the h
 | --- | --- | --- |
 | L2, R2 (held) | Fast-forward, up to RetroArch's Maximum Run Speed | Same |
 | X, Y (held) | Turbo A, turbo B | Same |
-| L3, R3 (held) | Turbo L, turbo R; with an Action Replay, R3 is its button | Clicking the tilt stick flicks (motion sensor); with an Action Replay, R3 is its button; R3 otherwise sets the contrast back to 50% |
+| L3, R3 (held) | Turbo L, turbo R, unless Action Replay Button makes one the Action Replay's button | Clicking the tilt stick flicks (motion sensor), or the other stick when that's the Action Replay's button; Action Replay Button can make R3 or L3 the Action Replay's button; R3 otherwise sets the contrast back to 50% |
 | L, R | L, R | Stretch the picture (Game Boy Advance model) |
 | Tilt stick | Tilt and turn (motion sensor games) | Tilt (motion sensor games) |
 | Left stick, with Left Stick as D-Pad | D-pad, except while it tilts | Same |
@@ -77,7 +77,11 @@ standalone frontend shows as one page with headers.
 | | Mega Duck Laptop Speech (applies on restart) | Mega Duck | Spanish (Super QuiQue), German (Super Junior) |
 | | Mega Duck Laptop Cartridge (applies on restart) | Mega Duck | None, or a Mega Duck game in the laptop program's folder |
 | | Action Replay Cartridge (applies on restart) | Both (an Action Replay loaded) | None, or a game for the Action Replay's console in its folder, those played last first |
+| | Open Action Replay Menu | Game Boy (an Action Replay loaded) | Off, Open (presses its button once as the menu closes, then goes back to Off) |
+| | Hold Action Replay Button | Game Boy Advance (an Action Replay loaded) | Off, On (holds its button down for its button codes; Off when a game starts) |
+| | Action Replay Button Press | Game Boy Advance (an Action Replay loaded) | Toggle (a click holds the button down until the next, as Hold Action Replay Button), Hold (only while held) |
 | | Action Replay Switch | Game Boy (an Action Replay loaded) | On, Off |
+| | Action Replay Button | Both (an Action Replay loaded) | R3, L3, Off |
 | Clock | Clock Source | Both | Real Time, Game Time |
 | | Clock Speed (with Game Time) | Both | Stopped, 0.1x, 0.25x, 0.5x, 0.75x, 1x, 1.25x, 1.5x, 2x, 3x, 4x, 6x, 10x, 24x, 60x (1x by default) |
 | | Clock Offset: Days | Both (not HuC3) | -30 to +30 days, 0 by default |
@@ -532,7 +536,9 @@ Replay Online and Xtreme, and the GameShark Online. Load the Action Replay's ROM
 Action Replay Cartridge (the games beside it, those played last first), or load both with the "Action
 Replay (Game on Top)" subsystem.
 The Action Replay's menus work as on the cartridge: it finds the game in its code lists, codes are
-added and switched on there, and Start Game runs the game with them.
+added and switched on there, and Start Game runs the game with them. As it starts, a notification says
+how to use the one loaded: where its game comes from if there's none on top, and which core options
+reach its menu, switch or button.
 
 Beside the Action Replay's save, armGBA writes its codes as text, named as the save is with .txt: each
 game's codes by the names the menus give them, on or off, and the codes as they're written down (for
@@ -562,7 +568,10 @@ The cartridge's hardware isn't documented; armGBA follows what its program does 
 - the code engine at 0x09FE0400 (0x09FE0200 on the GameShark GBA, the first cartridges'), which runs
   one code each time the hook is reached;
 - the switch, which reads right (codes on), except to the program waiting in work RAM for it to be
-  moved left before a game starts; and the button, which is R3.
+  moved left before a game starts; and the button, which the button codes read (writes made only
+  while it's held, and the slow-down, which stops the game while it's held). R3 (or L3, by Action
+  Replay Button) holds it down until it's clicked again, or only while it's held with Action Replay
+  Button Press on Hold; so does Hold Action Replay Button. They have no in-game menu.
 
 The game on top keeps its own save, under its own name, so it's the same save as when the game runs
 by itself. States keep the Action Replay's registers, and load only with the same Action Replay and
@@ -572,8 +581,8 @@ The Game Boy ones show the game the boot ROM's logo, then their menu. With codes
 VBlank interrupt runs the Action Replay's handler first, which applies the codes (compiled into its
 RAM by its program) and goes on to the game's. As on the cartridge:
 
-- the button (R3) opens the later cartridges' in-game menu, with its SnapShot and Restore of the
-  game;
+- the button (Open Action Replay Menu, or R3 or L3 by Action Replay Button) opens the later
+  cartridges' in-game menu, with its SnapShot and Restore of the game;
 - Action Replay Switch is the cartridge's switch. On, it shows its menu at power on and its codes work
   in the game. Off, the game runs alone, with the codes the menu wrote before starting it, and doesn't
   show the menu at power on; the button still opens the in-game menu. Pokemon games need it off to

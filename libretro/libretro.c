@@ -257,6 +257,19 @@ static bool playingOn;
 static bool switchStick(unsigned button);
 static bool contrastClick(void);
 static unsigned flickButton(void);
+static void readReplayPress(bool act);
+// The stick click that's the Action Replay's button, or REPLAY_BUTTON_OFF; and how many more frames
+// Open Action Replay Menu holds it.
+enum { REPLAY_BUTTON_OFF = ~0u, REPLAY_PRESS_FRAMES = 6 };
+static unsigned replayButton = RETRO_DEVICE_ID_JOYPAD_R3;
+static unsigned replayPressing;
+// Hold Action Replay Button: the Game Boy Advance one's button held down; and whether its stick click
+// toggles that (Action Replay Button Press) rather than holding the button only while it's held.
+static bool replayHold;
+static bool replayToggles = true;
+// How to use the Action Replay just loaded, shown as it starts: which one it is, or none to show.
+enum ReplayHint { HINT_NONE, HINT_NO_GAME, HINT_GAME_BOY, HINT_GAME_BOY_FIRST, HINT_ADVANCE };
+static enum ReplayHint replayHint;
 // In rollback netplay every device runs the host's session. Each device tags its session, and the
 // tag goes in every state. A device that loads a state with another device's tag has joined that
 // session and takes its tag, so the states on every device stay the same.
@@ -584,17 +597,19 @@ static void showButtons(void) {
 		// the tilt sensor on the D-pad, L is the flick.
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, tiltControl == TILT_DPAD ? "Flick (Motion Sensor)" : "Stretch (Game Boy Advance Model)");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "Stretch (Game Boy Advance Model)");
-		if (actionReplayLoaded) {
-			BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, "Action Replay Button");
+		if (actionReplayLoaded && replayButton != REPLAY_BUTTON_OFF) {
+			BUTTON(RETRO_DEVICE_JOYPAD, 0, replayButton, "Action Replay Button");
 		}
 	} else {
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "L");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "R");
-		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "Turbo L");
-		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, actionReplayLoaded ? "Action Replay Button" : "Turbo R");
+		bool const replayL3 = actionReplayLoaded && replayButton == RETRO_DEVICE_ID_JOYPAD_L3;
+		bool const replayR3 = actionReplayLoaded && replayButton == RETRO_DEVICE_ID_JOYPAD_R3;
+		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, replayL3 ? "Action Replay Button" : "Turbo L");
+		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, replayR3 ? "Action Replay Button" : "Turbo R");
 	}
 	if (tiltControl == TILT_DEVICE && forGameBoy) {
-		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "Flick (Motion Sensor)");
+		BUTTON(RETRO_DEVICE_JOYPAD, 0, flickButton(), "Flick (Motion Sensor)");
 	} else if (tiltControl != TILT_DPAD) {
 		unsigned const stick = tiltControl == TILT_RIGHT_STICK ? RETRO_DEVICE_INDEX_ANALOG_RIGHT : RETRO_DEVICE_INDEX_ANALOG_LEFT;
 		BUTTON(RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_X, "Tilt / Turn (Motion Sensor)");
@@ -696,6 +711,17 @@ static bool replaySwitch = true;
 
 static void readOptions(void) {
 	replaySwitch = !optionIs("armgba_action_replay_switch", "off");
+	replayHold = optionIs("armgba_action_replay_hold", "on");
+	replayToggles = !optionIs("armgba_action_replay_press_mode", "hold");
+	unsigned const button = optionIs("armgba_action_replay_button", "off")  ? REPLAY_BUTTON_OFF
+	                        : optionIs("armgba_action_replay_button", "l3") ? RETRO_DEVICE_ID_JOYPAD_L3
+	                                                                        : RETRO_DEVICE_ID_JOYPAD_R3;
+	if (button != replayButton) {
+		replayButton = button;
+		if (actionReplayLoaded) {
+			showButtons();
+		}
+	}
 	static const struct Choice threadedChoices[] = { { "enabled", THREADED_ON }, { "one frame late", THREADED_LATE } };
 	static const struct Choice modelChoices[] = {
 		{ "Game Boy", LIBRETRO_GB_DMG },
@@ -1489,6 +1515,8 @@ static size_t replayCount;
 static char replayFirst[PATH_SIZE];
 // The game on top, for its save and the subsystem's.
 static char replayGamePath[PATH_SIZE];
+// Whether the Action Replay loaded has a game on top.
+static bool replayHasGame;
 static const struct retro_game_info* replayGameGiven;
 
 static void replayMemoryFile(char* out, size_t outSize) {
@@ -1645,10 +1673,12 @@ static bool startActionReplay(const struct retro_game_info* game) {
 
 static bool attachActionReplay(const struct retro_game_info* game) {
 	replayGamePath[0] = '\0';
+	replayHasGame = false;
 	if (replayGameGiven) {
 		snprintf(replayGamePath, sizeof(replayGamePath), "%s", replayGameGiven->path ? replayGameGiven->path : "");
 		size_t size = replayGameGiven->size;
 		void* data = replayGameGiven->data ? NULL : gameRead(replayGameGiven->path, &size);
+		replayHasGame = replayGameGiven->data || data;
 		bool const attached = actionReplayAttach(gba, replayGameGiven->data ? replayGameGiven->data : data, size);
 		free(data);
 		return attached;
@@ -1667,6 +1697,7 @@ static bool attachActionReplay(const struct retro_game_info* game) {
 		return actionReplayAttach(gba, NULL, 0);
 	}
 	snprintf(replayGamePath, sizeof(replayGamePath), "%s", chosen);
+	replayHasGame = true;
 	bool const attached = actionReplayAttach(gba, data, size);
 	free(data);
 	return attached;
@@ -1686,6 +1717,10 @@ static bool isGameBoyRom(const void* data, size_t size) {
 // game on top shows it its own), and its registers at 7FE0-7FE7 written all through its program, or
 // for the first one, its VBlank vector jumping into its RAM at B000-BFFF and its registers at A800
 // and A900 written.
+// Whether the last Game Boy Action Replay seen is the first one (the Pro Action Replay, without a
+// button or in-game menu).
+static bool replayFirstKind;
+
 static bool isGameBoyActionReplay(const void* data, size_t size) {
 	if (!data || size < 0x4000 || size > 0x80000 || isGameBoyRom(data, size)) {
 		return false;
@@ -1700,6 +1735,7 @@ static bool isGameBoyActionReplay(const void* data, size_t size) {
 		start |= bytes[i] == 0xEA && bytes[i + 1] == 0x00 && bytes[i + 2] == 0xA9;
 	}
 	bool const first = showGame && start && bytes[0x40] == 0xC3 && bytes[0x42] >= 0xB0 && bytes[0x42] <= 0xBF;
+	replayFirstKind = stores < 16 && first;
 	return stores >= 16 || first;
 }
 
@@ -1736,7 +1772,8 @@ static bool prepareGameBoyReplay(const struct retro_game_info* game, struct retr
 	if (top->data != none && chosen) {
 		snprintf(replayGamePath, sizeof(replayGamePath), "%s", chosen);
 	}
-	libretroGbSetActionReplay(game->data, game->size, top->data != none);
+	replayHasGame = top->data != none;
+	libretroGbSetActionReplay(game->data, game->size, replayHasGame);
 	return true;
 }
 
@@ -1789,6 +1826,7 @@ static bool loadGameBoy(const struct retro_game_info* game, const struct retro_g
 		readReplayFlashInto(game->path ? game->path : firstPath, kept, size);
 		libretroGbActionReplayFlashChanged();
 	}
+	replayHint = !actionReplayLoaded ? HINT_NONE : !replayHasGame ? HINT_NO_GAME : replayFirstKind ? HINT_GAME_BOY_FIRST : HINT_GAME_BOY;
 	if (actionReplayLoaded && *replayGamePath) {
 		// The game on top keeps its own save, where it is when the game runs by itself; the core keeps
 		// the Action Replay's flash.
@@ -1884,6 +1922,7 @@ static bool loadAdvance(const struct retro_game_info* game, const struct retro_g
 	applyCartridge();
 	cartridgeSaveUnread = cartridgeOut && !noGame;
 	resetAdvance(gba);
+	replayHint = !actionReplayLoaded ? HINT_NONE : !replayHasGame ? HINT_NO_GAME : HINT_ADVANCE;
 	if (actionReplayLoaded && *replayGamePath) {
 		// The game on top keeps its own save, where it is when the game runs by itself; the
 		// frontend keeps the Action Replay's flash.
@@ -1955,6 +1994,8 @@ static bool loadNoGame(void) {
 
 bool retro_load_game(const struct retro_game_info* game) {
 	readSaveActions(false);
+	readReplayPress(false);
+	replayPressing = 0;
 	megaDuckGame = false;
 	libretroGbSetMegaDuck(-1);
 	libretroGbSetMegaDuckSlot(NULL, 0, 0);
@@ -2032,6 +2073,8 @@ static bool loadMegaDuckLaptop(const struct retro_game_info* system, const struc
 
 bool retro_load_game_special(unsigned type, const struct retro_game_info* info, size_t count) {
 	readSaveActions(false);
+	readReplayPress(false);
+	replayPressing = 0;
 	megaDuckGame = false;
 	libretroGbSetMegaDuck(-1);
 	if (type == SUBSYSTEM_ADVANCE_LINK && count == 2 && (info[0].data || info[0].path) && (info[1].data || info[1].path)) {
@@ -2204,10 +2247,11 @@ static bool deviceMotion(int* x, int* y) {
 
 // Reads the motion sensor control: a stick, or the D-pad pushed all the way, giving -0x7FFF to
 // 0x7FFF on each axis, or the device's motion. Also reports whether the stick is clicked, or L is
-// held when using the D-pad, or L3 with Device Motion.
+// held when using the D-pad, or L3 with Device Motion (R3 when L3 is the Action Replay's button).
 static void readMotion(uint16_t keys, int* x, int* y, bool* click) {
 	if (deviceMotion(x, y)) {
-		*click = !switchStick(RETRO_DEVICE_ID_JOYPAD_L3) && inputState(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3);
+		unsigned const button = flickButton();
+		*click = !switchStick(button) && inputState(0, RETRO_DEVICE_JOYPAD, 0, button);
 	} else if (tiltControl == TILT_DPAD) {
 		*x = keys & KEY_RIGHT ? 0x7FFF : keys & KEY_LEFT ? -0x7FFF : 0;
 		*y = keys & KEY_DOWN ? 0x7FFF : keys & KEY_UP ? -0x7FFF : 0;
@@ -2242,16 +2286,67 @@ static bool contrastStick(void) {
 	return lcdCastsShadow() && !(tiltCartridge && tiltControl == TILT_RIGHT_STICK);
 }
 
-// Whether clicking the right stick resets the contrast: R3 isn't a Restart Button or Switch Player
-// Combo's, or the Action Replay's button.
-static bool contrastClick(void) {
-	return restartButtons != RESTART_STICKS && !switchStick(RETRO_DEVICE_ID_JOYPAD_R3) && !actionReplayLoaded;
+// Whether a stick click is the Action Replay's button.
+static bool replayStick(unsigned button) {
+	return actionReplayLoaded && button == replayButton;
 }
 
-// The button that flicks a tilt cartridge with the tilt on a stick: that stick's click, or L3 when R3
-// is the Action Replay's button.
+// Open Action Replay Menu presses the Game Boy Action Replay's button once when chosen, then goes back
+// to Off. Chosen when a game starts, as RetroArch may have kept it, it only goes back to Off. (The
+// Game Boy Advance ones have no menu: their button codes want the button held.)
+static void readReplayPress(bool act) {
+	// Hold Action Replay Button starts each game Off: a game left with it held could start stopped.
+	if (!act && optionIs("armgba_action_replay_hold", "on")) {
+		struct retro_variable off = { "armgba_action_replay_hold", "off" };
+		environment(RETRO_ENVIRONMENT_SET_VARIABLE, &off);
+		replayHold = false;
+	}
+	if (optionIs("armgba_action_replay_press", "press")) {
+		struct retro_variable off = { "armgba_action_replay_press", "off" };
+		environment(RETRO_ENVIRONMENT_SET_VARIABLE, &off);
+		if (act && actionReplayLoaded && gameBoy) {
+			replayPressing = REPLAY_PRESS_FRAMES;
+		}
+	}
+}
+
+// Whether the Action Replay's button is held this frame: by its stick click, by Hold Action Replay
+// Button, or for Open Action Replay Menu's frames (counted on the frames shown, so run-ahead holds it
+// as long). On the Game Boy Advance, the stick click toggles Hold Action Replay Button by default, so
+// a button code keeps working without the stick held in.
+static bool replayButtonHeld(void) {
+	static bool clicked;
+	bool const pressing = replayPressing > 0;
+	bool const click = replayButton != REPLAY_BUTTON_OFF && inputState(0, RETRO_DEVICE_JOYPAD, 0, replayButton);
+	bool const toggling = !gameBoy && replayToggles;
+	if (!rerunning()) {
+		if (pressing) {
+			--replayPressing;
+		}
+		if (toggling && click && !clicked) {
+			replayHold = !replayHold;
+			struct retro_variable hold = { "armgba_action_replay_hold", replayHold ? "on" : "off" };
+			environment(RETRO_ENVIRONMENT_SET_VARIABLE, &hold);
+			notify(replayHold ? "Action Replay button held" : "Action Replay button released", 120);
+		}
+		clicked = click;
+	}
+	return pressing || (replayHold && !gameBoy) || (!toggling && click);
+}
+
+// Whether clicking the right stick resets the contrast: R3 isn't a Restart Button or Switch Player
+// Combo's, the Action Replay's button, or a tilt cartridge's flick.
+static bool contrastClick(void) {
+	return restartButtons != RESTART_STICKS && !switchStick(RETRO_DEVICE_ID_JOYPAD_R3) && !replayStick(RETRO_DEVICE_ID_JOYPAD_R3) &&
+	       !(tiltCartridge && tiltControl != TILT_DPAD && flickButton() == RETRO_DEVICE_ID_JOYPAD_R3);
+}
+
+// The button that flicks a tilt cartridge with the tilt on a stick or the device's motion: the tilt
+// stick's click (L3 for the device's motion), or the other stick's when that's the Action Replay's
+// button.
 static unsigned flickButton(void) {
-	return tiltControl == TILT_RIGHT_STICK && !actionReplayLoaded ? RETRO_DEVICE_ID_JOYPAD_R3 : RETRO_DEVICE_ID_JOYPAD_L3;
+	unsigned const button = tiltControl == TILT_RIGHT_STICK ? RETRO_DEVICE_ID_JOYPAD_R3 : RETRO_DEVICE_ID_JOYPAD_L3;
+	return !replayStick(button) ? button : button == RETRO_DEVICE_ID_JOYPAD_R3 ? RETRO_DEVICE_ID_JOYPAD_L3 : RETRO_DEVICE_ID_JOYPAD_R3;
 }
 
 // Pushing the right stick up or down turns the contrast wheel a step, and clicking it goes back to 0;
@@ -2336,10 +2431,11 @@ static bool turbo(unsigned port, unsigned button, uint8_t* counter) {
 	return down;
 }
 
-// Turbo L and R: L3 and R3 held press a Game Boy Advance game's L and R.
+// Turbo L and R: L3 and R3 held press a Game Boy Advance game's L and R, except the Action Replay's
+// button.
 static uint16_t readTurboShoulders(void) {
-	bool const l = !switchStick(RETRO_DEVICE_ID_JOYPAD_L3) && turbo(0, RETRO_DEVICE_ID_JOYPAD_L3, &pressed.turboL);
-	bool const r = !actionReplayLoaded && !switchStick(RETRO_DEVICE_ID_JOYPAD_R3) && turbo(0, RETRO_DEVICE_ID_JOYPAD_R3, &pressed.turboR);
+	bool const l = !replayStick(RETRO_DEVICE_ID_JOYPAD_L3) && !switchStick(RETRO_DEVICE_ID_JOYPAD_L3) && turbo(0, RETRO_DEVICE_ID_JOYPAD_L3, &pressed.turboL);
+	bool const r = !replayStick(RETRO_DEVICE_ID_JOYPAD_R3) && !switchStick(RETRO_DEVICE_ID_JOYPAD_R3) && turbo(0, RETRO_DEVICE_ID_JOYPAD_R3, &pressed.turboR);
 	return (l ? KEY_L : 0) | (r ? KEY_R : 0);
 }
 
@@ -3227,7 +3323,7 @@ static void runOneGameBoy(void) {
 	readContrast();
 	readRestarts(&keys);
 	if (actionReplayLoaded) {
-		libretroGbActionReplayControls(inputState(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3), replaySwitch);
+		libretroGbActionReplayControls(replayButtonHeld(), replaySwitch);
 		keepReplayFlash(false);
 	}
 	const uint32_t* picture = libretroGbRunFrame(keys, &samples, &frames);
@@ -3262,7 +3358,7 @@ static void runOneAdvance(void) {
 	readRestarts(&keys);
 	gbaSetKeys(gba, keys);
 	if (actionReplayLoaded) {
-		actionReplayButton(inputState(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3));
+		actionReplayButton(replayButtonHeld());
 		keepReplayFlash(false);
 	}
 	readSensors(keys);
@@ -3343,6 +3439,35 @@ static void watchSessionEnd(void) {
 	notify("Netplay: the session ended; saves now go to armGBA/Remote", 360);
 }
 
+// How to use the Action Replay just loaded, once, as it starts: where its game comes from, or how its
+// codes and button are reached from the core options.
+static void showReplayHint(void) {
+	if (replayHint == HINT_NONE || rerunning()) {
+		return;
+	}
+	const char* const stick = replayButton == RETRO_DEVICE_ID_JOYPAD_R3   ? " (or R3)"
+	                          : replayButton == RETRO_DEVICE_ID_JOYPAD_L3 ? " (or L3)"
+	                                                                     : "";
+	char message[300];
+	switch (replayHint) {
+	case HINT_NO_GAME:
+		snprintf(message, sizeof(message), "Action Replay with no game on top: pick one in Core Options > System > Action Replay Cartridge, then Restart");
+		break;
+	case HINT_GAME_BOY:
+		snprintf(message, sizeof(message), "Action Replay: switch codes on in its menu, then start the game. In the game, Core Options > System > Open Action Replay Menu%s opens its menu", stick);
+		break;
+	case HINT_GAME_BOY_FIRST:
+		snprintf(message, sizeof(message), "Pro Action Replay: enter codes in its menu, then start the game. Core Options > System > Action Replay Switch turns them off");
+		break;
+	default:
+		snprintf(message, sizeof(message), "Action Replay: switch codes on in its menu, then start the game. Button codes: Core Options > System > Hold Action Replay Button%s", stick);
+		break;
+	}
+	replayHint = HINT_NONE;
+	notify(message, 480);
+	logMessage(RETRO_LOG_INFO, message);
+}
+
 void retro_run(void) {
 	showOptionsForNetplay();
 	watchSessionEnd();
@@ -3356,9 +3481,11 @@ void retro_run(void) {
 		readOptions();
 		readClockOptions(true);
 		saveOptionsChanged();
+		readReplayPress(true);
 		applyCpuClock();
 	}
 	checkBooted();
+	showReplayHint();
 	frameSkipped = skipThisFrame();
 	// One Frame Late shows the frame before, so its lines are still drawn.
 	videoDrawSkipped = frameSkipped && threadedVideo != THREADED_LATE;
