@@ -557,19 +557,19 @@ RAM by its program) and goes on to the game's. As on the cartridge:
   game;
 - Action Replay Switch is the cartridge's switch. On, it shows its menu at power on and its codes work
   in the game. Off, the game runs alone, with the codes the menu wrote before starting it, and doesn't
-  show the menu at power on; the button still opens the in-game menu. Pokemon games need it off:
-  their menus say so when one is found, as the hook breaks them (Crystal stays black before its
-  copyright screen, as reported on the real cartridge, because the hook delays its VBlank handler
-  past the lines where it copies its graphics);
+  show the menu at power on; the button still opens the in-game menu. Pokemon games need it off to
+  start: their menus say so when one is found, as the hook delays their VBlank handler past the
+  lines where it copies graphics, and they wait for those copies (Crystal stays black before its
+  copyright screen, as reported on the real cartridge). The Action Replay Xtreme Special Edition
+  for Pokemon Crystal takes care of the copies it makes on changing map, so its codes work once
+  the switch goes back on in the game; switched on earlier (in the intro or New Game) it still
+  freezes;
 - the later cartridges' flash chip, and the Pro Action Replay's battery-backed RAM, are kept in the
   Action Replay's save file; states keep the rest, in either state format.
 
 Not covered: the Action Replay Pro (World) dump is 16 KiB of a bigger chip and stops at its start-up,
-and the GameShark (USA) for Game Boy is a bad dump (one bank repeated). The Action Replay Xtreme's
-setting for Pokemon Crystal (the address of one of the game's two checks of the screen's timing) is
-kept but does nothing: what the cartridge does with it is unknown, and making that byte read
-differently doesn't fix the other check. So Crystal runs only with the switch off, where its codes,
-which apply every frame, don't. The PC link isn't emulated.
+and the GameShark (USA) for Game Boy is a bad dump (one bank repeated). The PC link (codes
+from a computer, and game-save backups to it) isn't emulated.
 
 ### Game Boy and Game Boy Color
 

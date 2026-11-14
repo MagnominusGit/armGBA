@@ -34,9 +34,10 @@
 //   that looks at the game from there.
 // - The flash chip takes the 8-bit commands at 5555 and 2AAA of its address space: ID (90), byte
 //   program (A0), and erase (80, then 30 for a 4 KiB sector or 10 for all of it).
-// - 7FE6-7FE7, with 7FE2 bit 4, are what the program sets for Pokemon Crystal (the address of one
-//   byte of the game's own check of the screen's timing); what the cartridge does with them is
-//   unknown, and nothing is done with them here.
+// - With 7FE2 bit 4 set, the game's byte at the address in 7FE7 (high) and 7FE6 (low) reads FF. The
+//   program sets it for Pokemon Crystal, at the operand of the game's check that VBlank still has
+//   time to copy tiles (cp $92 after reading LY), which the hook's delay to its VBlank handler would
+//   otherwise fail, freezing it at its next change of map.
 //
 // The first cartridge (Pro Action Replay), a 32 KiB ROM with 4 KiB of RAM at B000-BFFF that shows over
 // the game's RAM there too, its codes kept by a battery:
@@ -57,7 +58,10 @@ enum {
 	reg_rom8 = 0x1,
 	reg_arm = 0x2,
 	reg_bus = 0x5,
+	reg_patch_low = 0x6,
+	reg_patch_high = 0x7,
 	reg_status = 0xE,
+	arm_patch = 0x10,
 	bus_game_writes = 0x01,
 	bus_look = 0x10,
 	status_switch_off = 0x10,
@@ -177,6 +181,9 @@ unsigned ActionReplayGb::romDmaRead(unsigned p) {
 	}
 	if (!s_.shown && p >= ram_fixed && (s_.regs[reg_bus] & bus_look))
 		return ram(p);
+	if (!s_.shown && (s_.regs[reg_arm] & arm_patch)
+			&& p == (s_.regs[reg_patch_high] << 8 | s_.regs[reg_patch_low]))
+		return 0xFF;
 	if (!s_.shown || (s_.boot && p >= 0x104 && p < 0x150))
 		return gameRead(p);
 	if (p < ram_start)
