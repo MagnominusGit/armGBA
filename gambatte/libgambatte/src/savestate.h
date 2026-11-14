@@ -40,6 +40,7 @@ struct SaveState {
 		friend void setInitStateCart(SaveState &, bool, bool);
 		friend void setPostBiosState(SaveState &, bool, bool, bool, bool, char const *);
 		friend void setSachenLogo(SaveState &, unsigned char const *);
+		friend void setMegaDuckVram(SaveState &);
 	private:
 		T *ptr;
 		std::size_t size_;

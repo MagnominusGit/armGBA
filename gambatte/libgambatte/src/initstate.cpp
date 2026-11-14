@@ -571,3 +571,7 @@ void gambatte::setSachenLogo(SaveState &state, unsigned char const *const logo) 
 		state.mem.vram.ptr[0x10 + i * 4] = state.mem.vram.ptr[0x12 + i * 4] = wide;
 	}
 }
+
+void gambatte::setMegaDuckVram(SaveState &state) {
+	std::memset(state.mem.vram.ptr, 0, state.mem.vram.size());
+}

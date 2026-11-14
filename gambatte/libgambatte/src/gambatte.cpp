@@ -84,6 +84,9 @@ struct GB::Priv {
 		if (initialLoad)
 			setInitStateCart(state, loadflags & CGB_MODE, loadflags & GBA_FLAG);
 
+		if (initialLoad && (loadflags & MEGA_DUCK))
+			setMegaDuckVram(state);
+
 		if (loadflags & NO_BIOS && !(loadflags & CGB_MODE) && cpu.sachenLogo())
 			setSachenLogo(state, cpu.sachenLogo());
 
