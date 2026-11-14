@@ -93,6 +93,8 @@ struct GB::Priv {
 			setSachenLogo(state, cpu.sachenLogo());
 
 		cpu.loadState(state);
+		// armGBA: the Action Replay powers on with the console
+		cpu.resetCartChip();
 
 		if (samplesToStall > 0)
 			cpu.stall(samplesToStall << 1);
@@ -388,6 +390,28 @@ void GB::saveSavedata(char *dest) {
 
 bool GB::swapMegaDuckCartridge(char const *romdata, std::size_t size, unsigned kind) {
 	return p_->cpu.swapMegaDuckCartridge(reinterpret_cast<unsigned char const *>(romdata), size, kind);
+}
+
+bool GB::attachActionReplay(char const *flash, std::size_t size, bool hasGame) {
+	return p_->cpu.attachActionReplay(reinterpret_cast<unsigned char const *>(flash), size, hasGame);
+}
+
+void GB::setActionReplayControls(bool button, bool switchOn) {
+	if (ActionReplayGb *const chip = p_->cpu.actionReplay()) {
+		chip->setButton(button);
+		chip->setSwitch(switchOn);
+	}
+}
+
+unsigned char * GB::actionReplayFlash(std::size_t *size) {
+	ActionReplayGb *const chip = p_->cpu.actionReplay();
+	*size = 0;
+	return chip ? chip->kept(size) : 0;
+}
+
+bool GB::actionReplayFlashChanged() {
+	ActionReplayGb *const chip = p_->cpu.actionReplay();
+	return chip && chip->flashChanged();
 }
 
 bool GB::getMemoryArea(int which, unsigned char **data, int *length) {

@@ -53,6 +53,16 @@ void libretroGbSetMegaDuckLaptop(bool on, int printer, int language);
 // The cartridge in the laptop's slot, which it runs when asked (NULL for none): its ROM takes the running
 // one's place, which must have been loaded at least as big. kind as libretroGbSetMegaDuck has it.
 void libretroGbSetMegaDuckSlot(const void* rom, size_t size, int kind);
+// Datel's Action Replay for the next game loaded, its program these bytes (NULL for none); the game
+// loaded is the one on top, or with game false a stand-in for nothing on top.
+void libretroGbSetActionReplay(const void* program, size_t size, bool game);
+// Its button and switch (on: codes on)
+void libretroGbActionReplayControls(bool button, bool switchOn);
+// What it keeps with the power off (its flash chip, or the first one's battery-backed RAM), as the
+// running console has it (NULL without an Action Replay), and whether that was written since this
+// was last asked.
+uint8_t* libretroGbActionReplayFlash(size_t* size);
+bool libretroGbActionReplayFlashChanged(void);
 // A key of the frontend's keyboard, for the laptop
 void libretroGbKeyboard(bool down, unsigned keycode, uint32_t character, uint16_t modifiers);
 // The console's sound with the laptop's speech over it

@@ -165,6 +165,11 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "The game plugged in on top of the Action Replay, from the games beside it (those played last first); "
 	  "R3 is the Action Replay's button. Applies on Restart.",
 	  NULL, "system", { { "none", "None" }, { NULL, NULL } }, "none" },
+	{ "armgba_action_replay_switch", "Action Replay Switch", NULL,
+	  "The Game Boy Action Replay's switch. On, it shows its menu at power on and its codes and button work "
+	  "in the game; Off, the game runs alone, with the codes the Action Replay wrote before starting it (as "
+	  "its menu asks for Pokemon games).",
+	  NULL, "system", { { "on", "On" }, { "off", "Off" }, { NULL, NULL } }, "on" },
 	{ "armgba_threaded_video", "Threaded Video", NULL,
 	  "Draws on a second CPU core for speed. One Frame Late is faster but a frame behind.", NULL, "video",
 	  { { "disabled", "Off" }, { "enabled", "On" }, { "one frame late", "One Frame Late" }, { NULL, NULL } }, "disabled" },
@@ -499,6 +504,7 @@ bool showOptions(void) {
 		{ "armgba_megaduck_speech", megaDuckGame },
 		{ "armgba_megaduck_slot", megaDuckGame },
 		{ "armgba_action_replay_game", actionReplayLoaded },
+		{ "armgba_action_replay_switch", actionReplayLoaded && !advance },
 		{ "armgba_gb_color_correction", !advance },
 		{ "armgba_gb_screen", !advance },
 		{ "armgba_gb_contrast", lcdCastsShadow() },

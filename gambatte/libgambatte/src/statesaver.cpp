@@ -243,6 +243,7 @@ SaverList::SaverList()
 	{ static char const label[] = { h,a,l,t,       NUL }; ADD(mem.halted); }
 	{ static char const label[] = { v,r,a,m,       NUL }; ADDPTR(mem.vram); }
 	{ static char const label[] = { s,r,a,m,       NUL }; ADDPTR(mem.sram); }
+	{ static char const label[] = { a,r,e,p,l,a,y, NUL }; ADDPTR(mem.cartChip); }
 	{ static char const label[] = { w,r,a,m,       NUL }; ADDPTR(mem.wram); }
 	{ static char const label[] = { h,r,a,m,       NUL }; ADDPTR(mem.ioamhram); }
 	{ static char const label[] = { l,d,i,v,u,p,   NUL }; ADD(mem.divLastUpdate); }

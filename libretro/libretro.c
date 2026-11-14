@@ -353,8 +353,8 @@ void retro_set_environment(retro_environment_t callback) {
 		{ "Cartridge in the Slot", "bin|duck|md1|md2|md20s|md25s", false, false, true, NULL, 0 },
 	};
 	static const struct retro_subsystem_rom_info replayRoms[] = {
-		{ "Action Replay", "gba|bin", false, false, true, NULL, 0 },
-		{ "Game on Top", "gba|bin", false, false, true, firstMemory, 1 },
+		{ "Action Replay", "gba|bin|gb|gbc", false, false, true, NULL, 0 },
+		{ "Game on Top", "gba|bin|gb|gbc", false, false, true, firstMemory, 1 },
 	};
 	static const struct retro_subsystem_info subsystems[] = {
 		{ "Two Game Boys (Link Cable)", "gblink", roms, 2, SUBSYSTEM_LINK },
@@ -583,6 +583,9 @@ static void showButtons(void) {
 		// the tilt sensor on the D-pad, L is the flick.
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, tiltControl == TILT_DPAD ? "Flick (Motion Sensor)" : "Stretch (Game Boy Advance Model)");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "Stretch (Game Boy Advance Model)");
+		if (actionReplayLoaded) {
+			BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, "Action Replay Button");
+		}
 	} else {
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "L");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "R");
@@ -687,7 +690,11 @@ static void readScreenSize(unsigned* width, unsigned* height) {
 	*height = h >= 144 && h <= 4096 ? h : 720;
 }
 
+// The Game Boy Action Replay's switch (Action Replay Switch), which the cartridge reads all the time.
+static bool replaySwitch = true;
+
 static void readOptions(void) {
+	replaySwitch = !optionIs("armgba_action_replay_switch", "off");
 	static const struct Choice threadedChoices[] = { { "enabled", THREADED_ON }, { "one frame late", THREADED_LATE } };
 	static const struct Choice modelChoices[] = {
 		{ "Game Boy", LIBRETRO_GB_DMG },
@@ -1520,7 +1527,7 @@ static long long replayRank(const char* path, void* context) {
 
 static void offerReplayGames(const char* path) {
 	gamesFree(replayGames, replayCount);
-	replayCount = path ? gamesListRanked(path, GAMES_ADVANCE, replayRank, NULL, replayGames, SECOND_CHOICES) : 0;
+	replayCount = path ? gamesListRanked(path, gameBoy ? GAMES_GAME_BOY : GAMES_ADVANCE, replayRank, NULL, replayGames, SECOND_CHOICES) : 0;
 	snprintf(replayFirst, sizeof(replayFirst), "%s", path ? path : "");
 	replayFirst[strcspn(replayFirst, "#")] = '\0';
 	if (!coreOptions || !replayOption) {
@@ -1562,22 +1569,31 @@ static char replayFlashFile[SAVE_PATH_SIZE];
 static bool attachActionReplay(const struct retro_game_info* game);
 static int replayFlashWait;
 
-static void readReplayFlash(const char* path) {
+// Reads what the Action Replay at path keeps (its flash chip, or RAM) over what it starts with.
+static void readReplayFlashInto(const char* path, uint8_t* flash, size_t size) {
 	char rtc[SAVE_PATH_SIZE];
 	saveFilesFor(path, replayFlashFile, rtc);
-	size_t size;
-	uint8_t* const flash = actionReplayFlash(&size);
 	struct stat info;
 	if (flash && !stat(replayFlashFile, &info) && (size_t) info.st_size == size) {
 		readFileInto(replayFlashFile, flash, size);
 	}
-	actionReplayFlashChanged();
 	replayFlashWait = 0;
+}
+
+static void readReplayFlash(const char* path) {
+	size_t size;
+	uint8_t* const flash = actionReplayFlash(&size);
+	readReplayFlashInto(path, flash, size);
+	actionReplayFlashChanged();
+}
+
+static bool replayFlashChanged(void) {
+	return gameBoy ? libretroGbActionReplayFlashChanged() : actionReplayFlashChanged();
 }
 
 static void writeReplayFlash(void) {
 	size_t size;
-	const uint8_t* const flash = actionReplayFlash(&size);
+	const uint8_t* const flash = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayFlash(&size);
 	if (flash && *replayFlashFile) {
 		makeFolders(replayFlashFile);
 		writeWholeFile(replayFlashFile, flash, size);
@@ -1587,7 +1603,7 @@ static void writeReplayFlash(void) {
 
 // Written a second after the program stops changing it, and as the game closes.
 static void keepReplayFlash(bool closing) {
-	if (actionReplayFlashChanged()) {
+	if (replayFlashChanged()) {
 		replayFlashWait = 60;
 	}
 	if (replayFlashWait && (closing || !--replayFlashWait)) {
@@ -1644,6 +1660,64 @@ static bool isGameBoyRom(const void* data, size_t size) {
 	return size >= 0x150 && ((const uint8_t*) data)[0x104] == 0xCE && ((const uint8_t*) data)[0x105] == 0xED;
 }
 
+// Datel's Action Replay for the Game Boy and Game Boy Color: no logo for the boot ROM to check (the
+// game on top shows it its own), and its registers at 7FE0-7FE7 written all through its program, or
+// for the first one, its VBlank vector jumping into its RAM at B000-BFFF and its registers at A800
+// and A900 written.
+static bool isGameBoyActionReplay(const void* data, size_t size) {
+	if (!data || size < 0x4000 || size > 0x80000 || isGameBoyRom(data, size)) {
+		return false;
+	}
+	const uint8_t* const bytes = data;
+	unsigned stores = 0;
+	bool showGame = false;
+	bool start = false;
+	for (size_t i = 0; i + 2 < size; ++i) {
+		stores += bytes[i] == 0xEA && bytes[i + 1] >= 0xE0 && bytes[i + 1] <= 0xE7 && bytes[i + 2] == 0x7F;
+		showGame |= bytes[i] == 0xEA && bytes[i + 1] == 0x00 && bytes[i + 2] == 0xA8;
+		start |= bytes[i] == 0xEA && bytes[i + 1] == 0x00 && bytes[i + 2] == 0xA9;
+	}
+	bool const first = showGame && start && bytes[0x40] == 0xC3 && bytes[0x42] >= 0xB0 && bytes[0x42] <= 0xBF;
+	return stores >= 16 || first;
+}
+
+// The Game Boy Action Replay at game: its program goes to the Game Boy core, and *top becomes the game
+// on top to load, from the subsystem or Action Replay Cartridge, or a stand-in for none; *topData is
+// what to free once it's loaded.
+static bool prepareGameBoyReplay(const struct retro_game_info* game, struct retro_game_info* top, void** topData) {
+	static const uint8_t none[0x8000];
+	*topData = NULL;
+	*top = (struct retro_game_info) { NULL, none, sizeof(none), NULL };
+	replayGamePath[0] = '\0';
+	const char* chosen = NULL;
+	if (replayGameGiven) {
+		chosen = replayGameGiven->path;
+		if (replayGameGiven->data) {
+			*top = *replayGameGiven;
+		}
+	} else {
+		offerReplayGames(game->path);
+		chosen = chosenReplayGame();
+	}
+	if (chosen && top->data == none) {
+		size_t size = 0;
+		void* const data = gameRead(chosen, &size);
+		if (data) {
+			*topData = data;
+			*top = (struct retro_game_info) { chosen, data, size, NULL };
+		} else {
+			char message[300];
+			snprintf(message, sizeof(message), "armGBA can't read %.250s", chosen);
+			showMessage(message);
+		}
+	}
+	if (top->data != none && chosen) {
+		snprintf(replayGamePath, sizeof(replayGamePath), "%s", chosen);
+	}
+	libretroGbSetActionReplay(game->data, game->size, top->data != none);
+	return true;
+}
+
 static bool loadGameBoy(const struct retro_game_info* game, const struct retro_game_info* second) {
 	enum retro_pixel_format format = RETRO_PIXEL_FORMAT_XRGB8888;
 	if (!environment(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &format)) {
@@ -1663,14 +1737,41 @@ static bool loadGameBoy(const struct retro_game_info* game, const struct retro_g
 	libretroGbSetCpuClock(4 + clockNow());
 	char error[256];
 	libretroGbSelect(0);
-	if (!libretroGbLoad(game->data, game->size, directory, gbModel, gbColorCorrection, AUDIO_RATE, error, sizeof(error))) {
+	// An Action Replay runs the game on top of it, which the Game Boy core loads as its cartridge.
+	gameBoy = true;
+	actionReplayLoaded = !isMegaDuck(game) && !second && isGameBoyActionReplay(game->data, game->size);
+	struct retro_game_info top = *game;
+	void* topData = NULL;
+	if (actionReplayLoaded && !prepareGameBoyReplay(game, &top, &topData)) {
+		actionReplayLoaded = false;
+	}
+	if (!actionReplayLoaded) {
+		libretroGbSetActionReplay(NULL, 0, false);
+	}
+	bool const loaded = libretroGbLoad(top.data, top.size, directory, gbModel, gbColorCorrection, AUDIO_RATE, error, sizeof(error));
+	free(topData);
+	if (!loaded) {
 		showMessage(error);
 		libretroGbUnload();
+		gameBoy = false;
+		actionReplayLoaded = false;
 		return false;
 	}
-	gameBoy = true;
 	gbStretched = false;
-	readPlayerOneSave();
+	if (actionReplayLoaded) {
+		// What the Action Replay keeps goes over its program's own, from where RetroArch would keep its save.
+		size_t size;
+		uint8_t* const kept = libretroGbActionReplayFlash(&size);
+		readReplayFlashInto(game->path ? game->path : firstPath, kept, size);
+		libretroGbActionReplayFlashChanged();
+	}
+	if (actionReplayLoaded && *replayGamePath) {
+		// The game on top keeps its own save, where it is when the game runs by itself; the core keeps
+		// the Action Replay's flash.
+		readSave(0, replayGamePath);
+	} else if (!actionReplayLoaded) {
+		readPlayerOneSave();
+	}
 	tiltCartridge = !isMegaDuck(game) && game->size > 0x147 && ((const uint8_t*) game->data)[0x147] == 0x22;
 	linkSetGameBoy(true);
 	// The Mega Duck plays alone
@@ -1916,7 +2017,7 @@ bool retro_load_game_special(unsigned type, const struct retro_game_info* info, 
 	if (type == SUBSYSTEM_ACTION_REPLAY && count == 2 && (info[0].data || info[0].path) && (info[1].data || info[1].path)) {
 		gameBoy = false;
 		replayGameGiven = &info[1];
-		bool const loaded = loadAdvance(&info[0], NULL);
+		bool const loaded = info[0].data && isGameBoyActionReplay(info[0].data, info[0].size) ? loadGameBoy(&info[0], NULL) : loadAdvance(&info[0], NULL);
 		replayGameGiven = NULL;
 		return loaded && actionReplayLoaded;
 	}
@@ -3088,6 +3189,10 @@ static void runOneGameBoy(void) {
 	readTilt(keys);
 	readContrast();
 	readRestarts(&keys);
+	if (actionReplayLoaded) {
+		libretroGbActionReplayControls(inputState(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3), replaySwitch);
+		keepReplayFlash(false);
+	}
 	const uint32_t* picture = libretroGbRunFrame(keys, &samples, &frames);
 	// A restart or a loaded state can change the model.
 	if (gbOnAdvance != libretroGbOnAdvance()) {

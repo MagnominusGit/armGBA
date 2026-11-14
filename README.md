@@ -33,7 +33,7 @@ interrupts, DMA, timers and what's on screen all happen when they would on the h
 | --- | --- | --- |
 | L2, R2 (held) | Fast-forward, up to RetroArch's Maximum Run Speed | Same |
 | X, Y (held) | Turbo A, turbo B | Same |
-| L3, R3 (held) | Turbo L, turbo R; with an Action Replay, R3 is its button | Clicking the tilt stick flicks (motion sensor); R3 otherwise sets the contrast back to 50% |
+| L3, R3 (held) | Turbo L, turbo R; with an Action Replay, R3 is its button | Clicking the tilt stick flicks (motion sensor); with an Action Replay, R3 is its button; R3 otherwise sets the contrast back to 50% |
 | L, R | L, R | Stretch the picture (Game Boy Advance model) |
 | Tilt stick | Tilt and turn (motion sensor games) | Tilt (motion sensor games) |
 | Left stick, with Left Stick as D-Pad | D-pad, except while it tilts | Same |
@@ -76,7 +76,8 @@ standalone frontend shows as one page with headers.
 | | Mega Duck Laptop Printer (applies on restart) | Mega Duck | Two Pass, One Pass, None |
 | | Mega Duck Laptop Speech (applies on restart) | Mega Duck | Spanish (Super Quique), German (Super Junior) |
 | | Mega Duck Laptop Cartridge (applies on restart) | Mega Duck | None, or a Mega Duck game in the laptop program's folder |
-| | Action Replay Cartridge (applies on restart) | Game Boy Advance (an Action Replay loaded) | None, or a Game Boy Advance game in the Action Replay's folder, those played last first |
+| | Action Replay Cartridge (applies on restart) | Both (an Action Replay loaded) | None, or a game for the Action Replay's console in its folder, those played last first |
+| | Action Replay Switch | Game Boy (an Action Replay loaded) | On, Off |
 | Clock | Clock Source | Both | Real Time, Game Time |
 | | Clock Speed (with Game Time) | Both | Stopped, 0.1x, 0.25x, 0.5x, 0.75x, 1x, 1.25x, 1.5x, 2x, 3x, 4x, 6x, 10x, 24x, 60x (1x by default) |
 | | Clock Offset: Days | Both (not HuC3) | -30 to +30 days, 0 by default |
@@ -524,10 +525,12 @@ a strip at a time. A card waits until the e-Reader scans.
 
 ### Action Replay
 
-Datel's Action Replay cartridges for the Game Boy Advance run as the cartridge itself, with a game
-plugged in on top: Action Replay v3 and GBX (each language), Action Replay MAX and the Japanese Pro
-Action Replay. Load the Action Replay's ROM and pick the game with Action Replay Cartridge (the games
-beside it, those played last first), or load both with the "Action Replay (Game on Top)" subsystem.
+Datel's Action Replay cartridges run as the cartridge itself, with a game plugged in on top. For the
+Game Boy Advance: Action Replay v3 and GBX (each language), Action Replay MAX, the Japanese Pro Action
+Replay and the GameShark GBA. For the Game Boy and Game Boy Color: the Pro Action Replay, the Action
+Replay Online and Xtreme, and the GameShark Online. Load the Action Replay's ROM and pick the game with
+Action Replay Cartridge (the games beside it, those played last first), or load both with the "Action
+Replay (Game on Top)" subsystem.
 The Action Replay's menus work as on the cartridge: it finds the game in its code lists, codes are
 added and switched on there, and Start Game runs the game with them.
 
@@ -537,13 +540,32 @@ The cartridge's hardware isn't documented; armGBA follows what its program does 
   save file (a save file of another size, from before, is left alone);
 - the register that shows the program or the game, and the six patch registers that put the hook
   (a branch to the code engine) into the game;
-- the code engine at 0x09FE0400, which runs one code each time the hook is reached;
+- the code engine at 0x09FE0400 (0x09FE0200 on the GameShark GBA, the first cartridges'), which runs
+  one code each time the hook is reached;
 - the switch, which reads right (codes on), except to the program waiting in work RAM for it to be
   moved left before a game starts; and the button, which is R3.
 
 The game on top keeps its own save, under its own name, so it's the same save as when the game runs
 by itself. States keep the Action Replay's registers, and load only with the same Action Replay and
 game. The Action Replay's PC link and its game-save backups aren't emulated.
+
+The Game Boy ones show the game the boot ROM's logo, then their menu. With codes on, the console's
+VBlank interrupt runs the Action Replay's handler first, which applies the codes (compiled into its
+RAM by its program) and goes on to the game's. As on the cartridge:
+
+- the button (R3) opens the later cartridges' in-game menu;
+- Action Replay Switch is the cartridge's switch. On, it shows its menu at power on and its codes and
+  button work in the game. Off, the game runs alone, with the codes the menu wrote before starting it,
+  and doesn't show the menu at power on. Pokemon games need it off: their menus say so when one is
+  found, as the hook breaks them;
+- the later cartridges' flash chip, and the Pro Action Replay's battery-backed RAM, are kept in the
+  Action Replay's save file; states keep the rest, in either state format.
+
+Not covered: the Action Replay Pro (World) dump is 16 KiB of a bigger chip and stops at its start-up,
+and the GameShark (USA) for Game Boy is a bad dump (one bank repeated). The Action Replay Xtreme's
+setting for Pokemon Crystal (the address of the game's own check of the screen's timing) is kept but
+does nothing, so Crystal runs only with the switch off, where its codes, which apply every frame,
+don't; and the PC link isn't emulated.
 
 ### Game Boy and Game Boy Color
 

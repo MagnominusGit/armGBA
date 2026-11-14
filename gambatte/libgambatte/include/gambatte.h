@@ -310,6 +310,18 @@ public:
 	  * kind as GB::MEGA_DUCK_MAPPER numbers it. */
 	bool swapMegaDuckCartridge(char const *romdata, std::size_t size, unsigned kind);
 
+	/** armGBA: puts Datel's Action Replay, its flash chip holding these bytes, in front of the
+	  * cartridge loaded, which is the game on top of it; with hasGame false nothing is on top.
+	  * Call after load(); it powers on with the console's next reset. */
+	bool attachActionReplay(char const *flash, std::size_t size, bool hasGame);
+	/** armGBA: the Action Replay's button and switch (on: codes on) */
+	void setActionReplayControls(bool button, bool switchOn);
+	/** armGBA: what the Action Replay keeps with the power off (its flash chip, or the first one's
+	  * battery-backed RAM), or 0 without one */
+	unsigned char * actionReplayFlash(std::size_t *size);
+	/** armGBA: whether the Action Replay's flash chip was written since this was last asked */
+	bool actionReplayFlashChanged();
+
 	/**
 	  * Saves emulator state to the state slot selected with selectState().
 	  * The data will be stored in the directory given by setSaveDir().

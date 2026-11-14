@@ -29,6 +29,7 @@
 #include "../camera.h"
 #include "savestate.h"
 #include "newstate.h"
+#include "scoped_ptr.h"
 
 #include <string>
 #include <vector>
@@ -383,6 +384,19 @@ class RomHook {
 public:
 	virtual ~RomHook() {}
 	virtual unsigned romRead(unsigned p) = 0;
+	// What OAM DMA copies from the ROM area: what the CPU would read, without the side effects a CPU
+	// read has on the cartridge
+	virtual unsigned romDmaRead(unsigned p) { return romRead(p); }
+};
+
+// armGBA: a cartridge that answers some reads and writes of A000-BFFF itself, the rest going to
+// the RAM its mapper shows there
+class SramHook {
+public:
+	virtual ~SramHook() {}
+	// Return whether the cartridge took the access
+	virtual bool sramRead(unsigned p, unsigned &value) = 0;
+	virtual bool sramWrite(unsigned p, unsigned data) = 0;
 };
 
 // armGBA: Vast Fame's protected cartridge (see vf001.cpp)
@@ -520,6 +534,68 @@ private:
 
 	bool hasRam() const;
 	void setBanks() const;
+};
+
+// armGBA: Datel's Action Replay for the Game Boy and Game Boy Color, in front of the game on top of it
+// (see actionreplay.cpp); the game's own mapper stays behind it
+class ActionReplayGb : public Mbc, public RomHook, public SramHook {
+public:
+	// What a state keeps of it: everything but its flash chip
+	struct State {
+		unsigned char regs[16];
+		unsigned char ram[0x8000];
+		unsigned char shown;
+		unsigned char boot;
+		unsigned char flashStep;
+		unsigned char flashId;
+		unsigned char flashProgram;
+		// The first cartridge: the game's first 512 bytes show for the program to look at
+		unsigned char lowPage;
+	};
+
+	// game: the game's mapper, which this takes; hasGame: whether a game is on top, else the cartridge
+	// space behind it is empty
+	ActionReplayGb(MemPtrs &memptrs, Mbc *game, RomHook *gameHook, unsigned char const *flash, std::size_t size, bool hasGame);
+	virtual bool disabledRam() const;
+	virtual void romWrite(unsigned p, unsigned data, gb_ulong cc);
+	virtual void saveState(SaveState::Mem &ss) const;
+	virtual void loadState(SaveState::Mem const &ss);
+	virtual bool isAddressWithinAreaRombankCanBeMappedTo(unsigned addr, unsigned bank) const;
+	virtual void SyncState(NewState *ns, bool isReader);
+	virtual unsigned romRead(unsigned p);
+	virtual unsigned romDmaRead(unsigned p);
+	virtual bool sramRead(unsigned p, unsigned &value);
+	virtual bool sramWrite(unsigned p, unsigned data);
+	// Power on
+	void reset();
+	void setButton(bool pressed) { button_ = pressed; }
+	void setSwitch(bool on) { switchOn_ = on; }
+	// What it keeps with the power off (its flash chip, or the first cartridge's RAM), and whether that
+	// was written since this was last asked
+	unsigned char *kept(std::size_t *size);
+	bool flashChanged();
+	unsigned char *stateData() { return reinterpret_cast<unsigned char *>(&s_); }
+	bool first() const { return first_; }
+
+private:
+	MemPtrs &memptrs_;
+	scoped_ptr<Mbc> game_;
+	RomHook *gameHook_;
+	std::vector<unsigned char> flash_;
+	bool hasGame_;
+	bool first_;
+	bool button_;
+	bool switchOn_;
+	bool flashChanged_;
+	State s_;
+
+	bool armed() const;
+	bool listening() const;
+	std::size_t flashAddress(unsigned p) const;
+	unsigned gameRead(unsigned p);
+	unsigned char &ram(unsigned p);
+	unsigned status() const;
+	void flashWrite(std::size_t at, unsigned data);
 };
 
 class Sachen : public Mbc {

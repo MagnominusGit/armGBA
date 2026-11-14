@@ -90,6 +90,12 @@ public:
 	bool getMemoryArea(int which, unsigned char **data, int *length) const;
 	// armGBA: the Mega Duck laptop's slot (see GB::swapMegaDuckCartridge)
 	bool swapMegaDuckRom(unsigned char const *data, std::size_t size, unsigned kind);
+	// armGBA: puts Datel's Action Replay in front of the cartridge loaded (see ActionReplayGb); hasGame:
+	// whether that is a game, else nothing is on top
+	bool attachActionReplay(unsigned char const *flash, std::size_t size, bool hasGame);
+	ActionReplayGb *actionReplay() const { return actionReplay_; }
+	// armGBA: power on for a chip of the cartridge's own that a state's reset doesn't reach
+	void resetChip() { if (actionReplay_) actionReplay_->reset(); }
 	std::string const saveBasePath() const;
 	void setSaveDir(std::string const &dir);
 	// armGBA: megaDuck is 0 for a Game Boy cartridge, else 1 + its MegaDuck::Kind
@@ -104,6 +110,9 @@ public:
 	// armGBA: a cartridge that answers some reads of its ROM itself (Vast Fame's)
 	bool hasRomHook() const { return romHook_; }
 	unsigned romHookRead(unsigned p) { return romHook_->romRead(p); }
+	unsigned romHookDmaRead(unsigned p) { return romHook_->romDmaRead(p); }
+	bool sramHookRead(unsigned p, unsigned &value) { return sramHook_ && sramHook_->sramRead(p, value); }
+	bool sramHookWrite(unsigned p, unsigned data) { return sramHook_ && sramHook_->sramWrite(p, data); }
 	// armGBA: a chip of the cartridge's own in the RAM area (TAMA5, the Pokemon Jade pirates')
 	bool hasIo() const { return io_; }
 	unsigned ioRead(unsigned p, gb_ulong cc) const { return io_->read(p, cc); }
@@ -141,6 +150,8 @@ private:
 	bool huc1_;
 	CartIo *io_ = 0;
 	RomHook *romHook_ = 0;
+	ActionReplayGb *actionReplay_ = 0;
+	SramHook *sramHook_ = 0;
 	bool pocketCamera_;
 	struct AddrData {
 		gb_ulong addr;

@@ -83,6 +83,11 @@ DuckLaptopLanguage laptopLanguage = DUCK_LAPTOP_SPANISH;
 // The cartridge in the laptop's slot, if any, and its kind
 std::vector<unsigned char> laptopCartridge;
 int laptopCartridgeKind = 0;
+// Datel's Action Replay in front of the game (libretroGbSetActionReplay): its program, whether a game
+// is on top, and what it keeps with the power off as it was last read out of the console
+std::vector<unsigned char> replayProgram;
+bool replayGame;
+std::vector<unsigned char> replayKept;
 
 // A cartridge's clock, kept by the frontend as the .rtc file. Other cores read their part of it:
 // - 8 bytes: the Unix time the clock would have started from, gambatte-libretro's whole file;
@@ -691,6 +696,16 @@ void setColors() {
 
 void restartAs(LibretroGbModel model);
 
+// Reads what the Action Replay keeps out of the console, if one is in, so a new cartridge starts
+// with it.
+void keepReplayFlash() {
+	std::size_t size = 0;
+	const unsigned char* const kept = s->gb ? s->gb->actionReplayFlash(&size) : 0;
+	if (kept) {
+		replayKept.assign(kept, kept + size);
+	}
+}
+
 // Sachen's multicarts show the boot ROM their own logo through a lock that isn't emulated, and keep
 // their header where their scrambled address lines put it.
 bool isSachen(const unsigned char* bytes, size_t size) {
@@ -729,7 +744,8 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	}
 	// Starts through Nintendo's boot ROM when the system directory has it, else armGBA's; with Boot
 	// ROM off, in the state a boot ROM would have left the machine. A Mega Duck has none.
-	bool const bootable = !sachen && !megaDuck;
+	// An Action Replay with nothing on top shows the boot ROM no logo, so it starts without one
+	bool const bootable = !sachen && !megaDuck && (replayProgram.empty() || replayGame);
 	std::string const boot = bootable && bootWanted == LIBRETRO_GB_BOOT_NINTENDO ? bootRom(systemDirectory, model) : std::string();
 	std::vector<unsigned char> const builtIn = bootable && bootWanted != LIBRETRO_GB_BOOT_OFF && boot.empty() ? armgbaBoot(model)
 	                                                                                                       : std::vector<unsigned char>();
@@ -754,6 +770,8 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	} else if (boot.empty() && builtIn.empty()) {
 		s->loadFlags |= gambatte::GB::NO_BIOS;
 	}
+	// What the Action Replay keeps goes into the new cartridge as the last one left it
+	keepReplayFlash();
 	if (!s->gb) {
 		s->gb = new gambatte::GB;
 		s->gb->setCpuQuarters(cpuQuarters);
@@ -765,6 +783,17 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	if (s->gb->load(reinterpret_cast<const char*>(bytes), size, s->loadFlags) != gambatte::LOADRES_OK) {
 		std::snprintf(error, errorSize, "armGBA can't run this Game Boy game");
 		return false;
+	}
+	if (!replayProgram.empty()) {
+		if (!s->gb->attachActionReplay(reinterpret_cast<const char*>(&replayProgram[0]), replayProgram.size(), replayGame)) {
+			std::snprintf(error, errorSize, "armGBA can't run this Action Replay");
+			return false;
+		}
+		std::size_t size = 0;
+		unsigned char* const kept = s->gb->actionReplayFlash(&size);
+		if (kept && size == replayKept.size()) {
+			std::memcpy(kept, &replayKept[0], size);
+		}
 	}
 	s->gb->linkStatus(players > 1 || s->linked ? LINK_ON : LINK_OFF);
 	if (!boot.empty()) {
@@ -927,6 +956,30 @@ void libretroGbSetMegaDuckLaptop(bool on, int printer, int language) {
 	laptopWanted = on;
 	laptopPrinter = printer;
 	laptopLanguage = language ? DUCK_LAPTOP_GERMAN : DUCK_LAPTOP_SPANISH;
+}
+
+void libretroGbSetActionReplay(const void* program, size_t size, bool game) {
+	const unsigned char* const bytes = static_cast<const unsigned char*>(program);
+	replayProgram.assign(bytes, bytes + (program ? size : 0));
+	replayGame = game;
+	replayKept.clear();
+}
+
+void libretroGbActionReplayControls(bool button, bool switchOn) {
+	if (s->gb) {
+		s->gb->setActionReplayControls(button, switchOn);
+	}
+}
+
+uint8_t* libretroGbActionReplayFlash(size_t* size) {
+	std::size_t kept = 0;
+	unsigned char* const bytes = s->gb ? s->gb->actionReplayFlash(&kept) : 0;
+	*size = kept;
+	return bytes;
+}
+
+bool libretroGbActionReplayFlashChanged(void) {
+	return s->gb && s->gb->actionReplayFlashChanged();
 }
 
 void libretroGbSetMegaDuckSlot(const void* rom, size_t size, int kind) {

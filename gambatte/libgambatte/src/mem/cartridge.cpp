@@ -279,6 +279,10 @@ void Cartridge::setStatePtrs(SaveState &state) {
 
 	huc3_.setStatePtrs(state);
 	camera_.setStatePtrs(state);
+	if (actionReplay_)
+		state.mem.cartChip.set(actionReplay_->stateData(), sizeof(ActionReplayGb::State));
+	else
+		state.mem.cartChip.set(0, 0);
 }
 
 void Cartridge::saveState(SaveState &state, gb_ulong const cc) {
@@ -488,6 +492,8 @@ LoadRes Cartridge::loadROM(Array<unsigned char> &buffer,
 	huc1_ = false;
 	io_ = 0;
 	romHook_ = 0;
+	actionReplay_ = 0;
+	sramHook_ = 0;
 	pocketCamera_ = false;
 
 	std::memcpy(memptrs_.romdata(), buffer.get(), (buffer.size() / rombank_size() * rombank_size()));
@@ -894,5 +900,19 @@ bool Cartridge::swapMegaDuckRom(unsigned char const *const data, std::size_t con
 	MegaDuck *const chip = new MegaDuck(memptrs_, MegaDuck::Kind(kind));
 	io_ = chip;
 	mbc_.reset(chip);
+	return true;
+}
+
+// armGBA: the Action Replay takes the place of the cartridge's mapper and answers its ROM reads; the
+// game's mapper (and its own answers, for a cartridge that has them) stay behind it.
+bool Cartridge::attachActionReplay(unsigned char const *const flash, std::size_t const size, bool const hasGame) {
+	if (!mbc_ || !size || size > 0x80000 || actionReplay_)
+		return false;
+
+	ActionReplayGb *const chip = new ActionReplayGb(memptrs_, mbc_.release(), romHook_, flash, size, hasGame);
+	mbc_.reset(chip);
+	romHook_ = chip;
+	sramHook_ = chip;
+	actionReplay_ = chip;
 	return true;
 }

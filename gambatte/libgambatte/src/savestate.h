@@ -66,6 +66,8 @@ struct SaveState {
 	struct Mem {
 		Ptr<unsigned char> vram;
 		Ptr<unsigned char> sram;
+		// armGBA: the Action Replay's registers and RAM (ActionReplayGb::State), when one is in
+		Ptr<unsigned char> cartChip;
 		Ptr<unsigned char> wram;
 		Ptr<unsigned char> ioamhram;
 		gb_ulong divLastUpdate;
