@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static GB_gameboy_t duck;
 static bool connected;
@@ -73,6 +74,14 @@ bool GB_serial_get_data_bit(GB_gameboy_t* gb) {
 	return true;
 }
 
+// Seconds the local time is ahead of UTC.
+static long localOffset(time_t now) {
+	struct tm const local = *localtime(&now);
+	struct tm const utc = *gmtime(&now);
+	int const days = local.tm_year != utc.tm_year ? (local.tm_year > utc.tm_year ? 1 : -1) : local.tm_yday - utc.tm_yday;
+	return ((days * 24L + local.tm_hour - utc.tm_hour) * 60 + local.tm_min - utc.tm_min) * 60 + local.tm_sec - utc.tm_sec;
+}
+
 void duckLaptopConnect(bool on, int printer, enum DuckLaptopLanguage lang,
                        unsigned (*control)(void), void (*in)(uint8_t), bool (*slot)(void)) {
 	memset(&duck, 0, sizeof(duck));
@@ -88,6 +97,10 @@ void duckLaptopConnect(bool on, int printer, enum DuckLaptopLanguage lang,
 	duckLaptopStopSpeech();
 	if (on) {
 		GB_connect_megaduck_laptop(&duck, NULL, NULL);
+		// The clock starts on local time, where SameDuck's starts on UTC; a game that sets it moves it
+		// from there.
+		time_t const now = time(NULL);
+		duck.megaduck_laptop.time_delta_rtc_vs_host = -localOffset(now);
 		if (printer) {
 			MD_printer_connect(printer == 1 ? MEGADUCK_PRINTER_TYPE_1_PASS : MEGADUCK_PRINTER_TYPE_2_PASS);
 		}
