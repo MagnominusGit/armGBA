@@ -1125,6 +1125,7 @@ const uint8_t* actionReplayCode(struct GBA*, uint32_t address);
 bool actionReplayWrite16(struct GBA*, uint32_t address, uint16_t value);
 void actionReplayButton(bool pressed);
 uint8_t* actionReplayFlash(size_t* size);
+const uint8_t* actionReplayKept(size_t* size);
 bool actionReplayFlashChanged(void);
 size_t actionReplayStateSize(void);
 void actionReplaySaveState(struct GBA*, void* state);

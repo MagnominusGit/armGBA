@@ -102,7 +102,7 @@ typedef struct {
 
     int32_t t_states_print_done_timeout;
 
-    time_t time_delta_rtc_vs_host;
+    int64_t time_delta_rtc_vs_host;  // armGBA: time_t, whose size, and so a state's, differs between devices
 
     // Multi-byte buffers
     uint8_t rx_buffer_state;

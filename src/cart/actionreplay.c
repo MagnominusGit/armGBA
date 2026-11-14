@@ -96,6 +96,8 @@ static struct {
 	uint32_t gameSize;
 	// Where the engine shows from: the first cartridges show it from 0x200.
 	uint32_t engine;
+	// The flash chip as kept, while the ID shows over its start (see actionReplayKept)
+	uint8_t* kept;
 	bool button;
 	bool flashChanged;
 	struct ActionReplayState s;
@@ -501,6 +503,7 @@ void actionReplayDetach(struct GBA* gba) {
 	gba->romSize = ar.flashSize;
 	gba->romMask = pow2(ar.flashSize) - 1;
 	free(ar.game);
+	free(ar.kept);
 	memset(&ar, 0, sizeof(ar));
 }
 
@@ -508,6 +511,23 @@ void actionReplayDetach(struct GBA* gba) {
 uint8_t* actionReplayFlash(size_t* size) {
 	*size = ar.gba ? ar.flashSize : 0;
 	return ar.gba ? ar.flash : NULL;
+}
+
+// What the chip holds, to keep: the flash, or while the program reads the chip's ID (shown over its
+// first two halfwords), a copy with what those hold.
+const uint8_t* actionReplayKept(size_t* size) {
+	*size = ar.gba ? ar.flashSize : 0;
+	if (!ar.gba || !ar.s.flashId) {
+		return ar.gba ? ar.flash : NULL;
+	}
+	if (!ar.kept && !(ar.kept = malloc(ar.flashSize))) {
+		*size = 0;
+		return NULL;
+	}
+	memcpy(ar.kept, ar.flash, ar.flashSize);
+	set16(&ar.kept[0], ar.s.idWas[0]);
+	set16(&ar.kept[2], ar.s.idWas[1]);
+	return ar.kept;
 }
 
 bool actionReplayFlashChanged(void) {

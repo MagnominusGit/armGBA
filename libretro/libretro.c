@@ -1626,7 +1626,7 @@ static int replayFlashWait;
 // The Action Replay's codes as text, beside what it keeps and named as it is, with .txt.
 static void writeReplayCodes(void) {
 	size_t size;
-	const uint8_t* const kept = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayFlash(&size);
+	const uint8_t* const kept = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayKept(&size);
 	char file[SAVE_PATH_SIZE];
 	snprintf(file, sizeof(file), "%s", replayFlashFile);
 	char* const dot = strrchr(file, '.');
@@ -1667,7 +1667,7 @@ static bool replayFlashChanged(void) {
 
 static void writeReplayFlash(void) {
 	size_t size;
-	const uint8_t* const flash = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayFlash(&size);
+	const uint8_t* const flash = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayKept(&size);
 	if (flash && *replayFlashFile) {
 		makeFolders(replayFlashFile);
 		writeWholeFile(replayFlashFile, flash, size);
