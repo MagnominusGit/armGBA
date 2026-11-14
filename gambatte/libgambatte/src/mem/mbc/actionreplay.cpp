@@ -17,7 +17,8 @@
 // armGBA: Datel's Action Replay for the Game Boy and Game Boy Color, as its programs use it (nothing
 // about its hardware is published). The game plugs in on top; the console sees one or the other, the
 // Action Replay at power on. Its switch, when off, leaves the game running alone: the game's accesses
-// no longer reach the Action Replay's registers or set off its hook.
+// no longer reach the Action Replay's registers or set off its hook, except while the later
+// cartridges' button is held, which still opens their menu.
 //
 // The later cartridges (Action Replay Online and Xtreme, GameShark Online, Action Replay Pro):
 // - Showing the Action Replay: 0000-3FFF is the first 16 KiB of its flash chip, 4000-5FFF the 8 KiB
@@ -127,13 +128,14 @@ void ActionReplayGb::reset() {
 	memptrs_.setSramHooked(first_);
 }
 
-// From the game, the hook works only with the switch on; the program's own look at the game always.
+// From the game, the hook works only with the switch on (or, on the later cartridges, while the button
+// is held); the program's own look at the game always.
 bool ActionReplayGb::armed() const {
 	if (first_)
 		return s_.shown ? false : s_.regs[reg_arm] && switchOn_;
 	if (s_.regs[reg_bus] & bus_look)
 		return true;
-	return (s_.regs[reg_arm] & 1) && (s_.shown || switchOn_);
+	return (s_.regs[reg_arm] & 1) && (s_.shown || switchOn_ || button_);
 }
 
 std::size_t ActionReplayGb::flashAddress(unsigned p) const {

@@ -553,19 +553,23 @@ The Game Boy ones show the game the boot ROM's logo, then their menu. With codes
 VBlank interrupt runs the Action Replay's handler first, which applies the codes (compiled into its
 RAM by its program) and goes on to the game's. As on the cartridge:
 
-- the button (R3) opens the later cartridges' in-game menu;
-- Action Replay Switch is the cartridge's switch. On, it shows its menu at power on and its codes and
-  button work in the game. Off, the game runs alone, with the codes the menu wrote before starting it,
-  and doesn't show the menu at power on. Pokemon games need it off: their menus say so when one is
-  found, as the hook breaks them;
+- the button (R3) opens the later cartridges' in-game menu, with its SnapShot and Restore of the
+  game;
+- Action Replay Switch is the cartridge's switch. On, it shows its menu at power on and its codes work
+  in the game. Off, the game runs alone, with the codes the menu wrote before starting it, and doesn't
+  show the menu at power on; the button still opens the in-game menu. Pokemon games need it off:
+  their menus say so when one is found, as the hook breaks them (Crystal stays black before its
+  copyright screen, as reported on the real cartridge, because the hook delays its VBlank handler
+  past the lines where it copies its graphics);
 - the later cartridges' flash chip, and the Pro Action Replay's battery-backed RAM, are kept in the
   Action Replay's save file; states keep the rest, in either state format.
 
 Not covered: the Action Replay Pro (World) dump is 16 KiB of a bigger chip and stops at its start-up,
 and the GameShark (USA) for Game Boy is a bad dump (one bank repeated). The Action Replay Xtreme's
-setting for Pokemon Crystal (the address of the game's own check of the screen's timing) is kept but
-does nothing, so Crystal runs only with the switch off, where its codes, which apply every frame,
-don't; and the PC link isn't emulated.
+setting for Pokemon Crystal (the address of one of the game's two checks of the screen's timing) is
+kept but does nothing: what the cartridge does with it is unknown, and making that byte read
+differently doesn't fix the other check. So Crystal runs only with the switch off, where its codes,
+which apply every frame, don't. The PC link isn't emulated.
 
 ### Game Boy and Game Boy Color
 
