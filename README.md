@@ -623,7 +623,9 @@ bbbbbr's megaduck-info documents the hardware:
   NR32's full and quarter volume the other way round.
 - It starts at 0000 with VRAM clear and the screen off.
 - MD0 (the laptops' system ROMs and programs), MD20S and MD25S cartridges have their RAM (32 KiB,
-  128 KiB on MD25S), kept as a save file.
+  128 KiB on MD25S), kept as a save file. The extension is what says so: a laptop program needs
+  `.md0` to get its memory card and keep it, as a `.bin` runs as a handheld cartridge, without RAM.
+  The handheld cartridges have no RAM, so they have no save file.
 
 The 23 retail Mega Duck games and 15 made since that it was tested with run, including the ones
 SameDuck draws wrongly: Canyon Racer, Commin 5 in 1, Duck Adventures' levels, Vex's counter and the
