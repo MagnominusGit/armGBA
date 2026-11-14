@@ -25,6 +25,8 @@
 //   (the code it is on, and a delay); 0x1C0 is the status: the switch in bits 12-15 (all set for
 //   right, codes on), the button in bit 10 (clear while pressed), and the PC link in bits 8 and 11.
 //   0x160 is the hardware's version, which changes where the switch reads; 0 is the one above.
+//   The first cartridges (the GameShark's) have only the first three patch slots, and show the
+//   engine from 0x09FE0200; their program calls it there.
 // - The flash chip takes the commands of SST's 16-bit chips at 0x0800AAAA and 0x08005554: ID (90),
 //   word program (A0), and erase (80, then 30 for 4 KiB, 50 for 64 KiB, 10 for all of it).
 // - To start a game, the program writes a 4 KiB block to its flash at 0x20000: at 0x20 the code a
@@ -43,6 +45,7 @@ enum {
 	AR_WINDOW = 0x01FE0000,
 	AR_WINDOW_SIZE = 0x1000,
 	AR_ENGINE = 0x400,
+	AR_ENGINE_FIRST = 0x200,
 	AR_STATUS = 0x1C0,
 	AR_VERSION = 0x160,
 	// Where in the flash chip the program leaves the hook's code, the engine and the codes.
@@ -91,6 +94,8 @@ static struct {
 	uint32_t flashSize;
 	uint8_t* game;
 	uint32_t gameSize;
+	// Where the engine shows from: the first cartridges show it from 0x200.
+	uint32_t engine;
 	bool button;
 	bool flashChanged;
 	struct ActionReplayState s;
@@ -352,7 +357,7 @@ static uint16_t status(void) {
 
 static uint16_t read16(uint32_t offset) {
 	uint32_t const at = offset & (AR_WINDOW_SIZE - 2);
-	if (at >= AR_ENGINE) {
+	if (at >= ar.engine) {
 		uint32_t const block = AR_BLOCK + at;
 		return (ar.s.control & CONTROL_ENGINE) && block + 2 <= ar.flashSize ? get16(&ar.flash[block]) : (uint16_t) ((0x08000000 + offset) >> 1);
 	}
@@ -391,7 +396,7 @@ bool actionReplayRead(struct GBA* gba, uint32_t address, int size, uint32_t* val
 // The engine, for running: the block's code at 0x09FE0400 while the hook calls it.
 const uint8_t* actionReplayCode(struct GBA* gba, uint32_t address) {
 	uint32_t const offset = address & (SIZE_ROM - 1);
-	if (!ours(gba, address) || (offset & ~(AR_WINDOW_SIZE - 1)) != AR_WINDOW || (offset & (AR_WINDOW_SIZE - 1)) < AR_ENGINE ||
+	if (!ours(gba, address) || (offset & ~(AR_WINDOW_SIZE - 1)) != AR_WINDOW || (offset & (AR_WINDOW_SIZE - 1)) < ar.engine ||
 	    !(ar.s.control & CONTROL_ENGINE) || AR_BLOCK + AR_WINDOW_SIZE > ar.flashSize) {
 		return NULL;
 	}
@@ -410,7 +415,7 @@ bool actionReplayWrite16(struct GBA* gba, uint32_t address, uint16_t value) {
 	}
 	if ((offset & ~(AR_WINDOW_SIZE - 1)) == AR_WINDOW) {
 		uint32_t const at = offset & (AR_WINDOW_SIZE - 2);
-		if (at < AR_ENGINE && !(at & 0x1F)) {
+		if (at < ar.engine && !(at & 0x1F)) {
 			ar.s.registers[at >> 5] = value;
 			patch();
 		}
@@ -476,6 +481,10 @@ bool actionReplayAttach(struct GBA* gba, const void* game, size_t size) {
 	ar.gba = gba;
 	ar.flash = gba->rom;
 	ar.flashSize = gba->romSize;
+	// A program for the first cartridges calls the engine at 0x09FE0201, a later one at 0x09FE0401.
+	bool const first = count32(ar.flash, ar.flashSize, 0x08000000 + AR_WINDOW + AR_ENGINE_FIRST + 1) > 0 &&
+	                   !count32(ar.flash, ar.flashSize, 0x08000000 + AR_WINDOW + AR_ENGINE + 1);
+	ar.engine = first ? AR_ENGINE_FIRST : AR_ENGINE;
 	resetState();
 	ar.s.control = 0x120;
 	return true;
