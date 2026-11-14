@@ -498,7 +498,7 @@ private:
 // armGBA: the Mega Duck's cartridges, with their two ways to change banks
 class MegaDuck : public Mbc, public CartIo {
 public:
-	explicit MegaDuck(MemPtrs &memptrs);
+	MegaDuck(MemPtrs &memptrs, bool zeroIsOne);
 	virtual bool disabledRam() const;
 	virtual void romWrite(unsigned p, unsigned data, gb_ulong cc);
 	virtual void saveState(SaveState::Mem &ss) const;
@@ -512,6 +512,7 @@ private:
 	MemPtrs &memptrs_;
 	unsigned short rombank0_;
 	unsigned short rombank_;
+	bool zeroIsOne_;
 
 	void setBanks() const;
 };

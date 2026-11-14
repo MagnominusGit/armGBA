@@ -549,7 +549,14 @@ LoadRes Cartridge::loadROM(Array<unsigned char> &buffer,
 	case type_mbc7: { Mbc7 *const chip = new Mbc7(memptrs_); io_ = chip; mbc_.reset(chip); } break;
 	case type_unl: mbc_.reset(new UnlMbc5(memptrs_, unl, rombanks)); break;
 	case type_pkjd: { Pkjd *const chip = new Pkjd(memptrs_); io_ = chip; mbc_.reset(chip); } break;
-	case type_megaduck: { MegaDuck *const chip = new MegaDuck(memptrs_); io_ = chip; mbc_.reset(chip); } break;
+	case type_megaduck: {
+		// Duck Adventures (CRC32 CC9C6D10)
+		bool const zeroIsOne = buffer.size() == 0x20000 && crc32(0, buffer.get(), buffer.size()) == 0xCC9C6D10;
+		MegaDuck *const chip = new MegaDuck(memptrs_, zeroIsOne);
+		io_ = chip;
+		mbc_.reset(chip);
+		break;
+	}
 	}
 
 	return LOADRES_OK;
