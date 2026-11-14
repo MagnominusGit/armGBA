@@ -32,6 +32,18 @@ static bool (*cartInSlot)(void);
 static uint8_t landing;
 static int landed;
 static enum DuckLaptopLanguage language;
+// A key let go of before the laptop asked for the keys stays down until it has told the console of it,
+// so a quick tap isn't lost between two of its polls
+static uint8_t heldKey;
+static bool releaseWaiting;
+static uint8_t releaseFlags;
+
+static void releaseIfReported(void) {
+	if (releaseWaiting && duck.megaduck_laptop.last_key == heldKey) {
+		releaseWaiting = false;
+		GB_megaduck_laptop_key_release(&duck, MEGADUCK_KBD_CODE_NONE, releaseFlags);
+	}
+}
 
 void GB_set_serial_transfer_bit_start_callback(GB_gameboy_t* gb, GB_serial_transfer_bit_start_callback_t callback) {
 	gb->serial_transfer_bit_start_callback = callback;
@@ -66,6 +78,8 @@ void duckLaptopConnect(bool on, int printer, enum DuckLaptopLanguage lang,
 	memset(&duck, 0, sizeof(duck));
 	landing = 0;
 	landed = 0;
+	heldKey = MEGADUCK_KBD_CODE_NONE;
+	releaseWaiting = false;
 	connected = on;
 	language = lang;
 	serialControl = control;
@@ -110,6 +124,7 @@ void duckLaptopRan(long cycles) {
 	if (duck.megaduck_laptop.t_states_till_update <= 0) {
 		GB_megaduck_laptop_peripheral_update(&duck, (uint8_t) (cycles < 255 ? cycles : 255));
 	}
+	releaseIfReported();
 }
 
 // What the controller keeps between frames, for states
@@ -288,15 +303,23 @@ void duckLaptopKeyboard(bool down, unsigned keycode, uint32_t character, uint16_
 		flags |= MEGADUCK_KBD_FLAG_SHIFT;
 	}
 	if (!down) {
-		GB_megaduck_laptop_key_release(&duck, MEGADUCK_KBD_CODE_NONE, flags);
+		releaseWaiting = heldKey != MEGADUCK_KBD_CODE_NONE;
+		releaseFlags = flags;
+		if (!releaseWaiting) {
+			GB_megaduck_laptop_key_release(&duck, MEGADUCK_KBD_CODE_NONE, flags);
+		}
+		releaseIfReported();
 		return;
 	}
 	uint8_t key = keyForKey(keycode, modifiers & RETROKMOD_CTRL);
-	if (key == MEGADUCK_KBD_CODE_NONE && character) {
+	// With Ctrl, the key is a piano key: the character a frontend sends with it isn't typed
+	if (key == MEGADUCK_KBD_CODE_NONE && character && !(modifiers & RETROKMOD_CTRL)) {
 		key = keyForCharacter(character, &flags);
 	}
 	if (key != MEGADUCK_KBD_CODE_NONE) {
 		GB_megaduck_laptop_key_set(&duck, key, flags);
+		heldKey = key;
+		releaseWaiting = false;
 	}
 }
 
