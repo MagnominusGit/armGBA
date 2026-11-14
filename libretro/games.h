@@ -27,6 +27,10 @@ struct ListedGame {
 // itself is left out. Returns how many, at most max; free with gamesFree. kind: what to list.
 enum { GAMES_ADVANCE, GAMES_GAME_BOY, GAMES_MEGA_DUCK };
 size_t gamesList(const char* loadedPath, int kind, struct ListedGame* out, size_t max);
+// The same games, highest rank first (then by name), for a list the frontend's option can't hold
+// all of.
+size_t gamesListRanked(const char* loadedPath, int kind, long long (*rank)(const char* path, void* context), void* context,
+                       struct ListedGame* out, size_t max);
 void gamesFree(struct ListedGame* games, size_t count);
 // Reads a game file, taking the game out of a .zip or .7z. Returns NULL if it can't.
 void* gameRead(const char* path, size_t* size);

@@ -226,6 +226,52 @@ size_t gamesList(const char* loadedPath, int kind, struct ListedGame* out, size_
 	return kept;
 }
 
+struct Scored {
+	struct ListedGame game;
+	long long rank;
+};
+
+static int byRank(const void* a, const void* b) {
+	const struct Scored* x = a;
+	const struct Scored* y = b;
+	if (x->rank != y->rank) {
+		return x->rank < y->rank ? 1 : -1;
+	}
+	return strcasecmp(x->game.label, y->game.label);
+}
+
+size_t gamesListRanked(const char* loadedPath, int kind, long long (*rank)(const char* path, void* context), void* context,
+                       struct ListedGame* out, size_t max) {
+	enum { ALL = 100000 };
+	struct ListedGame* all = malloc(ALL * sizeof(*all));
+	struct Scored* scored = malloc(ALL * sizeof(*scored));
+	if (!all || !scored) {
+		free(all);
+		free(scored);
+		return 0;
+	}
+	size_t const count = gamesList(loadedPath, kind, all, ALL);
+	for (size_t i = 0; i < count; ++i) {
+		scored[i].game = all[i];
+		scored[i].rank = rank(all[i].path, context);
+	}
+	if (count) {
+		qsort(scored, count, sizeof(*scored), byRank);
+	}
+	size_t const kept = count < max ? count : max;
+	for (size_t i = 0; i < count; ++i) {
+		if (i < kept) {
+			out[i] = scored[i].game;
+		} else {
+			free(scored[i].game.path);
+			free(scored[i].game.label);
+		}
+	}
+	free(all);
+	free(scored);
+	return kept;
+}
+
 void gamesFree(struct ListedGame* games, size_t count) {
 	for (size_t i = 0; i < count; ++i) {
 		free(games[i].path);

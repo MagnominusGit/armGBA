@@ -458,6 +458,7 @@ bool cartLoad(struct GBA* gba, const uint8_t* data, size_t size) {
 }
 
 void cartFree(struct GBA* gba) {
+	actionReplayDetach(gba);
 	free(gba->cart.file);
 	gba->cart.file = NULL;
 	gba->cart.fileSize = 0;
@@ -467,6 +468,7 @@ void cartFree(struct GBA* gba) {
 // mode.
 void cartReset(struct GBA* gba) {
 	struct Cart* cart = &gba->cart;
+	actionReplayReset(gba);
 	cart->vfameSramMode = -1;
 	cart->vfameRomMode = -1;
 	cart->vfameChanging = false;

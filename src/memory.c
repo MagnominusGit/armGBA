@@ -330,7 +330,8 @@ static inline uint32_t plainLoad(struct GBA* gba, uint32_t address, bool wide) {
 	default:
 		if ((address & (SIZE_ROM - 1) & align) >= gba->romSize) {
 			uint32_t value = wide ? (((address & ~3u) >> 1) & 0xFFFF) | ((((address & ~3u) + 2) >> 1) << 16) : (address >> 1) & 0xFFFF;
-			if (gba->cart.vfame) {
+			if (actionReplayRead(gba, address & align, wide ? 4 : 2, &value)) {
+			} else if (gba->cart.vfame) {
 				value = cartVfameRead(address, wide ? 4 : 2);
 			}
 			return ror32(value, (address & (wide ? 3 : 1)) << 3);
@@ -469,6 +470,10 @@ static uint32_t load32Raw(struct GBA* gba, uint32_t address, int* wait, const ui
 		if ((address & (SIZE_ROM - 4)) < gba->romSize) {
 			return le32(&gba->rom[address & (SIZE_ROM - 4)]);
 		}
+		uint32_t replay;
+		if (actionReplayRead(gba, address, 4, &replay)) {
+			return replay;
+		}
 		if (gba->cart.vfame) {
 			return cartVfameRead(address, 4);
 		}
@@ -548,6 +553,7 @@ uint32_t memoryLoad16(struct GBA* gba, uint32_t address, int* cycles) {
 			value = ereaderRead(gba, address);
 		} else if ((address & (SIZE_ROM - 2)) < gba->romSize) {
 			value = le16(&gba->rom[address & (SIZE_ROM - 2)]);
+		} else if (actionReplayRead(gba, address, 2, &value)) {
 		} else if (gba->cart.vfame) {
 			value = cartVfameRead(address, 2);
 		} else {
@@ -615,6 +621,7 @@ uint32_t memoryLoad8(struct GBA* gba, uint32_t address, int* cycles) {
 		wait = gba->waitN16[address >> 24];
 		if ((address & (SIZE_ROM - 1)) < gba->romSize) {
 			value = gba->rom[address & (SIZE_ROM - 1)];
+		} else if (actionReplayRead(gba, address, 1, &value)) {
 		} else if (gba->cart.vfame) {
 			value = cartVfameRead(address, 1);
 		} else {
@@ -700,6 +707,8 @@ static void store32Raw(struct GBA* gba, uint32_t address, uint32_t value, int* w
 		if (gba->cart.matrix && (address & 0x01FFFF00) == 0x00800100) {
 			cartMatrixWrite(gba, address & 0x3C, value);
 		}
+		actionReplayWrite16(gba, address & ~3u, (uint16_t) value);
+		actionReplayWrite16(gba, (address & ~3u) + 2, (uint16_t) (value >> 16));
 		break;
 	case REGION_SRAM:
 	case REGION_SRAM_MIRROR:
@@ -729,6 +738,9 @@ void memoryStore16(struct GBA* gba, uint32_t address, uint16_t value, int* cycle
 	if (((address >> 24) | 1) == (REGION_ROM0 | 1) && (address & 0x00FFFFFF) >= 0x00FD0000 && (address & (SIZE_ROM - 2)) >= gba->romSize) {
 		// A development cartridge's debug output.
 		cartPrintWrite(gba, address, value);
+	}
+	if ((address >> 25) == 4) {
+		actionReplayWrite16(gba, address, value);
 	}
 	switch (address >> 24) {
 	case REGION_EWRAM:
@@ -1018,7 +1030,11 @@ const uint8_t* codePointer(struct GBA* gba, uint32_t address) {
 		return &gba->oam[address & (SIZE_OAM - 1)];
 	case REGION_ROM0 ... REGION_ROM2_EX: {
 		uint32_t offset = address & (SIZE_ROM - 1);
-		return offset < gba->romSize ? &gba->rom[offset] : cartPrintCode(gba, address);
+		if (offset < gba->romSize) {
+			return &gba->rom[offset];
+		}
+		const uint8_t* const replay = actionReplayCode(gba, address);
+		return replay ? replay : cartPrintCode(gba, address);
 	}
 	default:
 		return NULL;

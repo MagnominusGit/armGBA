@@ -1114,6 +1114,23 @@ bool cartMultiWrite(struct GBA*, uint32_t address, uint8_t value);
 int overridesApply(struct GBA*);
 bool overridesLogoValid(struct GBA*);
 
+// actionreplay.c
+bool actionReplayDetect(const void* data, size_t size);
+bool actionReplayActive(const struct GBA*);
+bool actionReplayAttach(struct GBA*, const void* game, size_t size);
+void actionReplayDetach(struct GBA*);
+void actionReplayReset(struct GBA*);
+bool actionReplayRead(struct GBA*, uint32_t address, int size, uint32_t* value);
+const uint8_t* actionReplayCode(struct GBA*, uint32_t address);
+bool actionReplayWrite16(struct GBA*, uint32_t address, uint16_t value);
+void actionReplayButton(bool pressed);
+uint8_t* actionReplayFlash(size_t* size);
+bool actionReplayFlashChanged(void);
+size_t actionReplayStateSize(void);
+void actionReplaySaveState(struct GBA*, void* state);
+bool actionReplayPrepareState(struct GBA*, const void* state);
+void actionReplayLoadState(struct GBA*, const void* state);
+
 // ereader.c
 void ereaderReset(struct GBA*);
 void ereaderFree(struct GBA*);

@@ -33,7 +33,7 @@ interrupts, DMA, timers and what's on screen all happen when they would on the h
 | --- | --- | --- |
 | L2, R2 (held) | Fast-forward, up to RetroArch's Maximum Run Speed | Same |
 | X, Y (held) | Turbo A, turbo B | Same |
-| L3, R3 (held) | Turbo L, turbo R | Clicking the tilt stick flicks (motion sensor); R3 otherwise sets the contrast back to 50% |
+| L3, R3 (held) | Turbo L, turbo R; with an Action Replay, R3 is its button | Clicking the tilt stick flicks (motion sensor); R3 otherwise sets the contrast back to 50% |
 | L, R | L, R | Stretch the picture (Game Boy Advance model) |
 | Tilt stick | Tilt and turn (motion sensor games) | Tilt (motion sensor games) |
 | Left stick, with Left Stick as D-Pad | D-pad, except while it tilts | Same |
@@ -76,6 +76,7 @@ standalone frontend shows as one page with headers.
 | | Mega Duck Laptop Printer (applies on restart) | Mega Duck | Two Pass, One Pass, None |
 | | Mega Duck Laptop Speech (applies on restart) | Mega Duck | Spanish (Super Quique), German (Super Junior) |
 | | Mega Duck Laptop Cartridge (applies on restart) | Mega Duck | None, or a Mega Duck game in the laptop program's folder |
+| | Action Replay Cartridge (applies on restart) | Game Boy Advance (an Action Replay loaded) | None, or a Game Boy Advance game in the Action Replay's folder, those played last first |
 | Clock | Clock Source | Both | Real Time, Game Time |
 | | Clock Speed (with Game Time) | Both | Stopped, 0.1x, 0.25x, 0.5x, 0.75x, 1x, 1.25x, 1.5x, 2x, 3x, 4x, 6x, 10x, 24x, 60x (1x by default) |
 | | Clock Offset: Days | Both (not HuC3) | -30 to +30 days, 0 by default |
@@ -520,6 +521,29 @@ the e-Reader's own program decodes it. Cards are added through RetroArch's Disc 
 Disc), or the standalone frontend's Game tab (e-Reader Cards). A card can be a `.raw` dump (with its
 error-correcting bytes) or a `.bin` one (without them), and a file holding several strips is scanned
 a strip at a time. A card waits until the e-Reader scans.
+
+### Action Replay
+
+Datel's Action Replay cartridges for the Game Boy Advance run as the cartridge itself, with a game
+plugged in on top: Action Replay v3 and GBX (each language), Action Replay MAX and the Japanese Pro
+Action Replay. Load the Action Replay's ROM and pick the game with Action Replay Cartridge (the games
+beside it, those played last first), or load both with the "Action Replay (Game on Top)" subsystem.
+The Action Replay's menus work as on the cartridge: it finds the game in its code lists, codes are
+added and switched on there, and Start Game runs the game with them.
+
+The cartridge's hardware isn't documented; armGBA follows what its program does with it:
+
+- its flash chip, where it keeps its code lists and settings, kept by armGBA in the Action Replay's
+  save file (a save file of another size, from before, is left alone);
+- the register that shows the program or the game, and the six patch registers that put the hook
+  (a branch to the code engine) into the game;
+- the code engine at 0x09FE0400, which runs one code each time the hook is reached;
+- the switch, which reads right (codes on), except to the program waiting in work RAM for it to be
+  moved left before a game starts; and the button, which is R3.
+
+The game on top keeps its own save, under its own name, so it's the same save as when the game runs
+by itself. States keep the Action Replay's registers, and load only with the same Action Replay and
+game. The Action Replay's PC link and its game-save backups aren't emulated.
 
 ### Game Boy and Game Boy Color
 

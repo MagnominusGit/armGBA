@@ -230,6 +230,7 @@ static int16_t mixedSamples[2 * 4096];
 static struct retro_core_option_v2_definition* secondOption;
 // Mega Duck Laptop Cartridge, whose choices are the Mega Duck cartridges beside the laptop program
 static struct retro_core_option_v2_definition* slotOption;
+static struct retro_core_option_v2_definition* replayOption;
 static struct ListedGame slotGames[SECOND_CHOICES];
 static size_t slotCount;
 static char slotFirst[PATH_SIZE];
@@ -266,6 +267,7 @@ bool netplayJoined;
 // Whether the Game Boy cartridge has a tilt sensor (MBC7).
 bool tiltCartridge;
 bool megaDuckGame;
+bool actionReplayLoaded;
 // Whether the GameCube link was last shown as connected.
 static bool gamecubeShown;
 
@@ -288,6 +290,7 @@ enum {
 	SUBSYSTEM_LINK = 1,
 	SUBSYSTEM_ADVANCE_LINK = 2,
 	SUBSYSTEM_MEGADUCK_LAPTOP = 3,
+	SUBSYSTEM_ACTION_REPLAY = 4,
 	MEMORY_SECOND_SAVE = 0x100,
 	MEMORY_SECOND_RTC = 0x101,
 };
@@ -349,10 +352,15 @@ void retro_set_environment(retro_environment_t callback) {
 		{ "Laptop System ROM", "md0|bin", false, false, true, firstMemory, 1 },
 		{ "Cartridge in the Slot", "bin|duck|md1|md2|md20s|md25s", false, false, true, NULL, 0 },
 	};
+	static const struct retro_subsystem_rom_info replayRoms[] = {
+		{ "Action Replay", "gba|bin", false, false, true, NULL, 0 },
+		{ "Game on Top", "gba|bin", false, false, true, firstMemory, 1 },
+	};
 	static const struct retro_subsystem_info subsystems[] = {
 		{ "Two Game Boys (Link Cable)", "gblink", roms, 2, SUBSYSTEM_LINK },
 		{ "Two Game Boy Advances (Link Cable)", "gbalink", advanceRoms, 2, SUBSYSTEM_ADVANCE_LINK },
 		{ "Mega Duck Laptop (Cartridge in the Slot)", "megaducklaptop", laptopRoms, 2, SUBSYSTEM_MEGADUCK_LAPTOP },
+		{ "Action Replay (Game on Top)", "actionreplay", replayRoms, 2, SUBSYSTEM_ACTION_REPLAY },
 		{ NULL, NULL, NULL, 0, 0 },
 	};
 	callback(RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO, (void*) subsystems);
@@ -366,6 +374,7 @@ void retro_set_environment(retro_environment_t callback) {
 	if (optionsGive(callback)) {
 		secondOption = optionDefinition("armgba_player2_game");
 		slotOption = optionDefinition("armgba_megaduck_slot");
+		replayOption = optionDefinition("armgba_action_replay_game");
 		findSaveOptions();
 	}
 	// Low Memory: the frontend gives the core the game's path, and the core maps the file.
@@ -578,7 +587,7 @@ static void showButtons(void) {
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "L");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "R");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "Turbo L");
-		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, "Turbo R");
+		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, actionReplayLoaded ? "Action Replay Button" : "Turbo R");
 	}
 	if (tiltControl == TILT_DEVICE && forGameBoy) {
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "Flick (Motion Sensor)");
@@ -1464,6 +1473,167 @@ static void rememberSlotChoice(void) {
 	}
 }
 
+// Action Replay Cartridge: the game on top of an Action Replay, from the Game Boy Advance games
+// beside it, those played most recently first, remembered for each Action Replay. The subsystem
+// "Action Replay (Game on Top)" takes any game.
+static struct ListedGame replayGames[SECOND_CHOICES];
+static size_t replayCount;
+static char replayFirst[PATH_SIZE];
+// The game on top, for its save and the subsystem's.
+static char replayGamePath[PATH_SIZE];
+static const struct retro_game_info* replayGameGiven;
+
+static void replayMemoryFile(char* out, size_t outSize) {
+	const char* saveDirectory = NULL;
+	environment(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &saveDirectory);
+	if (saveDirectory && *saveDirectory) {
+		snprintf(out, outSize, "%s/armGBA action replay games.txt", saveDirectory);
+		return;
+	}
+	snprintf(out, outSize, "%s", replayFirst);
+	char* slash = strrchr(out, '/');
+	snprintf(slash ? slash + 1 : out, outSize - (slash ? (size_t) (slash + 1 - out) : 0), "armGBA action replay games.txt");
+}
+
+static const char* chosenReplayGame(void) {
+	const char* value = option("armgba_action_replay_game");
+	for (size_t i = 0; value && i < replayCount; ++i) {
+		if (!strcmp(value, replayGames[i].path)) {
+			return replayGames[i].path;
+		}
+	}
+	return NULL;
+}
+
+// How recently a game was played: its save's time, or 0 without one. Other Action Replays come last.
+static long long replayRank(const char* path, void* context) {
+	(void) context;
+	if (strstr(path, "Action Replay")) {
+		return -1;
+	}
+	char file[SAVE_PATH_SIZE];
+	char rtc[SAVE_PATH_SIZE];
+	saveFilesFor(path, file, rtc);
+	struct stat info;
+	return stat(file, &info) ? 0 : (long long) info.st_mtime;
+}
+
+static void offerReplayGames(const char* path) {
+	gamesFree(replayGames, replayCount);
+	replayCount = path ? gamesListRanked(path, GAMES_ADVANCE, replayRank, NULL, replayGames, SECOND_CHOICES) : 0;
+	snprintf(replayFirst, sizeof(replayFirst), "%s", path ? path : "");
+	replayFirst[strcspn(replayFirst, "#")] = '\0';
+	if (!coreOptions || !replayOption) {
+		return;
+	}
+	size_t n = 0;
+	replayOption->values[n++] = (struct retro_core_option_value) { "none", "None" };
+	for (size_t i = 0; i < replayCount; ++i) {
+		replayOption->values[n++] = (struct retro_core_option_value) { replayGames[i].path, replayGames[i].label };
+	}
+	replayOption->values[n] = (struct retro_core_option_value) { NULL, NULL };
+	setOptions();
+	char memory[PATH_SIZE];
+	char choice[PATH_SIZE];
+	replayMemoryFile(memory, sizeof(memory));
+	if (choiceRecall(memory, replayFirst, choice, sizeof(choice))) {
+		for (size_t i = 0; i < replayCount; ++i) {
+			if (!strcmp(choice, replayGames[i].path)) {
+				struct retro_variable variable = { "armgba_action_replay_game", choice };
+				environment(RETRO_ENVIRONMENT_SET_VARIABLE, &variable);
+			}
+		}
+	}
+}
+
+static void rememberReplayChoice(void) {
+	const char* value = option("armgba_action_replay_game");
+	if (*replayFirst && value && (!strcmp(value, "none") || chosenReplayGame())) {
+		char memory[PATH_SIZE];
+		replayMemoryFile(memory, sizeof(memory));
+		choiceRemember(memory, replayFirst, value);
+	}
+}
+
+// The Action Replay's flash chip, which holds its codes and settings, is kept by the core where
+// RetroArch would keep the Action Replay's save. A file of another size, such as a save from before
+// the Action Replay was emulated, is left alone, so it can't overwrite the program.
+static char replayFlashFile[SAVE_PATH_SIZE];
+static bool attachActionReplay(const struct retro_game_info* game);
+static int replayFlashWait;
+
+static void readReplayFlash(const char* path) {
+	char rtc[SAVE_PATH_SIZE];
+	saveFilesFor(path, replayFlashFile, rtc);
+	size_t size;
+	uint8_t* const flash = actionReplayFlash(&size);
+	struct stat info;
+	if (flash && !stat(replayFlashFile, &info) && (size_t) info.st_size == size) {
+		readFileInto(replayFlashFile, flash, size);
+	}
+	actionReplayFlashChanged();
+	replayFlashWait = 0;
+}
+
+static void writeReplayFlash(void) {
+	size_t size;
+	const uint8_t* const flash = actionReplayFlash(&size);
+	if (flash && *replayFlashFile) {
+		makeFolders(replayFlashFile);
+		writeWholeFile(replayFlashFile, flash, size);
+	}
+	replayFlashWait = 0;
+}
+
+// Written a second after the program stops changing it, and as the game closes.
+static void keepReplayFlash(bool closing) {
+	if (actionReplayFlashChanged()) {
+		replayFlashWait = 60;
+	}
+	if (replayFlashWait && (closing || !--replayFlashWait)) {
+		writeReplayFlash();
+	}
+}
+
+// An Action Replay just loaded: the game on top goes in, from the subsystem or Action Replay
+// Cartridge. Returns false when it can't be read.
+static bool startActionReplay(const struct retro_game_info* game) {
+	bool const attached = attachActionReplay(game);
+	if (attached) {
+		readReplayFlash(game->path ? game->path : firstPath);
+	}
+	return attached;
+}
+
+static bool attachActionReplay(const struct retro_game_info* game) {
+	replayGamePath[0] = '\0';
+	if (replayGameGiven) {
+		snprintf(replayGamePath, sizeof(replayGamePath), "%s", replayGameGiven->path ? replayGameGiven->path : "");
+		size_t size = replayGameGiven->size;
+		void* data = replayGameGiven->data ? NULL : gameRead(replayGameGiven->path, &size);
+		bool const attached = actionReplayAttach(gba, replayGameGiven->data ? replayGameGiven->data : data, size);
+		free(data);
+		return attached;
+	}
+	offerReplayGames(game->path);
+	const char* const chosen = chosenReplayGame();
+	if (!chosen) {
+		return actionReplayAttach(gba, NULL, 0);
+	}
+	size_t size = 0;
+	void* data = gameRead(chosen, &size);
+	if (!data) {
+		char message[300];
+		snprintf(message, sizeof(message), "armGBA can't read %.250s", chosen);
+		showMessage(message);
+		return actionReplayAttach(gba, NULL, 0);
+	}
+	snprintf(replayGamePath, sizeof(replayGamePath), "%s", chosen);
+	bool const attached = actionReplayAttach(gba, data, size);
+	free(data);
+	return attached;
+}
+
 static bool isPairFile(const char* path) {
 	const char* dot = path ? strrchr(path, '.') : NULL;
 	return dot && (!strcasecmp(dot, ".gb2") || !strcasecmp(dot, ".gba2"));
@@ -1576,6 +1746,10 @@ static bool loadAdvance(const struct retro_game_info* game, const struct retro_g
 	if (!gba) {
 		return false;
 	}
+	actionReplayLoaded = actionReplayDetect(gba->rom, gba->romSize);
+	if (actionReplayLoaded && !startActionReplay(game)) {
+		actionReplayLoaded = false;
+	}
 	showButtons();
 	threadedVideo = 0;
 	readOptions();
@@ -1584,7 +1758,11 @@ static bool loadAdvance(const struct retro_game_info* game, const struct retro_g
 	applyCartridge();
 	cartridgeSaveUnread = cartridgeOut && !noGame;
 	resetAdvance(gba);
-	if (!noGame) {
+	if (actionReplayLoaded && *replayGamePath) {
+		// The game on top keeps its own save, where it is when the game runs by itself; the
+		// frontend keeps the Action Replay's flash.
+		readSave(0, replayGamePath);
+	} else if (!noGame) {
 		readPlayerOneSave();
 	}
 	linkSetGba(gba);
@@ -1735,6 +1913,13 @@ bool retro_load_game_special(unsigned type, const struct retro_game_info* info, 
 	if (type == SUBSYSTEM_MEGADUCK_LAPTOP && count == 2 && info[0].data && info[1].data) {
 		return loadMegaDuckLaptop(&info[0], &info[1]);
 	}
+	if (type == SUBSYSTEM_ACTION_REPLAY && count == 2 && (info[0].data || info[0].path) && (info[1].data || info[1].path)) {
+		gameBoy = false;
+		replayGameGiven = &info[1];
+		bool const loaded = loadAdvance(&info[0], NULL);
+		replayGameGiven = NULL;
+		return loaded && actionReplayLoaded;
+	}
 	return false;
 }
 
@@ -1746,6 +1931,12 @@ void retro_unload_game(void) {
 	if (megaDuckGame) {
 		rememberSlotChoice();
 	}
+	if (actionReplayLoaded) {
+		rememberReplayChoice();
+		keepReplayFlash(true);
+	}
+	actionReplayLoaded = false;
+	replayGamePath[0] = '\0';
 	writeCoreSaves(true);
 	forgetSaves();
 	clockForget();
@@ -2010,7 +2201,7 @@ static bool turbo(unsigned port, unsigned button, uint8_t* counter) {
 // Turbo L and R: L3 and R3 held press a Game Boy Advance game's L and R.
 static uint16_t readTurboShoulders(void) {
 	bool const l = !switchStick(RETRO_DEVICE_ID_JOYPAD_L3) && turbo(0, RETRO_DEVICE_ID_JOYPAD_L3, &pressed.turboL);
-	bool const r = !switchStick(RETRO_DEVICE_ID_JOYPAD_R3) && turbo(0, RETRO_DEVICE_ID_JOYPAD_R3, &pressed.turboR);
+	bool const r = !actionReplayLoaded && !switchStick(RETRO_DEVICE_ID_JOYPAD_R3) && turbo(0, RETRO_DEVICE_ID_JOYPAD_R3, &pressed.turboR);
 	return (l ? KEY_L : 0) | (r ? KEY_R : 0);
 }
 
@@ -2928,6 +3119,10 @@ static void runOneAdvance(void) {
 	hintSharedControls();
 	readRestarts(&keys);
 	gbaSetKeys(gba, keys);
+	if (actionReplayLoaded) {
+		actionReplayButton(inputState(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3));
+		keepReplayFlash(false);
+	}
 	readSensors(keys);
 	linkGbaFrame(gba);
 	dolphinGbaFrame(gba);
@@ -3058,7 +3253,8 @@ static size_t consolesStateSize(void) {
 	if (gbaTogether) {
 		return playersHere * (sizeof(gbaAhead[0]) + gbaStateSize() + sizeof(transfers[0]) + sizeof(cables[0].ready) + sizeof(gbaShown[0]));
 	}
-	return gbaStateSize();
+	// An Action Replay's registers follow the console's state.
+	return gbaStateSize() + (actionReplayLoaded ? actionReplayStateSize() : 0);
 }
 
 // Also tells the Game Boy core whether this state is for rollback or run-ahead, which want it exact.
@@ -3105,6 +3301,9 @@ static bool saveConsoles(void* data, size_t size) {
 	}
 	if (!gbaTogether) {
 		gbaSaveState(gba, data);
+		if (actionReplayLoaded) {
+			actionReplaySaveState(gba, (uint8_t*) data + gbaStateSize());
+		}
 		return true;
 	}
 	// The consoles here: how far each ran past the last frame, their states, the cable between them,
@@ -3129,6 +3328,23 @@ static bool loadConsoles(const void* data, size_t size) {
 	if (gameBoy) {
 		bool loaded = libretroGbLoadState(data, size);
 		checkGameBoyMemory();
+		return loaded;
+	}
+	if (!gbaTogether && actionReplayLoaded) {
+		// The Action Replay shows what the state ran with before the console's state loads; if that
+		// fails, it goes back as it was.
+		const uint8_t* const replay = (const uint8_t*) data + gbaStateSize();
+		uint8_t* const was = gba ? malloc(actionReplayStateSize()) : NULL;
+		if (!was || size < consolesStateSize()) {
+			free(was);
+			return false;
+		}
+		actionReplaySaveState(gba, was);
+		bool const loaded = actionReplayPrepareState(gba, replay) && gbaLoadState(gba, data, gbaStateSize());
+		const uint8_t* const now = loaded ? replay : was;
+		actionReplayPrepareState(gba, now);
+		actionReplayLoadState(gba, now);
+		free(was);
 		return loaded;
 	}
 	if (!gbaTogether) {
@@ -3281,6 +3497,11 @@ unsigned retro_get_region(void) {
 static void* memory(unsigned id, size_t* size) {
 	*size = 0;
 	if (pairFile && id != RETRO_MEMORY_SYSTEM_RAM) {
+		return NULL;
+	}
+	if (actionReplayLoaded && (id == RETRO_MEMORY_SAVE_RAM || id == RETRO_MEMORY_RTC)) {
+		// The core keeps the Action Replay's flash, and the game on top's save under the game's
+		// name.
 		return NULL;
 	}
 	if (!retroArchSaves() && (id == RETRO_MEMORY_SAVE_RAM || id == RETRO_MEMORY_RTC)) {

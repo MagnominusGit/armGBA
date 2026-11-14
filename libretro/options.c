@@ -161,6 +161,10 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_megaduck_slot", "Mega Duck Laptop Cartridge", NULL,
 	  "The cartridge in the laptop's slot, from the laptop program's folder; the laptop runs it when asked. Applies on Restart.",
 	  NULL, "system", { { "none", "None" }, { NULL, NULL } }, "none" },
+	{ "armgba_action_replay_game", "Action Replay Cartridge", NULL,
+	  "The game plugged in on top of the Action Replay, from the games beside it (those played last first); "
+	  "R3 is the Action Replay's button. Applies on Restart.",
+	  NULL, "system", { { "none", "None" }, { NULL, NULL } }, "none" },
 	{ "armgba_threaded_video", "Threaded Video", NULL,
 	  "Draws on a second CPU core for speed. One Frame Late is faster but a frame behind.", NULL, "video",
 	  { { "disabled", "Off" }, { "enabled", "On" }, { "one frame late", "One Frame Late" }, { NULL, NULL } }, "disabled" },
@@ -494,6 +498,7 @@ bool showOptions(void) {
 		{ "armgba_megaduck_printer", megaDuckGame },
 		{ "armgba_megaduck_speech", megaDuckGame },
 		{ "armgba_megaduck_slot", megaDuckGame },
+		{ "armgba_action_replay_game", actionReplayLoaded },
 		{ "armgba_gb_color_correction", !advance },
 		{ "armgba_gb_screen", !advance },
 		{ "armgba_gb_contrast", lcdCastsShadow() },

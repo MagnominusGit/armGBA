@@ -62,6 +62,8 @@ extern bool gbOnAdvance;
 extern bool tiltCartridge;
 // A Mega Duck game is loaded
 extern bool megaDuckGame;
+// An Action Replay is the game loaded, with a game on top of it or none.
+extern bool actionReplayLoaded;
 enum { THREADED_OFF, THREADED_ON, THREADED_LATE };
 extern int threadedVideo;
 // The threads that draw with Threaded Video: 1 or 2.
@@ -119,6 +121,7 @@ bool retroArchSaves(void);
 // RetroArch wrote it.
 void readPlayerOneSave(void);
 void readNewerPlayerOne(void);
+void saveFilesFor(const char* game, char file[SAVE_PATH_SIZE], char rtcFile[SAVE_PATH_SIZE]);
 bool readSave(int player, const char* game);
 void readOtherSaves(void);
 void copyFirstSave(void);

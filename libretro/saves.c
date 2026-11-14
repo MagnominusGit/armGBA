@@ -278,15 +278,20 @@ static bool keepSave(int player, const char* readFrom, const char* rtcFrom, cons
 	return found;
 }
 
+// Where RetroArch keeps a game's save and clock.
+void saveFilesFor(const char* game, char file[SAVE_PATH_SIZE], char rtcFile[SAVE_PATH_SIZE]) {
+	char unsorted[PATH_SIZE];
+	const char* saveDirectory = saveDirectoryFor(unsorted);
+	saveFilePath(game, "", "srm", firstPath, saveDirectory, file, SAVE_PATH_SIZE);
+	saveFilePath(game, "", "rtc", firstPath, saveDirectory, rtcFile, SAVE_PATH_SIZE);
+}
+
 // A player's save of a game of their own, such as player 2's from Player 2's Game or a pair file:
 // where RetroArch keeps that game's save.
 bool readSave(int player, const char* game) {
-	char unsorted[PATH_SIZE];
-	const char* saveDirectory = saveDirectoryFor(unsorted);
-	char file[PATH_SIZE];
-	char rtcFile[PATH_SIZE];
-	saveFilePath(game, "", "srm", firstPath, saveDirectory, file, sizeof(file));
-	saveFilePath(game, "", "rtc", firstPath, saveDirectory, rtcFile, sizeof(rtcFile));
+	char file[SAVE_PATH_SIZE];
+	char rtcFile[SAVE_PATH_SIZE];
+	saveFilesFor(game, file, rtcFile);
 	return keepSave(player, file, rtcFile, file, rtcFile);
 }
 
