@@ -202,6 +202,17 @@ static int screens;
 static int screensOption = -1;
 // The L2 Button option: fast-forward, or the previous screen layout.
 static bool l2FastForward = true;
+// L2 and R2 as Turbo L and R (Game Boy Advance): then they only press them, with no fast-forward or
+// screen layouts.
+static bool turboOnTriggers;
+#define TRIGGERS_TURBO (turboOnTriggers && !gameBoy)
+// L3 Button: what clicking L3 does where nothing else has it; fast-forward latched by its toggle;
+// and the frames left of its soft reset's A + B + Select + Start, pressed once it's held long enough.
+enum { L3_FAST_FORWARD, L3_SOFT_RESET, L3_OFF };
+enum { SOFT_RESET_HOLD = 30, SOFT_RESET_PRESS = 10 };
+static int l3Button = L3_FAST_FORWARD;
+static bool fastForwardLatched;
+static unsigned softResetFrames;
 // Screen Layout Control: in netplay, whose L2 and R2 change this device's screens, -1 for Auto.
 // Show Player Numbers: each player's number on their screen.
 static int r2Follows = -1;
@@ -256,8 +267,10 @@ static int controllerFocus;
 static bool playingOn;
 static bool switchStick(unsigned button);
 static bool contrastClick(void);
-static unsigned flickButton(void);
+static bool contrastStick(void);
 static void readReplayPress(bool act);
+static bool switchStart(int port);
+static bool l3Free(void);
 // The stick click that's the Action Replay's button, or REPLAY_BUTTON_OFF; and how many more frames
 // Open Action Replay Menu holds it.
 enum { REPLAY_BUTTON_OFF = ~0u, REPLAY_PRESS_FRAMES = 6 };
@@ -585,7 +598,10 @@ static void showButtons(void) {
 	BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "Start");
 	BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Turbo A");
 	BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Turbo B");
-	if (togetherRunning()) {
+	if (TRIGGERS_TURBO) {
+		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "Turbo L");
+		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Turbo R");
+	} else if (togetherRunning()) {
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, l2FastForward ? "Fast-Forward (Previous Layout in Netplay)" : "Previous Layout");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Next Screens");
 	} else {
@@ -593,9 +609,9 @@ static void showButtons(void) {
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Fast-Forward");
 	}
 	if (forGameBoy) {
-		// A Game Boy has no L or R; on the Game Boy Advance model they stretch the picture. With
-		// the tilt sensor on the D-pad, L is the flick.
-		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, tiltControl == TILT_DPAD ? "Flick (Motion Sensor)" : "Stretch (Game Boy Advance Model)");
+		// A Game Boy has no L or R; on the Game Boy Advance model either stretches the picture, as on
+		// that console. With a tilt cartridge, L is the flick.
+		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, tiltCartridge ? "Flick (Motion Sensor)" : "Stretch (Game Boy Advance Model)");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "Stretch (Game Boy Advance Model)");
 		if (actionReplayLoaded && replayButton != REPLAY_BUTTON_OFF) {
 			BUTTON(RETRO_DEVICE_JOYPAD, 0, replayButton, "Action Replay Button");
@@ -603,26 +619,23 @@ static void showButtons(void) {
 	} else {
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "L");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "R");
-		bool const replayL3 = actionReplayLoaded && replayButton == RETRO_DEVICE_ID_JOYPAD_L3;
-		bool const replayR3 = actionReplayLoaded && replayButton == RETRO_DEVICE_ID_JOYPAD_R3;
-		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, replayL3 ? "Action Replay Button" : "Turbo L");
-		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, replayR3 ? "Action Replay Button" : "Turbo R");
+		if (actionReplayLoaded && replayButton != REPLAY_BUTTON_OFF) {
+			BUTTON(RETRO_DEVICE_JOYPAD, 0, replayButton, "Action Replay Button");
+		}
 	}
-	if (tiltControl == TILT_DEVICE && forGameBoy) {
-		BUTTON(RETRO_DEVICE_JOYPAD, 0, flickButton(), "Flick (Motion Sensor)");
-	} else if (tiltControl != TILT_DPAD) {
+	if (l3Free()) {
+		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, l3Button == L3_FAST_FORWARD ? "Fast-Forward Toggle" : "Soft Reset (Hold)");
+	}
+	if (tiltControl != TILT_DPAD && !(tiltControl == TILT_DEVICE && forGameBoy)) {
 		unsigned const stick = tiltControl == TILT_RIGHT_STICK ? RETRO_DEVICE_INDEX_ANALOG_RIGHT : RETRO_DEVICE_INDEX_ANALOG_LEFT;
 		BUTTON(RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_X, "Tilt / Turn (Motion Sensor)");
 		BUTTON(RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_Y,
 		       !forGameBoy && tiltControl == TILT_RIGHT_STICK ? "Tilt Up / Down, Sunlight" : "Tilt Up / Down (Motion Sensor)");
-		if (forGameBoy) {
-			BUTTON(RETRO_DEVICE_JOYPAD, 0, flickButton(), "Flick (Motion Sensor)");
-		}
 	}
 	if (!forGameBoy && tiltControl != TILT_RIGHT_STICK) {
 		BUTTON(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, "Sunlight (Solar Sensor)");
 	}
-	if (forGameBoy && tiltControl != TILT_RIGHT_STICK && lcdCastsShadow()) {
+	if (forGameBoy && contrastStick()) {
 		BUTTON(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, "Contrast");
 		if (contrastClick()) {
 			BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, "Contrast Reset");
@@ -867,11 +880,22 @@ static void readOptions(void) {
 			announceGeometry();
 		}
 	}
+	bool const triggers = optionIs("armgba_l2_r2", "turbo");
+	static const struct Choice l3Choices[] = { { "fast forward", L3_FAST_FORWARD }, { "soft reset", L3_SOFT_RESET }, { "off", L3_OFF } };
+	int const l3 = optionChoice("armgba_l3_button", l3Choices, COUNT(l3Choices), L3_FAST_FORWARD);
+	int const restart = optionChoice("armgba_restart_buttons", restartChoices, COUNT(restartChoices), RESTART_L_R_START);
+	if (triggers != turboOnTriggers || l3 != l3Button || restart != restartButtons) {
+		turboOnTriggers = triggers;
+		l3Button = l3;
+		restartButtons = restart;
+		if (gba || gameBoy) {
+			showButtons();
+		}
+	}
 	const char* value = option("armgba_turbo_period");
 	turboPeriod = clampInt(value ? atoi(value) : TURBO_FEWEST, TURBO_FEWEST, TURBO_MOST);
 	turboPulse = clampInt(turboPeriod / 2, 2, 15);
 	linkSetGbExact(optionIs("armgba_gb_link_timing", "exact"));
-	restartButtons = optionChoice("armgba_restart_buttons", restartChoices, COUNT(restartChoices), RESTART_L_R_START);
 	static const struct Choice rotationChoices[] = { { "90", 1 }, { "180", 2 }, { "270", 3 } };
 	motionRotation = optionChoice("armgba_motion_rotation", rotationChoices, COUNT(rotationChoices), 0);
 	int const tilt = optionChoice("armgba_gb_tilt", tiltChoices, COUNT(tiltChoices), TILT_LEFT_STICK);
@@ -2246,33 +2270,30 @@ static bool deviceMotion(int* x, int* y) {
 }
 
 // Reads the motion sensor control: a stick, or the D-pad pushed all the way, giving -0x7FFF to
-// 0x7FFF on each axis, or the device's motion. Also reports whether the stick is clicked, or L is
-// held when using the D-pad, or L3 with Device Motion (R3 when L3 is the Action Replay's button).
-static void readMotion(uint16_t keys, int* x, int* y, bool* click) {
+// 0x7FFF on each axis, or the device's motion.
+static void readMotion(uint16_t keys, int* x, int* y) {
 	if (deviceMotion(x, y)) {
-		unsigned const button = flickButton();
-		*click = !switchStick(button) && inputState(0, RETRO_DEVICE_JOYPAD, 0, button);
-	} else if (tiltControl == TILT_DPAD) {
+		return;
+	}
+	if (tiltControl == TILT_DPAD) {
 		*x = keys & KEY_RIGHT ? 0x7FFF : keys & KEY_LEFT ? -0x7FFF : 0;
 		*y = keys & KEY_DOWN ? 0x7FFF : keys & KEY_UP ? -0x7FFF : 0;
-		*click = keys & KEY_L;
 	} else {
 		unsigned stick = tiltControl == TILT_RIGHT_STICK ? RETRO_DEVICE_INDEX_ANALOG_RIGHT : RETRO_DEVICE_INDEX_ANALOG_LEFT;
 		*x = inputState(0, RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_X);
 		*y = inputState(0, RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_Y);
-		unsigned const button = flickButton();
-		*click = !switchStick(button) && inputState(0, RETRO_DEVICE_JOYPAD, 0, button);
 	}
 }
 
-// Feeds the tilt sensor of a Game Boy cartridge that has one (Kirby Tilt 'n' Tumble). Clicking the
-// stick flicks the console upwards, which is how Kirby jumps.
+// Feeds the tilt sensor of a Game Boy cartridge that has one (Kirby Tilt 'n' Tumble). L flicks the
+// console upwards, which is how Kirby jumps, whatever tilts it (a Game Boy has no L); R still
+// stretches the picture.
 static void readTilt(uint16_t keys) {
 	int x;
 	int y;
-	bool click;
+	bool const click = keys & KEY_L;
 	useSensors(true, false);
-	readMotion(keys, &x, &y, &click);
+	readMotion(keys, &x, &y);
 	if (click && !pressed.flickHeld) {
 		libretroGbFlick();
 	}
@@ -2335,18 +2356,9 @@ static bool replayButtonHeld(void) {
 }
 
 // Whether clicking the right stick resets the contrast: R3 isn't a Restart Button or Switch Player
-// Combo's, the Action Replay's button, or a tilt cartridge's flick.
+// Combo's, or the Action Replay's button.
 static bool contrastClick(void) {
-	return restartButtons != RESTART_STICKS && !switchStick(RETRO_DEVICE_ID_JOYPAD_R3) && !replayStick(RETRO_DEVICE_ID_JOYPAD_R3) &&
-	       !(tiltCartridge && tiltControl != TILT_DPAD && flickButton() == RETRO_DEVICE_ID_JOYPAD_R3);
-}
-
-// The button that flicks a tilt cartridge with the tilt on a stick or the device's motion: the tilt
-// stick's click (L3 for the device's motion), or the other stick's when that's the Action Replay's
-// button.
-static unsigned flickButton(void) {
-	unsigned const button = tiltControl == TILT_RIGHT_STICK ? RETRO_DEVICE_ID_JOYPAD_R3 : RETRO_DEVICE_ID_JOYPAD_L3;
-	return !replayStick(button) ? button : button == RETRO_DEVICE_ID_JOYPAD_R3 ? RETRO_DEVICE_ID_JOYPAD_L3 : RETRO_DEVICE_ID_JOYPAD_R3;
+	return restartButtons != RESTART_STICKS && !switchStick(RETRO_DEVICE_ID_JOYPAD_R3) && !replayStick(RETRO_DEVICE_ID_JOYPAD_R3);
 }
 
 // Pushing the right stick up or down turns the contrast wheel a step, and clicking it goes back to 0;
@@ -2390,9 +2402,8 @@ static void readSensors(uint16_t keys) {
 	if (devices & (HW_TILT | HW_GYRO)) {
 		int x;
 		int y;
-		bool click;
 		useSensors(devices & HW_TILT, devices & HW_GYRO);
-		readMotion(keys, &x, &y, &click);
+		readMotion(keys, &x, &y);
 		gba->gpio.tiltInputX = x * 0x3800;
 		gba->gpio.tiltInputY = y * 0x3800;
 		gba->gpio.gyroZ = x * 11000;
@@ -2431,12 +2442,47 @@ static bool turbo(unsigned port, unsigned button, uint8_t* counter) {
 	return down;
 }
 
-// Turbo L and R: L3 and R3 held press a Game Boy Advance game's L and R, except the Action Replay's
-// button.
+// Turbo L and R: with L2 and R2 set to them, L2 and R2 held press a Game Boy Advance game's L and R,
+// except while Start holds them for the Switch Controller Combo.
 static uint16_t readTurboShoulders(void) {
-	bool const l = !replayStick(RETRO_DEVICE_ID_JOYPAD_L3) && !switchStick(RETRO_DEVICE_ID_JOYPAD_L3) && turbo(0, RETRO_DEVICE_ID_JOYPAD_L3, &pressed.turboL);
-	bool const r = !replayStick(RETRO_DEVICE_ID_JOYPAD_R3) && !switchStick(RETRO_DEVICE_ID_JOYPAD_R3) && turbo(0, RETRO_DEVICE_ID_JOYPAD_R3, &pressed.turboR);
+	if (!TRIGGERS_TURBO) {
+		return 0;
+	}
+	bool const l = !switchStart(0) && turbo(0, RETRO_DEVICE_ID_JOYPAD_L2, &pressed.turboL);
+	bool const r = !switchStart(0) && turbo(0, RETRO_DEVICE_ID_JOYPAD_R2, &pressed.turboR);
 	return (l ? KEY_L : 0) | (r ? KEY_R : 0);
+}
+
+// Whether L3 is free for L3 Button: not off, and not the Action Replay's button or in the Restart or
+// Switch Controller Combo.
+static bool l3Free(void) {
+	return l3Button != L3_OFF && !replayStick(RETRO_DEVICE_ID_JOYPAD_L3) && !switchStick(RETRO_DEVICE_ID_JOYPAD_L3) &&
+	       restartButtons != RESTART_STICKS;
+}
+
+// L3 Button, once a frame shown: its click turns Fast-Forward Toggle's fast-forward on or off, or held
+// for half a second, Soft Reset presses A + B + Select + Start for a few frames, which most games
+// take as a reset; held on, it doesn't again until let go.
+static void readL3Button(void) {
+	static bool held;
+	static unsigned heldFor;
+	if (rerunning()) {
+		return;
+	}
+	bool const now = l3Free() && inputState(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3);
+	if (l3Button != L3_FAST_FORWARD || linkSession() || netplaySeen) {
+		fastForwardLatched = false;
+	} else if (now && !held) {
+		fastForwardLatched = !fastForwardLatched;
+	}
+	if (softResetFrames) {
+		--softResetFrames;
+	}
+	heldFor = now && l3Button == L3_SOFT_RESET ? heldFor + 1 : 0;
+	if (heldFor == SOFT_RESET_HOLD) {
+		softResetFrames = SOFT_RESET_PRESS;
+	}
+	held = now;
 }
 
 static bool allHeld(uint16_t keys, uint16_t wanted) {
@@ -2490,15 +2536,17 @@ static uint16_t readKeys(unsigned port) {
 	if (port == 0 && switchController >= SWITCH_START_L3 && switchStick(stick) && inputState(0, RETRO_DEVICE_JOYPAD, 0, stick)) {
 		keys &= ~KEY_START;
 	}
+	if (port == 0 && softResetFrames) {
+		keys |= KEY_A | KEY_B | KEY_SELECT | KEY_START;
+	}
 	return withoutOpposites(keys);
 }
 
 // On the Game Boy Advance model, L or R switches between the game's own size and stretched across
-// the screen, like that console's shoulder buttons. With the tilt sensor on the D-pad, only R does,
-// since L is the flick.
+// the screen, as that console's shoulder buttons do; with a tilt cartridge only R, as L flicks.
 static void readStretch(uint16_t keys) {
 	static bool held;
-	bool now = keys & (tiltControl == TILT_DPAD ? KEY_R : KEY_L | KEY_R);
+	bool now = keys & (tiltCartridge ? KEY_R : KEY_L | KEY_R);
 	if (now && !held) {
 		gbStretched = !gbStretched;
 		if (gbCropped) {
@@ -2694,7 +2742,8 @@ static void hintSharedControls(void) {
 }
 
 // L2 or R2 held fast-forwards at RetroArch's maximum run speed; with the consoles here only L2, as
-// the L2 Button option says. Not in netplay, where the other consoles would wait.
+// the L2 Button option says, or not with L2 and R2 set to Turbo L and R; or by L3's Fast-Forward
+// Toggle. Not in netplay, where the other consoles would wait.
 static void readFastForward(void) {
 	static bool held;
 	bool now = false;
@@ -2702,6 +2751,7 @@ static void readFastForward(void) {
 		now |= (!togetherRunning() || l2FastForward) && !switchStart(port) && inputState(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2);
 		now |= !togetherRunning() && inputState(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2);
 	}
+	now = (now && !TRIGGERS_TURBO) || fastForwardLatched;
 	now &= !linkSession() && !netplaySeen;
 	if (now == held) {
 		return;
@@ -2794,7 +2844,7 @@ static int nextScreens(int now, int step) {
 // joined.
 static void readScreensKeys(void) {
 	static bool held[MAX_PLAYERS][2];
-	if (rerunning()) {
+	if (rerunning() || TRIGGERS_TURBO) {
 		return;
 	}
 	bool const netplay = (netplaySeen && !playingOn) || netplayPlayer >= 0;
@@ -3496,6 +3546,7 @@ void retro_run(void) {
 		environment(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av);
 	}
 	inputPoll();
+	readL3Button();
 	readFastForward();
 	writeKeptSaves();
 	clockFrame();

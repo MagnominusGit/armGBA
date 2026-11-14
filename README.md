@@ -31,21 +31,22 @@ interrupts, DMA, timers and what's on screen all happen when they would on the h
 
 | Button | Game Boy Advance | Game Boy, Game Boy Color |
 | --- | --- | --- |
-| L2, R2 (held) | Fast-forward, up to RetroArch's Maximum Run Speed | Same |
+| L2, R2 (held) | Fast-forward, up to RetroArch's Maximum Run Speed; or turbo L, turbo R, with L2 and R2 set to Turbo L and R | Fast-forward |
 | X, Y (held) | Turbo A, turbo B | Same |
-| L3, R3 (held) | Turbo L, turbo R, unless Action Replay Button makes one the Action Replay's button | Clicking the tilt stick flicks (motion sensor), or the other stick when that's the Action Replay's button; Action Replay Button can make R3 or L3 the Action Replay's button; R3 otherwise sets the contrast back to 50% |
-| L, R | L, R | Stretch the picture (Game Boy Advance model) |
+| L3 | Fast-forward on and off; L3 Button can make it a soft reset instead (held half a second: A + B + Select + Start) | Same |
+| R3 | The Action Replay's button, with one | The Action Replay's button, with one; otherwise the contrast back to 50% |
+| L, R | L, R | Stretch the picture (Game Boy Advance model), as that console's shoulder buttons do; with a tilt cartridge, L flicks it (motion sensor) and R stretches |
 | Tilt stick | Tilt and turn (motion sensor games) | Tilt (motion sensor games) |
 | Left stick, with Left Stick as D-Pad | D-pad, except while it tilts | Same |
 | Right stick up, down | Sunlight up, down (solar sensor games) | Contrast up, down (original Game Boy screens) |
 | L, R, Start (held 1 s) | Restart that player's console (the Restart Combo option) | Same |
 
 The tilt stick is the left stick by default. Tilt Control moves it to the right stick or the D-pad;
-with the D-pad, L is the flick. Device Motion tilts the cartridge with the device itself, where the
-frontend passes its motion sensors on (RetroArch on Android, and the standalone frontend on devices
-with them): the cartridge feels what the device does, held flat reading level, and a quick flick
-counts as one. L3 also flicks, and the gyro cartridge turns with the device. In netplay, or with no
-readings, the left stick tilts instead. If tilting goes the wrong way, Device Motion Sensor Rotation
+L flicks a Game Boy tilt cartridge, whatever tilts it. Device Motion tilts the cartridge with the
+device itself, where the frontend passes its motion sensors on (RetroArch on Android, and the
+standalone frontend on devices with them): the cartridge feels what the device does, held flat
+reading level, and a quick flick counts as one, and the gyro cartridge turns with the device. In
+netplay, or with no readings, the left stick tilts instead. If tilting goes the wrong way, Device Motion Sensor Rotation
 turns the sensor to match the screen: usually 0° in the standalone app, often 90° in RetroArch.
 
 With the consoles of a link on one device, R2 changes how the screens are shown. L2 fast-forwards or
@@ -112,6 +113,8 @@ standalone frontend shows as one page with headers.
 | Audio | Low-Pass Filter | Both | Off, 20%, 40%, 60%, 80% |
 | Input | Left Stick as D-Pad | Both | Off, On |
 | | Turbo Button Period | Both | 4 to 120 frames, 4 by default |
+| | L2 and R2 | Game Boy Advance | Fast-Forward, Turbo L and R (for handhelds without stick clicks; L2 and R2 then don't fast-forward or change screen layouts) |
+| | L3 Button | Both | Fast-Forward Toggle, Soft Reset (Hold), Off; L3 stays a combo's or the Action Replay's button when it's one |
 | | Tilt Control | Both | Left Stick, Right Stick, D-Pad, Device Motion |
 | | Device Motion Sensor Rotation (with Device Motion) | Both | 0°, 90°, 180°, 270° |
 | | Solar Sensor | Game Boy Advance | 0 (Dark) to 10 (Full Sun), 5 by default |
