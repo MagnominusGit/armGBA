@@ -584,7 +584,9 @@ RAM by its program) and goes on to the game's. As on the cartridge:
   the switch goes back on in the game; switched on earlier (in the intro or New Game) it still
   freezes;
 - the later cartridges' flash chip, and the Pro Action Replay's battery-backed RAM, are kept in the
-  Action Replay's save file; states keep the rest, in either state format.
+  Action Replay's save file; states keep the rest, in either state format. The Pro Action Replay's
+  RAM shows over the game's own save RAM at B000-BFFF while its switch is on, so a game that saves
+  there (Pokemon Red and Blue do) keeps that part of its save only with the switch off.
 
 Not covered: the Action Replay Pro (World) dump is 16 KiB of a bigger chip and stops at its start-up,
 and the GameShark (USA) for Game Boy is a bad dump (one bank repeated). The PC link (codes

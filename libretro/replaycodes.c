@@ -34,7 +34,14 @@ struct Text {
 	bool failed;
 };
 
+// The text stops growing past this, as a damaged file could make any amount.
+enum { MOST_TEXT = 4 << 20 };
+
 static void add(struct Text* text, const char* format, ...) {
+	if (text->length > MOST_TEXT) {
+		text->failed = true;
+		return;
+	}
 	for (;;) {
 		va_list args;
 		va_start(args, format);

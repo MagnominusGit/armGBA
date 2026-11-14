@@ -497,7 +497,7 @@ bool showOptions(void) {
 		{ "armgba_gb_tilt", (!gameBoy && !advance) || devices & (HW_TILT | HW_GYRO) || (gameBoy && tiltCartridge) },
 		{ "armgba_motion_rotation", ((!gameBoy && !advance) || devices & HW_TILT || (gameBoy && tiltCartridge)) && optionIs("armgba_gb_tilt", "device") },
 		{ "armgba_link_port", !gameBoy && linked },
-		{ "armgba_gb_model", !advance },
+		{ "armgba_gb_model", !advance && !megaDuckGame },
 		{ "armgba_gb_boot_rom", !advance && !megaDuckGame },
 		{ "armgba_megaduck_laptop", megaDuckGame },
 		{ "armgba_megaduck_printer", megaDuckGame },
@@ -508,8 +508,8 @@ bool showOptions(void) {
 		{ "armgba_gb_color_correction", !advance },
 		{ "armgba_gb_screen", !advance },
 		{ "armgba_gb_contrast", lcdCastsShadow() },
-		{ "armgba_gb_advance_border", !advance && (gbOnAdvance || optionIs("armgba_gb_model", "Game Boy Advance")) },
-		{ "armgba_gb_advance_panel", !advance && (gbOnAdvance || optionIs("armgba_gb_model", "Game Boy Advance")) },
+		{ "armgba_gb_advance_border", !advance && !megaDuckGame && (gbOnAdvance || optionIs("armgba_gb_model", "Game Boy Advance")) },
+		{ "armgba_gb_advance_panel", !advance && !megaDuckGame && (gbOnAdvance || optionIs("armgba_gb_model", "Game Boy Advance")) },
 		{ "armgba_lcd_interleave", effects && lcdHasSubpixels() },
 		{ "armgba_lcd_threads", effects && (!optionIs("armgba_lcd_ghosting", "disabled") || !optionIs("armgba_lcd_grid", "disabled") || optionIs("armgba_lcd_interleave", "enabled")) },
 		{ "armgba_gb_link_port", !advance && together },
@@ -532,7 +532,7 @@ bool showOptions(void) {
 		{ "armgba_player1_saves", !noGameLoaded() },
 		{ "armgba_keep_progress", !noGameLoaded() },
 		{ "armgba_list_saves", !noGameLoaded() },
-		{ "armgba_link_cartridge", advance && (separateWanted() || gamecubeWanted()) },
+		{ "armgba_link_cartridge", advance && !actionReplayLoaded && (separateWanted() || gamecubeWanted()) },
 		{ "armgba_gamecube_address", advance && gamecubeWanted() },
 	};
 	enum { OPTIONS = COUNT(options) };

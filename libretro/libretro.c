@@ -256,6 +256,7 @@ static int controllerFocus;
 static bool playingOn;
 static bool switchStick(unsigned button);
 static bool contrastClick(void);
+static unsigned flickButton(void);
 // In rollback netplay every device runs the host's session. Each device tags its session, and the
 // tag goes in every state. A device that loads a state with another device's tag has joined that
 // session and takes its tag, so the states on every device stay the same.
@@ -600,7 +601,7 @@ static void showButtons(void) {
 		BUTTON(RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_Y,
 		       !forGameBoy && tiltControl == TILT_RIGHT_STICK ? "Tilt Up / Down, Sunlight" : "Tilt Up / Down (Motion Sensor)");
 		if (forGameBoy) {
-			BUTTON(RETRO_DEVICE_JOYPAD, 0, tiltControl == TILT_RIGHT_STICK ? RETRO_DEVICE_ID_JOYPAD_R3 : RETRO_DEVICE_ID_JOYPAD_L3, "Flick (Motion Sensor)");
+			BUTTON(RETRO_DEVICE_JOYPAD, 0, flickButton(), "Flick (Motion Sensor)");
 		}
 	}
 	if (!forGameBoy && tiltControl != TILT_RIGHT_STICK) {
@@ -1770,6 +1771,8 @@ static bool loadGameBoy(const struct retro_game_info* game, const struct retro_g
 		libretroGbSetActionReplay(NULL, 0, false);
 	}
 	bool const loaded = libretroGbLoad(top.data, top.size, directory, gbModel, gbColorCorrection, AUDIO_RATE, error, sizeof(error));
+	// A tilt cartridge (MBC7), by the header of the game itself, not the Action Replay in front of it
+	bool const tilt = !isMegaDuck(game) && top.data && top.size > 0x147 && ((const uint8_t*) top.data)[0x147] == 0x22;
 	free(topData);
 	if (!loaded) {
 		showMessage(error);
@@ -1793,7 +1796,7 @@ static bool loadGameBoy(const struct retro_game_info* game, const struct retro_g
 	} else if (!actionReplayLoaded) {
 		readPlayerOneSave();
 	}
-	tiltCartridge = !isMegaDuck(game) && game->size > 0x147 && ((const uint8_t*) game->data)[0x147] == 0x22;
+	tiltCartridge = tilt;
 	linkSetGameBoy(true);
 	// The Mega Duck plays alone
 	if (!isMegaDuck(game) && (second || togetherWanted() || pairFile)) {
@@ -1809,14 +1812,15 @@ static bool loadGameBoy(const struct retro_game_info* game, const struct retro_g
 // Cartridge: with Separate, player 1's console may start with its cartridge out,
 // waiting for a game sent over the cable. The game comes back from its file when put back in, its
 // save memory as it was; if it was out from the start, RetroArch read no save into it, so the save
-// comes from RetroArch's save file once the console has been reset. Returns whether it went back in.
+// comes from RetroArch's save file once the console has been reset. An Action Replay, with its game
+// on top, stays in. Returns whether it went back in.
 static bool cartridgeOut;
 static bool cartridgeSaveUnread;
 
 static bool applyCartridge(void) {
 	const char* value = option("armgba_link_cartridge");
 	bool const linked = separateWanted() || gamecubeWanted();
-	bool const out = noGame || (!gameBoy && linked && value && !strcmp(value, "removed"));
+	bool const out = noGame || (!gameBoy && linked && !actionReplayLoaded && value && !strcmp(value, "removed"));
 	if (out == cartridgeOut || !gba) {
 		return false;
 	}
@@ -1951,6 +1955,9 @@ static bool loadNoGame(void) {
 
 bool retro_load_game(const struct retro_game_info* game) {
 	readSaveActions(false);
+	megaDuckGame = false;
+	libretroGbSetMegaDuck(-1);
+	libretroGbSetMegaDuckSlot(NULL, 0, 0);
 	if (!game) {
 		return loadNoGame();
 	}
@@ -1988,6 +1995,9 @@ bool retro_load_game(const struct retro_game_info* game) {
 // unless its extension says otherwise) runs, padded to the bigger of the two so the cartridge's ROM
 // can take its place when the laptop runs it.
 static bool loadMegaDuckLaptop(const struct retro_game_info* system, const struct retro_game_info* slot) {
+	if (!system->size || !slot->size) {
+		return false;
+	}
 	int systemKind = megaDuckKind(system);
 	if (systemKind <= 0) {
 		systemKind = 2;
@@ -2032,7 +2042,7 @@ bool retro_load_game_special(unsigned type, const struct retro_game_info* info, 
 		gameBoy = false;
 		return loadGameBoy(&info[0], &info[1]);
 	}
-	if (type == SUBSYSTEM_MEGADUCK_LAPTOP && count == 2 && info[0].data && info[1].data) {
+	if (type == SUBSYSTEM_MEGADUCK_LAPTOP && count == 2 && info[0].data && info[1].data && info[0].size && info[1].size) {
 		return loadMegaDuckLaptop(&info[0], &info[1]);
 	}
 	if (type == SUBSYSTEM_ACTION_REPLAY && count == 2 && (info[0].data || info[0].path) && (info[1].data || info[1].path)) {
@@ -2206,7 +2216,7 @@ static void readMotion(uint16_t keys, int* x, int* y, bool* click) {
 		unsigned stick = tiltControl == TILT_RIGHT_STICK ? RETRO_DEVICE_INDEX_ANALOG_RIGHT : RETRO_DEVICE_INDEX_ANALOG_LEFT;
 		*x = inputState(0, RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_X);
 		*y = inputState(0, RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_Y);
-		unsigned const button = tiltControl == TILT_RIGHT_STICK ? RETRO_DEVICE_ID_JOYPAD_R3 : RETRO_DEVICE_ID_JOYPAD_L3;
+		unsigned const button = flickButton();
 		*click = !switchStick(button) && inputState(0, RETRO_DEVICE_JOYPAD, 0, button);
 	}
 }
@@ -2233,9 +2243,15 @@ static bool contrastStick(void) {
 }
 
 // Whether clicking the right stick resets the contrast: R3 isn't a Restart Button or Switch Player
-// Combo's.
+// Combo's, or the Action Replay's button.
 static bool contrastClick(void) {
-	return restartButtons != RESTART_STICKS && !switchStick(RETRO_DEVICE_ID_JOYPAD_R3);
+	return restartButtons != RESTART_STICKS && !switchStick(RETRO_DEVICE_ID_JOYPAD_R3) && !actionReplayLoaded;
+}
+
+// The button that flicks a tilt cartridge with the tilt on a stick: that stick's click, or L3 when R3
+// is the Action Replay's button.
+static unsigned flickButton(void) {
+	return tiltControl == TILT_RIGHT_STICK && !actionReplayLoaded ? RETRO_DEVICE_ID_JOYPAD_R3 : RETRO_DEVICE_ID_JOYPAD_L3;
 }
 
 // Pushing the right stick up or down turns the contrast wheel a step, and clicking it goes back to 0;

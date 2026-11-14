@@ -83,6 +83,8 @@ DuckLaptopLanguage laptopLanguage = DUCK_LAPTOP_SPANISH;
 // The cartridge in the laptop's slot, if any, and its kind
 std::vector<unsigned char> laptopCartridge;
 int laptopCartridgeKind = 0;
+// Whether the cartridge in the laptop's slot has taken the system ROM's place, as states keep it
+bool laptopSlotIn;
 // Datel's Action Replay in front of the game (libretroGbSetActionReplay): its program, whether a game
 // is on top, and what it keeps with the power off as it was last read out of the console
 std::vector<unsigned char> replayProgram;
@@ -784,6 +786,7 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 		std::snprintf(error, errorSize, "armGBA can't run this Game Boy game");
 		return false;
 	}
+	laptopSlotIn = false;
 	if (!replayProgram.empty()) {
 		if (!s->gb->attachActionReplay(reinterpret_cast<const char*>(&replayProgram[0]), replayProgram.size(), replayGame)) {
 			std::snprintf(error, errorSize, "armGBA can't run this Action Replay");
@@ -1205,8 +1208,23 @@ void laptopIn(uint8_t byte) {
 }
 
 bool laptopSlot() {
-	return !laptopCartridge.empty()
+	bool const swapped = !laptopCartridge.empty()
 	    && s->gb->swapMegaDuckCartridge(reinterpret_cast<const char*>(&laptopCartridge[0]), laptopCartridge.size(), laptopCartridgeKind);
+	laptopSlotIn |= swapped;
+	return swapped;
+}
+
+// Puts the slot's cartridge or the system ROM (the game loaded, padded to fit either) in place.
+bool laptopSlotAs(bool in) {
+	if (in == laptopSlotIn || laptopCartridge.empty()) {
+		return in == laptopSlotIn;
+	}
+	if (in) {
+		return laptopSlot();
+	}
+	bool const swapped = s->gb->swapMegaDuckCartridge(reinterpret_cast<const char*>(&s->game[0]), s->game.size(), megaDuckKind);
+	laptopSlotIn = !swapped;
+	return swapped;
 }
 
 // With a Mega Duck laptop, runs until a picture is drawn in parts that end where its controller does
@@ -1557,21 +1575,28 @@ void loadMix(const void* data, size_t size) {
 // The Mega Duck laptop's controller, just before the sums: where a transfer is, so that rollback,
 // run-ahead and a loaded state carry on with the laptop as they would have. A state without it
 // leaves the controller as it is.
+// After it, whether the slot's cartridge had taken the system ROM's place.
 size_t laptopAt() {
-	return mixAt() - duckLaptopStateSize();
+	return mixAt() - duckLaptopStateSize() - 1;
 }
 
 void saveLaptop(void* data, size_t length) {
 	if (duckLaptopConnected() && sizeof(gambatte::uint_least32_t) + length <= laptopAt()) {
 		duckLaptopSaveState(static_cast<uint8_t*>(data) + laptopAt());
+		static_cast<uint8_t*>(data)[laptopAt() + duckLaptopStateSize()] = laptopSlotIn;
 	}
 }
 
-void loadLaptop(const void* data, size_t size) {
+// Whether a state has the laptop's part.
+bool hasLaptop(const void* data, size_t size) {
 	gambatte::uint_least32_t length;
 	std::memcpy(&length, data, sizeof(length));
 	length &= ~0x80000000u;
-	if (duckLaptopConnected() && size >= s->stateSize && sizeof(length) + length <= laptopAt()) {
+	return duckLaptopConnected() && size >= s->stateSize && sizeof(length) + length <= laptopAt();
+}
+
+void loadLaptop(const void* data, size_t size) {
+	if (hasLaptop(data, size)) {
 		duckLaptopLoadState(static_cast<const uint8_t*>(data) + laptopAt());
 	}
 }
@@ -1699,7 +1724,14 @@ bool loadOne(const void* data, size_t size) {
 	if (keepClock) {
 		s->gb->getRtcRegs(clock);
 	}
+	// The ROM the state ran (the system's or the slot cartridge's) goes in first, for its mapper to
+	// take the state's banks.
+	bool const slotWas = laptopSlotIn;
+	if (hasLaptop(data, size)) {
+		laptopSlotAs(static_cast<const uint8_t*>(data)[laptopAt() + duckLaptopStateSize()] & 1);
+	}
 	if (!readState(data, size)) {
+		laptopSlotAs(slotWas);
 		return false;
 	}
 	loadMix(data, size);

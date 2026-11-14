@@ -40,7 +40,7 @@
 //   otherwise fail, freezing it at its next change of map.
 //
 // The first cartridge (Pro Action Replay), a 32 KiB ROM with 4 KiB of RAM at B000-BFFF that shows over
-// the game's RAM there too, its codes kept by a battery:
+// the game's RAM there too while the switch is on, its codes kept by a battery:
 // - A write to A900 shows the game and sets the hook (the VBlank interrupt's fetch from 0040 shows
 //   the Action Replay, which jumps to its handler at B080); a write to A800 shows the game again
 //   from there, or before a game runs, shows the game's first 512 bytes (its vectors and header)
@@ -230,16 +230,16 @@ void ActionReplayGb::romWrite(unsigned const p, unsigned const data, gb_ulong co
 	flashWrite(flashAddress(p), data);
 }
 
-// The first cartridge's RAM and registers.
+// The first cartridge's RAM and registers. With the switch off, the game running has its own RAM there.
 bool ActionReplayGb::sramRead(unsigned const p, unsigned &value) {
-	if (!first_ || p < first_ram)
+	if (!first_ || p < first_ram || (!s_.shown && !switchOn_))
 		return false;
 	value = s_.ram[p & (ram_bank_size - 1)];
 	return true;
 }
 
 bool ActionReplayGb::sramWrite(unsigned const p, unsigned const data) {
-	if (!first_)
+	if (!first_ || (!s_.shown && !switchOn_))
 		return false;
 	if (p >= first_ram) {
 		s_.ram[p & (ram_bank_size - 1)] = data;
@@ -247,8 +247,6 @@ bool ActionReplayGb::sramWrite(unsigned const p, unsigned const data) {
 		return true;
 	}
 	if (p != first_show_game && p != first_start)
-		return false;
-	if (!s_.shown && !switchOn_)
 		return false;
 	s_.boot = 0;
 	if (p == first_start || s_.regs[reg_arm]) {
