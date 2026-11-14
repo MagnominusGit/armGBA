@@ -17,16 +17,15 @@
 // armGBA: the Mega Duck's cartridges (as SameDuck has them). Two ways to change banks, a game using
 // one or the other: a write to 0001 picks the bank at 4000-7FFF, and a write to B000 picks a 32 KiB
 // bank for the whole of 0000-7FFF. There's no cartridge RAM.
-// Duck Adventures' cartridge takes bank 0 at 0001 for bank 1, as an MBC1 does: with bank 0 there its
-// levels come out as garbage (as on SameDuck), and it plays with bank 1.
+// Bank 0 written to 0001 is bank 1, as on an MBC1 (as the MiSTer core has it, and megaduck-info gives
+// that register's range as 1-3 or 1-7): with bank 0 there, Duck Adventures' levels come out as garbage.
 
 namespace gambatte {
 
-MegaDuck::MegaDuck(MemPtrs &memptrs, bool const zeroIsOne)
+MegaDuck::MegaDuck(MemPtrs &memptrs)
 : memptrs_(memptrs)
 , rombank0_(0)
 , rombank_(1)
-, zeroIsOne_(zeroIsOne)
 {
 	setBanks();
 }
@@ -37,7 +36,7 @@ bool MegaDuck::disabledRam() const {
 
 void MegaDuck::romWrite(unsigned const p, unsigned const data, gb_ulong const /*cc*/) {
 	if (p == 0x0001) {
-		rombank_ = !data && zeroIsOne_ ? 1 : data;
+		rombank_ = data ? data : 1;
 		setBanks();
 	}
 }
