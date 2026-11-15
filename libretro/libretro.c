@@ -2466,7 +2466,8 @@ static void importCheats(void) {
 		}
 		importWaiting = false;
 		if (fetched != CHEAT_FETCH_READY) {
-			showMessage(cheatFetch ? "armGBA couldn't download RetroArch's cheat database" : "armGBA can't find RetroArch's cheat database");
+			showMessage(cheatFetch ? "armGBA couldn't download RetroArch's cheat database"
+			                        : "armGBA can't find RetroArch's cheat database: get it with Online Updater > Update Cheats");
 			return;
 		}
 	}

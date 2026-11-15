@@ -171,22 +171,26 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_game_genie_code_1", "Game Genie Code 1", NULL,
 	  "A cheat from RetroArch's cheat database for the game on top, which the Game Genie shows in an empty "
 	  "slot of its code screen, as if typed in (a cheat of two codes takes two). Applies as the code screen "
-	  "shows: on Restart, once in the game.",
+	  "shows: on Restart, once in the game. Without the database, Online Updater > Update Cheats gets it; "
+	  "then load the game again.",
 	  NULL, "system", { { "none", "None" }, { NULL, NULL } }, "none" },
 	{ "armgba_game_genie_code_2", "Game Genie Code 2", NULL,
 	  "A cheat from RetroArch's cheat database for the game on top, which the Game Genie shows in an empty "
 	  "slot of its code screen, as if typed in (a cheat of two codes takes two). Applies as the code screen "
-	  "shows: on Restart, once in the game.",
+	  "shows: on Restart, once in the game. Without the database, Online Updater > Update Cheats gets it; "
+	  "then load the game again.",
 	  NULL, "system", { { "none", "None" }, { NULL, NULL } }, "none" },
 	{ "armgba_game_genie_code_3", "Game Genie Code 3", NULL,
 	  "A cheat from RetroArch's cheat database for the game on top, which the Game Genie shows in an empty "
 	  "slot of its code screen, as if typed in (a cheat of two codes takes two). Applies as the code screen "
-	  "shows: on Restart, once in the game.",
+	  "shows: on Restart, once in the game. Without the database, Online Updater > Update Cheats gets it; "
+	  "then load the game again.",
 	  NULL, "system", { { "none", "None" }, { NULL, NULL } }, "none" },
 	{ "armgba_cheat_import", "Import Cheats from RetroArch", NULL,
 	  "Adds to the cheat cartridge's list the cheats RetroArch's cheat database has for the game on top, "
 	  "those it doesn't have yet (alike by their codes), switched off, then restarts so the cartridge "
-	  "reads them. Then goes back to Off. Not in netplay.",
+	  "reads them. Then goes back to Off. Not in netplay. Without the database, Online Updater > Update "
+	  "Cheats gets it.",
 	  NULL, "system", { { "off", "Off" }, { "import", "Import" }, { NULL, NULL } }, "off" },
 	{ "armgba_cheat_restore", "Cheat Cartridge Reset", NULL,
 	  "Factory Reset empties the cheat cartridge's lists but keeps each game's master code, which its "

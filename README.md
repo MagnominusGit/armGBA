@@ -568,7 +568,8 @@ Together starts no other consoles with one. Cheats for the game on top can come 
 cheat database (its .cht files), for the Game Genie (Game Genie Code 1, 2 and 3) and the others
 (Import Cheats from RetroArch): armGBA finds it where RetroArch's own settings say
 (cheat_database_path in retroarch.cfg), or where RetroArch keeps it by default, and takes the files
-for the game's title and one of its regions. Without it (on Android, or with no RetroArch), the
+for the game's title and one of its regions. In RetroArch without it, Online Updater > Update Cheats
+gets it (load the game again for the Game Genie's lists). Without it (on Android, or with no RetroArch), the
 standalone app downloads it for Import Cheats from RetroArch as RetroArch's Online Updater does
 (libretro's cheats.zip, about 40 MB), keeps the Game Boy, Game Boy Color and Game Boy Advance cheats
 in ~/.local/share/armgba/cheat-database, and downloads it again once it's a month old (or with
