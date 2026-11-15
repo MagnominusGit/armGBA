@@ -1616,8 +1616,15 @@ static void replayMemoryFile(char* out, size_t outSize) {
 	snprintf(slash ? slash + 1 : out, outSize - (slash ? (size_t) (slash + 1 - out) : 0), "armGBA action replay games.txt");
 }
 
+// Most Recently Played: the game with the newest save, first in the list, when one has a save
+static bool replayRecent;
+static char replayRecentLabel[300];
+
 static const char* chosenReplayGame(void) {
 	const char* value = option("armgba_action_replay_game");
+	if (value && !strcmp(value, "recent")) {
+		return replayRecent && replayCount ? replayGames[0].path : NULL;
+	}
 	for (size_t i = 0; value && i < replayCount; ++i) {
 		if (!strcmp(value, replayGames[i].path)) {
 			return replayGames[i].path;
@@ -1712,6 +1719,7 @@ static void offerReplayGames(const char* path) {
 	gamesFree(replayGames, replayCount);
 	struct SaveTimes* const times = path ? gameSaveTimes() : NULL;
 	replayCount = path ? gamesListRanked(path, gameBoy ? GAMES_GAME_BOY : GAMES_ADVANCE, replayRank, times, replayGames, SECOND_CHOICES) : 0;
+	replayRecent = replayCount && replayRank(replayGames[0].path, times) > 0;
 	saveTimesClose(times);
 	snprintf(replayFirst, sizeof(replayFirst), "%s", path ? path : "");
 	replayFirst[strcspn(replayFirst, "#")] = '\0';
@@ -1720,6 +1728,10 @@ static void offerReplayGames(const char* path) {
 	}
 	size_t n = 0;
 	replayOption->values[n++] = (struct retro_core_option_value) { "none", "None" };
+	if (replayRecent) {
+		snprintf(replayRecentLabel, sizeof(replayRecentLabel), "Most Recently Played: %s", replayGames[0].label);
+		replayOption->values[n++] = (struct retro_core_option_value) { "recent", replayRecentLabel };
+	}
 	for (size_t i = 0; i < replayCount; ++i) {
 		replayOption->values[n++] = (struct retro_core_option_value) { replayGames[i].path, replayGames[i].label };
 	}
@@ -4450,7 +4462,8 @@ static void showReplayHint(void) {
 	char message[300];
 	switch (replayHint) {
 	case HINT_NO_GAME:
-		snprintf(message, sizeof(message), "%s with no game on top: pick one in Core Options > System > Game on Top, then Restart", cartridgeName());
+		snprintf(message, sizeof(message), "%s with no game on top: pick one%s in Core Options > System > Game on Top, then Restart", cartridgeName(),
+		         replayRecent ? " (or Most Recently Played)" : "");
 		break;
 	case HINT_GAME_BOY:
 		snprintf(message, sizeof(message), "%s: switch codes on in its menu, then start the game. In the game, Core Options > System > Open Cheat Cartridge Menu%s opens its menu", cartridgeName(), stick);

@@ -81,7 +81,7 @@ standalone frontend shows as one page with headers.
 | | Mega Duck Laptop Printer (applies on restart) | Mega Duck | Two Pass, One Pass, None |
 | | Mega Duck Laptop Speech (applies on restart) | Mega Duck | Spanish (Super QuiQue), German (Super Junior) |
 | | Mega Duck Laptop Cartridge (applies on restart) | Mega Duck | None, or a Mega Duck game in the laptop program's folder |
-| | Game on Top (applies on restart) | Both (a cheat cartridge loaded: an Action Replay, Game Genie, Xploder or CodeBreaker) | None, or a game for the cartridge's console in its folder, those played last first |
+| | Game on Top (applies on restart) | Both (a cheat cartridge loaded: an Action Replay, Game Genie, Xploder or CodeBreaker) | None (the default), Most Recently Played (the game with the newest save, named in the list), or a game for the cartridge's console in its folder, those played last first (up to 125) |
 | | Game Genie Code 1, 2 and 3 | Game Boy (the Game Genie loaded, with a game on top that RetroArch's cheat database has Game Genie cheats for) | None, or a cheat from the database, by name (shown in an empty slot of the code screen, as if typed in) |
 | | Import Cheats from RetroArch | Both (an Action Replay, Xploder or CodeBreaker loaded, with a game on top) | Off, Import (adds the database's cheats for the game the cartridge doesn't have, then restarts; goes back to Off) |
 | | Restore Factory Cheats | Both (an Action Replay, Xploder or CodeBreaker loaded) | Off, Restore (puts the cartridge's chip back as its ROM has it, keeping the game on top, then restarts; goes back to Off) |
