@@ -101,9 +101,10 @@ static bool load(const char* bios, const uint8_t* rom, size_t romSize, bool skip
 	gbaLoadBios(gba, data, sizeof(data));
 	gbaLoadRom(gba, rom, romSize);
 	reset();
-	// ARMGBA_THREADED: the renderer on a second thread; 2 shows frames one frame late.
+	// ARMGBA_THREADED: the renderer on a second thread; 2 shows frames one frame late. ARMGBA_WORKERS2:
+	// two threads, each drawing every other line.
 	if (getenv("ARMGBA_THREADED")) {
-		renderThreadStart(gba, atoi(getenv("ARMGBA_THREADED")) == 2);
+		renderThreadStart(gba, atoi(getenv("ARMGBA_THREADED")) == 2, getenv("ARMGBA_WORKERS2") != NULL);
 	}
 	return true;
 }
