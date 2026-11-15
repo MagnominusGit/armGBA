@@ -385,12 +385,15 @@ also work on a row without a value). It opens again where it was left.
     screenshots. The Games folder is found by itself: ROCKNIX's roms folder, or a roms folder
     holding gb, gbc or gba. Load Game opens there, with those three first.
 - **Game:** the loaded game's state slots (0 to 99, each with a picture) and Undo Load State, its
-  cheats (RetroArch's `.cht` files can be added), its saves (the core's Saves options: backing up,
+  cheats (RetroArch's `.cht` files can be added, and RetroArch Cheats... lists the cheats RetroArch's
+  cheat database has for the game, a file at a time, to add; with no database, it offers to download
+  it), its saves (the core's Saves options: backing up,
   loading and sending), Restart, Take Screenshot, recording and Close Game.
 - **Core:** the core's options, in RetroArch's categories, with LCD Effects (Off, CPU, GPU or GPU Fast) in
   Video in place of the core's LCD Effects.
 - **Extras:** netplay and RetroAchievements, and with a cheat cartridge, Cheats: Import Cheats from
-  RetroArch (its download's progress shown as it goes) and the cartridge's resets.
+  RetroArch (its download's progress shown as it goes), Cheats for the Game on Top (the cheats the
+  import would add, by name) and the cartridge's resets.
 
 Rows ending in "..." open a page. Rows with a value step through it, except Back Up Save, Load Save
 and Send Save, which act once something is chosen from their list. The line under the menu says what
@@ -588,7 +591,8 @@ has it, so the settings someone changed, such as the Action Replay MAX's user na
 
 Many dumps were made from used cartridges, their lists holding someone's games and codes; Factory
 Reset makes such a cartridge clean, with Import Cheats from RetroArch to fill it. In the standalone
-app, Extras > Cheats has the import and Cheat Cartridge Reset.
+app, Extras > Cheats has the import, the list of what it would add (Cheats for the Game on Top) and
+Cheat Cartridge Reset.
 
 ### Action Replay
 

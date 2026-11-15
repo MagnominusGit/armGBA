@@ -101,6 +101,14 @@ void libretroSetCheatProgress(bool (*progress)(int* doneKib, int* allKib));
 // import for (no cartridge that takes them, or no game on top, or netplay). retroArchs is whether
 // RetroArch's own cheat database is found, which the import reads then.
 bool libretroCheatImportFor(const char** gamePath, bool* advance, bool* retroArchs);
+// The game RetroArch's cheat database has cheats for here: the game on top of a cheat cartridge, else
+// the game itself (player 1's); false with none, or a Mega Duck's. advance: whether it's the Advance's.
+bool libretroCheatGame(const char** gamePath, bool* advance);
+// RetroArch's own cheat database's folder, when it's found.
+bool libretroRetroArchCheats(char* out, size_t outSize);
+// The names of the cheats Import Cheats from RetroArch would take into the cheat cartridge from the
+// database at folder, for its game on top: those whose codes it can hold. Returns how many, up to most.
+size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], size_t most);
 // Whether the .cht file named chtName in RetroArch's cheat database is for the game at gamePath: the
 // same title, and a region of its (cht.c).
 bool chtFileFits(const char* chtName, const char* gamePath);

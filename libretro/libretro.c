@@ -2414,6 +2414,39 @@ bool libretroCheatImportFor(const char** gamePath, bool* advance, bool* retroArc
 	return true;
 }
 
+bool libretroCheatGame(const char** gamePath, bool* advance) {
+	if (megaDuckGame || (!gameBoy && !gba)) {
+		return false;
+	}
+	if (actionReplayLoaded) {
+		*gamePath = replayGamePath;
+	} else {
+		*gamePath = firstPath;
+	}
+	*advance = !gameBoy;
+	return **gamePath != '\0';
+}
+
+bool libretroRetroArchCheats(char* out, size_t outSize) {
+	const char* system = NULL;
+	environment(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system);
+	return chtDatabase(system, out, outSize);
+}
+
+size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], size_t most) {
+	if (!cheatImportOn()) {
+		return 0;
+	}
+	static struct ChtCheat cheats[1024];
+	size_t const count = chtCheats(folder, !gameBoy, replayGamePath, gameBoy ? chtGameSharkCode : chtCodeBreakerPart, cheats,
+	                               most < COUNT(cheats) ? most : COUNT(cheats));
+	for (size_t i = 0; i < count; ++i) {
+		memcpy(names[i], cheats[i].description, sizeof(cheats[i].description));
+		names[i][sizeof(cheats[i].description) - 1] = '\0';
+	}
+	return count;
+}
+
 static void importCheats(void) {
 	const char* system = NULL;
 	environment(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system);

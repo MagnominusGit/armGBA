@@ -391,12 +391,16 @@ static void resetRow(int unused, int delta) {
 	optionSet(option, option->values[((at + step) % option->valueCount + option->valueCount) % option->valueCount]);
 }
 
+static void openCartCheats(int unused, int delta);
+
 static void cheatsPage(void) {
 	const char* game = NULL;
 	bool advance = false, retroArchs = false;
 	if (libretroCheatImportFor(&game, &advance, &retroArchs)) {
 		addItem("Import Cheats from RetroArch", importRow, 0);
 		helpFor("Adds the latest RetroArch cheats for the game on top to the cheat cartridge's list, switched off.");
+		addItem("Cheats for the Game on Top...", openCartCheats, 0);
+		helpFor("The cheats RetroArch's cheat database has that the cartridge takes for the game on top.");
 	}
 	const struct Option* const reset = optionFind("armgba_cheat_restore");
 	if (reset && reset->visible) {
@@ -443,5 +447,269 @@ void cheatExtrasRows(void) {
 	if (libretroCheatImportFor(&game, &advance, &retroArchs) || (reset && reset->visible)) {
 		addItem("Cheats...", openCheatsPage, 0);
 		helpFor("The cheat cartridge's lists: importing RetroArch's cheats, and resetting them.");
+	}
+}
+
+// RetroArch's cheats for a game, from its database's .cht files: each file, and its cheats' names, read
+// as a page opens (and again once a download ends), not each frame.
+struct ChtFile {
+	char path[PATH_SIZE + 300];
+	char name[256];
+	int count;
+	char (*names)[128];
+};
+static struct ChtFile* chtFiles;
+static int chtFileCount;
+static bool chtListed;
+
+static void forgetChtFiles(void) {
+	for (int i = 0; i < chtFileCount; ++i) {
+		free(chtFiles[i].names);
+	}
+	free(chtFiles);
+	chtFiles = NULL;
+	chtFileCount = 0;
+	chtListed = false;
+}
+
+// The database to read: RetroArch's, else the app's copy, else the game's own files the app fetched.
+static bool databaseNow(char* out, size_t size) {
+	if (libretroRetroArchCheats(out, size)) {
+		return true;
+	}
+	char folder[PATH_SIZE];
+	long long age;
+	dataPath(folder, sizeof(folder), "cheat-database");
+	if (!hasDatabase(folder, &age)) {
+		dataPath(folder, sizeof(folder), "cheat-database-game");
+		if (!isFolder(folder)) {
+			return false;
+		}
+	}
+	snprintf(out, size, "%s", folder);
+	return true;
+}
+
+static void readChtNames(struct ChtFile* file) {
+	FILE* const f = fopen(file->path, "r");
+	if (!f) {
+		return;
+	}
+	char line[512];
+	while (fgets(line, sizeof(line), f)) {
+		int index;
+		char field[16];
+		char* const equals = strchr(line, '=');
+		if (!equals || sscanf(line, "cheat%d_%15[a-z]", &index, field) != 2 || strcmp(field, "desc") || index < 0 || index > 4000) {
+			continue;
+		}
+		char* value = equals + 1 + strspn(equals + 1, " \t\"");
+		value[strcspn(value, "\"\r\n")] = '\0';
+		char (*grown)[128] = realloc(file->names, (size_t) (file->count + 1) * sizeof(*grown));
+		if (!grown) {
+			break;
+		}
+		file->names = grown;
+		snprintf(file->names[file->count++], 128, "%s", *value ? value : "(no name)");
+	}
+	fclose(f);
+}
+
+static int byChtName(const void* a, const void* b) {
+	return strcmp(((const struct ChtFile*) a)->name, ((const struct ChtFile*) b)->name);
+}
+
+// The game's files in the database, false without a database.
+static bool listChtFiles(const char* game, bool advance) {
+	if (chtListed) {
+		return true;
+	}
+	forgetChtFiles();
+	char folder[PATH_SIZE];
+	if (!databaseNow(folder, sizeof(folder))) {
+		return false;
+	}
+	for (int i = advance ? ADVANCE : 0; i < (advance ? SYSTEMS : ADVANCE); ++i) {
+		char system[PATH_SIZE + 64];
+		snprintf(system, sizeof(system), "%s/%s", folder, systems[i]);
+		DIR* const d = opendir(system);
+		for (struct dirent* e; d && (e = readdir(d));) {
+			size_t const length = strlen(e->d_name);
+			if (length < 5 || strcasecmp(e->d_name + length - 4, ".cht") || !chtFileFits(e->d_name, game)) {
+				continue;
+			}
+			struct ChtFile* const grown = realloc(chtFiles, (size_t) (chtFileCount + 1) * sizeof(*grown));
+			if (!grown) {
+				break;
+			}
+			chtFiles = grown;
+			struct ChtFile* const file = &chtFiles[chtFileCount++];
+			memset(file, 0, sizeof(*file));
+			snprintf(file->path, sizeof(file->path), "%s/%s", system, e->d_name);
+			snprintf(file->name, sizeof(file->name), "%.*s", (int) (length - 4), e->d_name);
+			readChtNames(file);
+		}
+		if (d) {
+			closedir(d);
+		}
+	}
+	if (chtFileCount) {
+		qsort(chtFiles, (size_t) chtFileCount, sizeof(*chtFiles), byChtName);
+	}
+	chtListed = true;
+	return true;
+}
+
+// While the database downloads: a row saying so, and the progress popping up. True while it does.
+static bool showDownload(void) {
+	static bool wasRunning;
+	bool const running = SDL_AtomicGet(&state) == RUNNING;
+	if (!running) {
+		if (wasRunning) {
+			// What it brought is read again
+			forgetChtFiles();
+			wasRunning = false;
+		}
+		return false;
+	}
+	wasRunning = true;
+	int done, all;
+	httpProgress(&done, &all);
+	char text[100];
+	if (!SDL_AtomicGet(&downloading)) {
+		snprintf(text, sizeof(text), "Unpacking Cheats");
+		osdProgress(text, 100);
+	} else if (all > 0) {
+		snprintf(text, sizeof(text), "Downloading Cheats: %.1f of %.1f MB", done / 1024.0, all / 1024.0);
+		osdProgress(text, (int) ((long long) done * 100 / all));
+	} else {
+		snprintf(text, sizeof(text), "Downloading Cheats: %.1f MB", done / 1024.0);
+		osdProgress(text, 0);
+	}
+	addInfo("Downloading the cheat database...", "");
+	return true;
+}
+
+static void downloadRow(int unused, int delta) {
+	(void) unused;
+	const char* game;
+	bool advance;
+	char folder[PATH_SIZE];
+	if (!delta && libretroCheatGame(&game, &advance) && SDL_AtomicGet(&state) != RUNNING) {
+		forgetChtFiles();
+		fetch(game, advance, true, folder, sizeof(folder));
+	}
+}
+
+static void offerDownload(void) {
+	addItem("Download Cheat Database", downloadRow, 0);
+	helpFor("Downloads RetroArch's cheat database as its Online Updater does, about 40 MB.");
+}
+
+// Game > Cheats > RetroArch Cheats: each of the database's files for the game, which a press adds to
+// the game's cheats, switched off, and their cheats.
+static void addFileRow(int which, int delta) {
+	if (delta || which >= chtFileCount) {
+		return;
+	}
+	int const added = cheatListImport(chtFiles[which].path);
+	if (added < 0) {
+		osd("Can't read %s", chtFiles[which].name);
+		return;
+	}
+	cheatListApply();
+	cheatListSave();
+	osd(added == 1 ? "Added 1 cheat" : "Added %d cheats", added);
+	popMenu();
+}
+
+static void gameCheatsPage(void) {
+	const char* game;
+	bool advance;
+	if (!libretroCheatGame(&game, &advance) || showDownload()) {
+		return;
+	}
+	if (!listChtFiles(game, advance)) {
+		offerDownload();
+		return;
+	}
+	if (!chtFileCount) {
+		addInfo("RetroArch has no cheats for this game", "");
+	}
+	for (int i = 0; i < chtFileCount; ++i) {
+		static char labels[64][48];
+		addHeader(chtFiles[i].name);
+		if (i < 64) {
+			snprintf(labels[i], sizeof(labels[i]), chtFiles[i].count == 1 ? "Add This Cheat" : "Add These %d Cheats", chtFiles[i].count);
+			addItem(labels[i], addFileRow, i);
+			helpFor("Adds them to this game's cheats, switched off, for you to switch on.");
+		}
+		for (int c = 0; c < chtFiles[i].count; ++c) {
+			addInfo(chtFiles[i].names[c], "");
+		}
+	}
+}
+
+static void openGameCheats(int unused, int delta) {
+	(void) unused;
+	if (!delta) {
+		forgetChtFiles();
+		pushMenu(gameCheatsPage, "RetroArch Cheats");
+	}
+}
+
+void cheatGameRows(void) {
+	const char* game;
+	bool advance;
+	if (libretroCheatGame(&game, &advance)) {
+		addItem("RetroArch Cheats...", openGameCheats, 0);
+		helpFor("The cheats RetroArch's cheat database has for this game, to add to its list.");
+	}
+}
+
+// Extras > Cheats > Cheats for the game on top: those Import would take into the cartridge.
+static char (*cartNames)[96];
+static size_t cartNameCount;
+static bool cartListed;
+
+static void cartCheatsPage(void) {
+	const char* game;
+	bool advance, retroArchs;
+	if (!libretroCheatImportFor(&game, &advance, &retroArchs) || showDownload()) {
+		cartListed = false;
+		return;
+	}
+	char folder[PATH_SIZE];
+	if (!databaseNow(folder, sizeof(folder))) {
+		offerDownload();
+		return;
+	}
+	if (!cartListed) {
+		enum { MOST = 1024 };
+		if (!cartNames) {
+			cartNames = malloc(MOST * sizeof(*cartNames));
+		}
+		cartNameCount = cartNames ? libretroCartridgeCheatNames(folder, cartNames, MOST) : 0;
+		cartListed = true;
+	}
+	if (!cartNameCount) {
+		addInfo("RetroArch has no cheats this cartridge takes for the game", "");
+		return;
+	}
+	addItem("Import Cheats from RetroArch", importRow, 0);
+	helpFor("Adds those the cartridge doesn't have yet (not their master codes, which it has), switched off.");
+	static char heading[64];
+	snprintf(heading, sizeof(heading), "In RetroArch's Cheat Database (%zu)", cartNameCount);
+	addHeader(heading);
+	for (size_t i = 0; i < cartNameCount; ++i) {
+		addInfo(cartNames[i], "");
+	}
+}
+
+static void openCartCheats(int unused, int delta) {
+	(void) unused;
+	if (!delta) {
+		cartListed = false;
+		pushMenu(cartCheatsPage, "Cheats for the Game on Top");
 	}
 }

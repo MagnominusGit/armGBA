@@ -28,5 +28,7 @@ uint32_t netCheevosConsole(const uint8_t* data, size_t size);
 void cheatDatabaseStart(void);
 // The cheat cartridge's rows in Extras.
 void cheatExtrasRows(void);
+// The Game tab's Cheats page: RetroArch's cheats for the game.
+void cheatGameRows(void);
 
 #endif
