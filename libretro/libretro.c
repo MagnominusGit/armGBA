@@ -2560,11 +2560,15 @@ static void restoreCheats(void) {
 
 // Factory Reset (keep: each game keeps its master code, which the GBA cartridges need to run and
 // import its codes; the Game Boy's, which have none, keep their games) and Full Wipe (the lists
-// emptied, the program's settings kept): what the cartridge's chip keeps, never its program.
+// emptied): what the cartridge's chip keeps, never its program. Both start from the chip as the dump
+// has it, so its settings, such as the Action Replay MAX's user name, go back as no one had used it.
 static void clearCheats(bool keep) {
 	size_t size;
 	uint8_t* const flash = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayFlash(&size);
 	int result = -1;
+	if (flash && replayFactory && size == replayFactorySize) {
+		memcpy(flash, replayFactory, size);
+	}
 	if (!flash) {
 	} else if (!gameBoy) {
 		result = fcdLoaded ? fcdClear(flash, size, keep) : (result = arGbaClear(flash, size, keep)) != -4 ? result : maxClear(flash, size, keep);

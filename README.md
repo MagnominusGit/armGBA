@@ -84,7 +84,7 @@ standalone frontend shows as one page with headers.
 | | Game on Top (goes in as you go back to the game, which starts again) | Both (a cheat cartridge loaded: an Action Replay, Game Genie, Xploder or CodeBreaker) | None (the default), Most Recently Played (the game with the newest save, named in the list), or a game for the cartridge's console in its folder, those played last first (up to 125) |
 | | Game Genie Code 1, 2 and 3 | Game Boy (the Game Genie loaded, with a game on top that RetroArch's cheat database has Game Genie cheats for) | None, or a cheat from the database, by name (shown in an empty slot of the code screen, as if typed in) |
 | | Import Cheats from RetroArch | Both (an Action Replay, Xploder or CodeBreaker loaded, with a game on top) | Off, Import (adds the database's cheats for the game the cartridge doesn't have, then restarts; goes back to Off) |
-| | Reset Cheats | Both (an Action Replay, Xploder or CodeBreaker loaded) | Off, Factory Reset (Keep Master Codes), Full Wipe (Erase All Contents), Reset to Dump (Erase the Different Entries: the cartridge's ROM file as it is); each keeps the game on top, then restarts, and goes back to Off |
+| | Cheat Cartridge Reset | Both (an Action Replay, Xploder or CodeBreaker loaded) | Off, Factory Reset (Keep Master Codes), Full Wipe (Erase All Contents), Reset to Dump (Erase the Different Entries: the cartridge's ROM file as it is); each keeps the game on top, then restarts, and goes back to Off |
 | | Open Cheat Cartridge Menu | Game Boy (an Action Replay or Xploder GB loaded) | Off, Open (presses its button once as the menu closes, then goes back to Off) |
 | | Hold Action Replay Button | Game Boy Advance (an Action Replay loaded) | Off, On (holds its button down for its button codes; Off when a game starts) |
 | | Cheat Cartridge Button Press | Game Boy Advance (an Action Replay loaded) | Toggle (a click holds the button down until the next, as Hold Action Replay Button), Hold (only while held) |
@@ -572,13 +572,14 @@ in ~/.local/share/armgba/cheat-database, and downloads it again once it's a mont
 libretro's server can't be reached, it takes just the game's files from libretro-database on GitHub.
 The Game Genie's codes use that copy once it's there. The save keeps its size whatever the cartridge holds,
 and an import adds only the cheats it doesn't have; the cartridge's list holds what its chip has room
-for, and its own menus delete games and codes. Reset Cheats clears what a cartridge keeps, though
-never its program, then restarts with the game on top:
+for, and its own menus delete games and codes. Cheat Cartridge Reset clears what a cartridge keeps, though
+never its program, then restarts with the game on top. Its first two start from the chip as the dump
+has it, so the settings someone changed, such as the Action Replay MAX's user name, go too:
 - Factory Reset (Keep Master Codes) empties its lists but keeps each game's master code: on the Game
   Boy Advance's cartridges, the code their games' codes run with and the import finds the game by,
   so imports go on working. The Action Replay MAX's other files, such as the DS game saves a used
   cartridge holds, go too. The Game Boy's, which have none, keep their games without codes, and the
-  Pro Action Replay its settings.
+  Pro Action Replay starts as it did the first time.
 - Full Wipe (Erase All Contents) empties them all, master codes too (an Advance cartridge then takes
   only codes for games whose master code is typed in), and the Pro Action Replay starts as it did
   the first time.
@@ -587,7 +588,7 @@ never its program, then restarts with the game on top:
 
 Many dumps were made from used cartridges, their lists holding someone's games and codes; Factory
 Reset makes such a cartridge clean, with Import Cheats from RetroArch to fill it. In the standalone
-app, Extras > Cheats has the import and the resets, each reset asking for a second press.
+app, Extras > Cheats has the import and Cheat Cartridge Reset.
 
 ### Action Replay
 

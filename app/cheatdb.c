@@ -373,23 +373,22 @@ static void importRow(int unused, int delta) {
 	}
 }
 
-// The cartridge's resets, as Core > System > Reset Cheats has them, each asking for a second press
-static const struct {
-	const char* value;
-	const char* label;
-	const char* help;
-} resets[] = {
-	{ "factory", "Factory Reset (Keep Master Codes)", "Empties the cartridge's lists but keeps each game's master code, which Advance codes need." },
-	{ "wipe", "Full Wipe (Erase All Contents)", "Empties the cartridge's lists, master codes too; its program and settings stay." },
-	{ "dump", "Reset to Dump (Erase the Different Entries)", "Puts the cartridge's chip back as its ROM file has it." },
-};
-
-static void resetRow(int which, int delta) {
+// Cheat Cartridge Reset, as Core > System has it: Left and Right (or a press) step through its
+// choices, and the one shown as the menu closes is done, then goes back to Off.
+static void resetRow(int unused, int delta) {
+	(void) unused;
 	struct Option* const option = optionFind("armgba_cheat_restore");
-	if (!delta && option) {
-		optionSet(option, resets[which].value);
-		uiCloseMenu();
+	if (!option || !option->valueCount) {
+		return;
 	}
+	int at = 0;
+	for (int v = 0; v < option->valueCount; ++v) {
+		if (!strcmp(option->values[v], option->value)) {
+			at = v;
+		}
+	}
+	int const step = delta ? delta : 1;
+	optionSet(option, option->values[((at + step) % option->valueCount + option->valueCount) % option->valueCount]);
 }
 
 static void cheatsPage(void) {
@@ -400,9 +399,15 @@ static void cheatsPage(void) {
 		helpFor("Adds the latest RetroArch cheats for the game on top to the cheat cartridge's list, switched off.");
 	}
 	const struct Option* const reset = optionFind("armgba_cheat_restore");
-	for (int i = 0; reset && reset->visible && i < (int) (sizeof(resets) / sizeof(*resets)); ++i) {
-		addItem(resets[i].label, resetRow, i)->confirm = true;
-		helpFor(resets[i].help);
+	if (reset && reset->visible) {
+		const char* shown = reset->value;
+		for (int v = 0; v < reset->valueCount; ++v) {
+			if (!strcmp(reset->values[v], reset->value) && reset->labels[v]) {
+				shown = reset->labels[v];
+			}
+		}
+		addValue("Cheat Cartridge Reset", shown, resetRow, 0);
+		helpFor(reset->info);
 	}
 	char whole[PATH_SIZE];
 	dataPath(whole, sizeof(whole), "cheat-database");

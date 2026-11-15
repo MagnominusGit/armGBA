@@ -188,10 +188,11 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "those it doesn't have yet (alike by their codes), switched off, then restarts so the cartridge "
 	  "reads them. Then goes back to Off. Not in netplay.",
 	  NULL, "system", { { "off", "Off" }, { "import", "Import" }, { NULL, NULL } }, "off" },
-	{ "armgba_cheat_restore", "Reset Cheats", NULL,
+	{ "armgba_cheat_restore", "Cheat Cartridge Reset", NULL,
 	  "Factory Reset empties the cheat cartridge's lists but keeps each game's master code, which its "
 	  "codes and imports need on the Advance. Full Wipe empties them all. Reset to Dump puts the chip "
-	  "back as its ROM file has it. Then restarts, and goes back to Off. Not in netplay.",
+	  "back as its ROM file has it. Done as you go back to the game, which restarts; then back to Off. "
+	  "Not in netplay.",
 	  NULL, "system", { { "off", "Off" }, { "factory", "Factory Reset (Keep Master Codes)" }, { "wipe", "Full Wipe (Erase All Contents)" },
 	  { "dump", "Reset to Dump (Erase the Different Entries)" }, { NULL, NULL } }, "off" },
 	{ "armgba_action_replay_press", "Open Cheat Cartridge Menu", NULL,
