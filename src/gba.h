@@ -800,6 +800,8 @@ struct GBA {
 	// Set while the exact CPU goes round a loop to see whether it is idle; its reads and writes go
 	// to jit.c.
 	bool idleProbing;
+	// Set while one of its events' callbacks runs (see timingTick and timingScheduleCpu).
+	bool inEvent;
 
 	struct Timing timing;
 	HOST_POINTER(struct Jit* jit, jit);

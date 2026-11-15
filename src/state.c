@@ -111,6 +111,7 @@ static void leaveOutHost(const struct GBA* gba, struct GBA* saved) {
 	memset(saved->jitScratch, 0, sizeof(saved->jitScratch));
 	saved->jitDeferred = false;
 	saved->jitLeave = false;
+	saved->inEvent = false;
 	saved->jitBase = 0;
 	saved->biosPrefetchNext = 0;
 	// The cartridge's counter is only read within a burst, whose first access sets it, and a state
@@ -281,6 +282,7 @@ bool gbaLoadState(struct GBA* gba, const void* state, size_t size) {
 	gba->jitRunning = false;
 	gba->jitDeferred = false;
 	gba->jitLeave = false;
+	gba->inEvent = host->inEvent;
 	gba->idleMark = 0;
 	gba->eventRuns = host->eventRuns;
 	gba->idleHeadRuns = host->idleHeadRuns;

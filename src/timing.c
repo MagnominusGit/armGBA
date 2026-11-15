@@ -127,10 +127,6 @@ void timingScheduleAbsolute(struct GBA* gba, struct Event* event, int32_t when) 
 	timingSchedule(gba, event, when - timingCurrentTime(gba));
 }
 
-// The console whose event's callback is running on this thread, if any (see timingTick). Not in the
-// console's struct, which a state holds whole.
-static _Thread_local struct GBA* inEvent;
-
 // The same, cycles of the CPU's clock from now, late of the console's already gone: with the CPU Clock
 // away from 100%, at the last of the console's cycles not after them, for what is on the bus the CPU
 // runs on (DMA's start, the interrupt controller) and so must not come later than it would.
@@ -146,7 +142,7 @@ void timingScheduleCpu(struct GBA* gba, struct Event* event, int32_t cycles, int
 	}
 	uint64_t const now = timingConsoleCycles(gba);
 	uint64_t at;
-	if (inEvent == gba) {
+	if (gba->inEvent) {
 		at = consoleAt(gba, cpuAt(gba, now - late) + cycles);
 	} else {
 		at = consoleAt(gba, gba->timing.globalCycles + gba->cpu.cycles + cycles) - late;
@@ -223,10 +219,10 @@ int32_t timingTick(struct GBA* gba, int32_t cycles) {
 		if (gba->cpu.overclock) {
 			late = consoleAt(gba, timing->globalCycles) - eventTime(gba, next->when);
 		}
-		struct GBA* const outer = inEvent;
-		inEvent = gba;
+		bool const outer = gba->inEvent;
+		gba->inEvent = true;
 		next->callback(gba, next->context, late);
-		inEvent = outer;
+		gba->inEvent = outer;
 	}
 	if (timing->reroot) {
 		timing->root = timing->reroot;
