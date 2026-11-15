@@ -387,13 +387,13 @@ also work on a row without a value). It opens again where it was left.
 - **Game:** the loaded game's state slots (0 to 99, each with a picture) and Undo Load State, its
   cheats (RetroArch's `.cht` files can be added, and RetroArch Cheats... lists the cheats RetroArch's
   cheat database has for the game, a file at a time, to add; with no database, it offers to download
-  it), its saves (the core's Saves options: backing up,
+  it, and Download Cheat Database Again brings the app's copy up to date), its saves (the core's Saves options: backing up,
   loading and sending), Restart, Take Screenshot, recording and Close Game.
 - **Core:** the core's options, in RetroArch's categories, with LCD Effects (Off, CPU, GPU or GPU Fast) in
   Video in place of the core's LCD Effects.
 - **Extras:** netplay and RetroAchievements, and with a cheat cartridge, Cheats: Import Cheats from
   RetroArch (its download's progress shown as it goes), Cheats for the Game on Top (the cheats the
-  import would add, by name) and the cartridge's resets.
+  import would add, by name), the cartridge's resets and Download Cheat Database Again.
 
 Rows ending in "..." open a page. Rows with a value step through it, except Back Up Save, Load Save
 and Send Save, which act once something is chosen from their list. The line under the menu says what
@@ -571,7 +571,8 @@ cheat database (its .cht files), for the Game Genie (Game Genie Code 1, 2 and 3)
 for the game's title and one of its regions. Without it (on Android, or with no RetroArch), the
 standalone app downloads it for Import Cheats from RetroArch as RetroArch's Online Updater does
 (libretro's cheats.zip, about 40 MB), keeps the Game Boy, Game Boy Color and Game Boy Advance cheats
-in ~/.local/share/armgba/cheat-database, and downloads it again once it's a month old; if
+in ~/.local/share/armgba/cheat-database, and downloads it again once it's a month old (or with
+Download Cheat Database Again, in Extras > Cheats or Game > Cheats > RetroArch Cheats); if
 libretro's server can't be reached, it takes just the game's files from libretro-database on GitHub.
 The Game Genie's codes use that copy once it's there. The save keeps its size whatever the cartridge holds,
 and an import adds only the cheats it doesn't have; the cartridge's list holds what its chip has room

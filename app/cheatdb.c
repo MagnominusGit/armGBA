@@ -33,6 +33,8 @@ enum { REFRESH_SECONDS = 30 * 24 * 60 * 60, FRESH_SECONDS = 24 * 60 * 60 };
 
 // Set by Extras' import: the copy is downloaded again first, unless it's from the last day.
 static bool refreshWanted;
+// Set for Download Cheat Database Again: the copy is downloaded again whatever its age.
+static bool refreshNow;
 
 static const char* const systems[] = { "Nintendo - Game Boy", "Nintendo - Game Boy Color", "Nintendo - Game Boy Advance" };
 enum { SYSTEMS = sizeof(systems) / sizeof(*systems), ADVANCE = 2 };
@@ -43,6 +45,8 @@ static SDL_atomic_t state;
 // Set while a file is downloading, as opposed to unpacking.
 static SDL_atomic_t downloading;
 static int result;
+// Whether the last download brought cheats.zip, as opposed to failing (the old copy kept, or the game's own files)
+static bool gotDatabase;
 static char game[PATH_SIZE];
 static bool advance;
 static char folder[PATH_SIZE];
@@ -168,7 +172,8 @@ static bool downloadDatabase(const char* to) {
 	removeFolder(fresh);
 	SDL_AtomicSet(&downloading, 1);
 	bool ok = httpDownload(ZIP_URL, zip) == 200;
-	SDL_AtomicSet(&downloading, 0);
+	// Unpacking next, or on to the game's own files, still downloading
+	SDL_AtomicSet(&downloading, !ok);
 	struct Extraction x = { .files = 0 };
 	snprintf(x.folder, sizeof(x.folder), "%s", fresh);
 	for (int i = 0; ok && i < SYSTEMS; ++i) {
@@ -291,13 +296,15 @@ static int download(void* unused) {
 	dataPath(base, sizeof(base), "");
 	makeFolders(base);
 	result = CHEAT_FETCH_NONE;
-	if (downloadDatabase(whole) || hasDatabase(whole, &age)) {
+	gotDatabase = downloadDatabase(whole);
+	if (gotDatabase || hasDatabase(whole, &age)) {
 		snprintf(folder, sizeof(folder), "%s", whole);
 		result = CHEAT_FETCH_READY;
 	} else if (downloadGame(own)) {
 		snprintf(folder, sizeof(folder), "%s", own);
 		result = CHEAT_FETCH_READY;
 	}
+	SDL_AtomicSet(&downloading, 0);
 	SDL_AtomicSet(&state, DONE);
 	return 0;
 }
@@ -324,7 +331,7 @@ static int fetch(const char* gamePath, bool forAdvance, bool start, char* out, s
 	}
 	long long const stale = refreshWanted ? FRESH_SECONDS : REFRESH_SECONDS;
 	refreshWanted = refreshWanted && start ? false : refreshWanted;
-	if (have && (age < stale || !start)) {
+	if (have && !(refreshNow && start) && (age < stale || !start)) {
 		snprintf(out, outSize, "%s", whole);
 		return CHEAT_FETCH_READY;
 	}
@@ -337,6 +344,8 @@ static int fetch(const char* gamePath, bool forAdvance, bool start, char* out, s
 	}
 	snprintf(game, sizeof(game), "%s", gamePath);
 	advance = forAdvance;
+	// Downloading from the start, not unpacking, for the progress shown
+	SDL_AtomicSet(&downloading, 1);
 	SDL_AtomicSet(&state, RUNNING);
 	SDL_Thread* const thread = SDL_CreateThread(download, "cheat database", NULL);
 	if (!thread) {
@@ -392,10 +401,15 @@ static void resetRow(int unused, int delta) {
 }
 
 static void openCartCheats(int unused, int delta);
+static bool showDownload(void);
+static void redownloadRow(int unused, int delta);
 
 static void cheatsPage(void) {
 	const char* game = NULL;
 	bool advance = false, retroArchs = false;
+	if (showDownload()) {
+		return;
+	}
 	if (libretroCheatImportFor(&game, &advance, &retroArchs)) {
 		addItem("Import Cheats from RetroArch", importRow, 0);
 		helpFor("Adds the latest RetroArch cheats for the game on top to the cheat cartridge's list, switched off.");
@@ -417,9 +431,10 @@ static void cheatsPage(void) {
 	dataPath(whole, sizeof(whole), "cheat-database");
 	long long age = 0;
 	static char status[64];
+	bool const have = !retroArchs && hasDatabase(whole, &age);
 	if (retroArchs) {
 		snprintf(status, sizeof(status), "RetroArch's");
-	} else if (hasDatabase(whole, &age)) {
+	} else if (have) {
 		time_t const when = time(NULL) - (time_t) age;
 		struct tm day;
 		if (!localtime_r(&when, &day) || !strftime(status, sizeof(status), "Downloaded %d %b %Y", &day)) {
@@ -431,6 +446,10 @@ static void cheatsPage(void) {
 	addChoice("Cheat Database", status, NULL, 0);
 	helpFor(retroArchs ? "RetroArch's own, which its Online Updater keeps up to date."
 	                   : "The app's copy of RetroArch's, downloaded again as an import needs it.");
+	if (!retroArchs && game) {
+		addItem(have ? "Download Cheat Database Again" : "Download Cheat Database", redownloadRow, 0);
+		helpFor("Downloads RetroArch's cheat database now, as its Online Updater does (about 40 MB), keeping the copy there is if that fails.");
+	}
 }
 
 static void openCheatsPage(int unused, int delta) {
@@ -568,6 +587,12 @@ static bool showDownload(void) {
 		if (wasRunning) {
 			// What it brought is read again
 			forgetChtFiles();
+			if (gotDatabase) {
+				osd("Cheat database downloaded");
+			} else {
+				osd(result == CHEAT_FETCH_READY ? "Couldn't download the cheat database; the copy there is kept"
+				                                : "Couldn't download the cheat database");
+			}
 			wasRunning = false;
 		}
 		return false;
@@ -599,6 +624,26 @@ static void downloadRow(int unused, int delta) {
 		forgetChtFiles();
 		fetch(game, advance, true, folder, sizeof(folder));
 	}
+}
+
+// Download Cheat Database Again, for the game the page is for: the app's copy, whatever its age.
+static void redownloadRow(int unused, int delta) {
+	(void) unused;
+	const char* game;
+	bool advance, retroArchs;
+	char folder[PATH_SIZE];
+	if (delta || SDL_AtomicGet(&state) == RUNNING) {
+		return;
+	}
+	if (!libretroCheatGame(&game, &advance) && !libretroCheatImportFor(&game, &advance, &retroArchs)) {
+		return;
+	}
+	// A download finished and not yet taken by the core is done with
+	SDL_AtomicSet(&state, IDLE);
+	forgetChtFiles();
+	refreshNow = true;
+	fetch(game, advance, true, folder, sizeof(folder));
+	refreshNow = false;
 }
 
 static void offerDownload(void) {
@@ -647,6 +692,12 @@ static void gameCheatsPage(void) {
 		for (int c = 0; c < chtFiles[i].count; ++c) {
 			addInfo(chtFiles[i].names[c], "");
 		}
+	}
+	char retroArchs[PATH_SIZE];
+	if (!libretroRetroArchCheats(retroArchs, sizeof(retroArchs))) {
+		addHeader("Cheat Database");
+		addItem("Download Cheat Database Again", redownloadRow, 0);
+		helpFor("Downloads RetroArch's cheat database now, as its Online Updater does (about 40 MB), keeping the copy there is if that fails.");
 	}
 }
 
