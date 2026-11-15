@@ -381,7 +381,7 @@ static const struct {
 } resets[] = {
 	{ "factory", "Factory Reset (Keep Master Codes)", "Empties the cartridge's lists but keeps each game's master code, which Advance codes need." },
 	{ "wipe", "Full Wipe (Erase All Contents)", "Empties the cartridge's lists, master codes too; its program and settings stay." },
-	{ "dump", "Reset to Dump", "Puts the cartridge's chip back as its ROM file has it." },
+	{ "dump", "Reset to Dump (Erase the Different Entries)", "Puts the cartridge's chip back as its ROM file has it." },
 };
 
 static void resetRow(int which, int delta) {

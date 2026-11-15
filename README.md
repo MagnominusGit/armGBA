@@ -84,7 +84,7 @@ standalone frontend shows as one page with headers.
 | | Game on Top (goes in as you go back to the game, which starts again) | Both (a cheat cartridge loaded: an Action Replay, Game Genie, Xploder or CodeBreaker) | None (the default), Most Recently Played (the game with the newest save, named in the list), or a game for the cartridge's console in its folder, those played last first (up to 125) |
 | | Game Genie Code 1, 2 and 3 | Game Boy (the Game Genie loaded, with a game on top that RetroArch's cheat database has Game Genie cheats for) | None, or a cheat from the database, by name (shown in an empty slot of the code screen, as if typed in) |
 | | Import Cheats from RetroArch | Both (an Action Replay, Xploder or CodeBreaker loaded, with a game on top) | Off, Import (adds the database's cheats for the game the cartridge doesn't have, then restarts; goes back to Off) |
-| | Reset Cheats | Both (an Action Replay, Xploder or CodeBreaker loaded) | Off, Factory Reset (Keep Master Codes), Full Wipe (Erase All Contents), Reset to Dump (the cartridge's ROM file as it is); each keeps the game on top, then restarts, and goes back to Off |
+| | Reset Cheats | Both (an Action Replay, Xploder or CodeBreaker loaded) | Off, Factory Reset (Keep Master Codes), Full Wipe (Erase All Contents), Reset to Dump (Erase the Different Entries: the cartridge's ROM file as it is); each keeps the game on top, then restarts, and goes back to Off |
 | | Open Cheat Cartridge Menu | Game Boy (an Action Replay or Xploder GB loaded) | Off, Open (presses its button once as the menu closes, then goes back to Off) |
 | | Hold Action Replay Button | Game Boy Advance (an Action Replay loaded) | Off, On (holds its button down for its button codes; Off when a game starts) |
 | | Cheat Cartridge Button Press | Game Boy Advance (an Action Replay loaded) | Toggle (a click holds the button down until the next, as Hold Action Replay Button), Hold (only while held) |
@@ -581,7 +581,7 @@ never its program, then restarts with the game on top:
 - Full Wipe (Erase All Contents) empties them all, master codes too (an Advance cartridge then takes
   only codes for games whose master code is typed in), and the Pro Action Replay starts as it did
   the first time.
-- Reset to Dump puts the chip back as the cartridge's ROM file has it, as on its first start; with
+- Reset to Dump (Erase the Different Entries) puts the chip back as the cartridge's ROM file has it, as on its first start; with
   the cartridge as it came already, it says so and changes nothing.
 
 Many dumps were made from used cartridges, their lists holding someone's games and codes; Factory

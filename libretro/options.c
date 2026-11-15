@@ -193,7 +193,7 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "codes and imports need on the Advance. Full Wipe empties them all. Reset to Dump puts the chip "
 	  "back as its ROM file has it. Then restarts, and goes back to Off. Not in netplay.",
 	  NULL, "system", { { "off", "Off" }, { "factory", "Factory Reset (Keep Master Codes)" }, { "wipe", "Full Wipe (Erase All Contents)" },
-	  { "dump", "Reset to Dump" }, { NULL, NULL } }, "off" },
+	  { "dump", "Reset to Dump (Erase the Different Entries)" }, { NULL, NULL } }, "off" },
 	{ "armgba_action_replay_press", "Open Cheat Cartridge Menu", NULL,
 	  "Presses the button of the Game Boy cheat cartridge (an Action Replay or Xploder) once as this menu "
 	  "closes, which opens its in-game menu (on the cartridges that have one). Then goes back to Off.",
