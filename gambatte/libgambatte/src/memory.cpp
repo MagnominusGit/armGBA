@@ -1663,6 +1663,11 @@ SYNCFUNC(Memory) {
 	NSS(linked_);
 	NSS(linkClockTrigger_);
 	NSS(totalSamplesEmitted_);
+	// armGBA: the CPU Clock's part of a cycle carried over, and how much longer the CPU keeps the
+	// console's own pace (see cpuCycles): without them, a frame run again from a state ran a cycle
+	// apart from the first time.
+	NSS(cpuCarry_);
+	NSS(stockLeft_);
 	// armGBA: the PPU reads the sprites from OAM, or from nothing while an OAM DMA has the bus.
 	if (isReader)
 		lcd_.setOam(lastOamDmaUpdate_ != disabled_time && oamDmaPos_ < oam_size ? cart_.rdisabledRam() : ioamhram_);

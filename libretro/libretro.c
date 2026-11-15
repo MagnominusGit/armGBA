@@ -4717,6 +4717,19 @@ bool retro_unserialize(const void* data, size_t size) {
 	if (!(tagged || (size == consolesStateSize() && !togetherRunning())) || !loadConsoles(data, consolesStateSize())) {
 		return false;
 	}
+	// Whether the console is still booting, for CPU Clock During Boot, is the state's, not this run's:
+	// a frame run again from before the game started runs at the boot's clock, as it did. A Game Boy
+	// is in its boot ROM; a Game Boy Advance state from the boot is on the console's own clock where
+	// the CPU Clock isn't.
+	if (gameBoy) {
+		booting = libretroGbBooting();
+	} else {
+		bool stock = false;
+		for (int i = 0; i < playersHere; ++i) {
+			stock |= !gbas[i]->cpu.overclock;
+		}
+		booting = stockDuringBoot && cpuOverclock && stock;
+	}
 	applyCpuClock();
 	// A loaded state has every console's save as it was; player 1's isn't copied over them after.
 	copySaves = 0;
