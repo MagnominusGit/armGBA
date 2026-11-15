@@ -162,6 +162,8 @@ bool retroArchSaves(void);
 void readPlayerOneSave(void);
 void readNewerPlayerOne(void);
 void saveFilesFor(const char* game, char file[SAVE_PATH_SIZE], char rtcFile[SAVE_PATH_SIZE]);
+// The times of games' saves where saveFilesFor finds them, each folder listed once (savefiles.h).
+struct SaveTimes* gameSaveTimes(void);
 bool readSave(int player, const char* game);
 void readOtherSaves(void);
 void copyFirstSave(void);

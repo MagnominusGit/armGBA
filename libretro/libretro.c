@@ -1626,20 +1626,16 @@ static const char* chosenReplayGame(void) {
 	return NULL;
 }
 
-// How recently a game was played: its save's time, or 0 without one. Other cheat cartridges come last.
+// How recently a game was played: its save's time (context: the SaveTimes), or 0 without one. Other
+// cheat cartridges come last.
 static long long replayRank(const char* path, void* context) {
-	(void) context;
 	static const char* const carts[] = { "Action Replay", "Game Genie", "GameShark", "Xploder", "CodeBreaker", "Code Breaker" };
 	for (size_t i = 0; i < sizeof(carts) / sizeof(*carts); ++i) {
 		if (strstr(path, carts[i])) {
 			return -1;
 		}
 	}
-	char file[SAVE_PATH_SIZE];
-	char rtc[SAVE_PATH_SIZE];
-	saveFilesFor(path, file, rtc);
-	struct stat info;
-	return stat(file, &info) ? 0 : (long long) info.st_mtime;
+	return saveTimeOf(context, path);
 }
 
 // The game on top is kept in the cheat cartridge's save, after what the cartridge itself keeps (its
@@ -1714,7 +1710,9 @@ static const char* fileName(const char* path) {
 
 static void offerReplayGames(const char* path) {
 	gamesFree(replayGames, replayCount);
-	replayCount = path ? gamesListRanked(path, gameBoy ? GAMES_GAME_BOY : GAMES_ADVANCE, replayRank, NULL, replayGames, SECOND_CHOICES) : 0;
+	struct SaveTimes* const times = path ? gameSaveTimes() : NULL;
+	replayCount = path ? gamesListRanked(path, gameBoy ? GAMES_GAME_BOY : GAMES_ADVANCE, replayRank, times, replayGames, SECOND_CHOICES) : 0;
+	saveTimesClose(times);
 	snprintf(replayFirst, sizeof(replayFirst), "%s", path ? path : "");
 	replayFirst[strcspn(replayFirst, "#")] = '\0';
 	if (!coreOptions || !replayOption) {
