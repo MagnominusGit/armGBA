@@ -1817,6 +1817,35 @@ void libretroSetCheatFetch(int (*fetch)(const char* gamePath, bool advance, bool
 	cheatFetch = fetch;
 }
 
+static bool (*cheatProgress)(int* doneKib, int* allKib);
+
+void libretroSetCheatProgress(bool (*progress)(int* doneKib, int* allKib)) {
+	cheatProgress = progress;
+}
+
+// The download's progress, a message with a bar where the frontend shows one.
+static void showCheatProgress(void) {
+	int done = 0, all = 0;
+	bool const downloading = !cheatProgress || cheatProgress(&done, &all);
+	char text[100];
+	int percent = 100;
+	if (!downloading) {
+		snprintf(text, sizeof(text), "Unpacking Cheats");
+	} else if (all > 0) {
+		snprintf(text, sizeof(text), "Downloading Cheats: %.1f of %.1f MB", done / 1024.0, all / 1024.0);
+		percent = (int) ((long long) done * 100 / all);
+	} else {
+		snprintf(text, sizeof(text), "Downloading Cheats: %.1f MB", done / 1024.0);
+		percent = -1;
+	}
+	struct retro_message_ext shown = { text, 1000, 2, RETRO_LOG_INFO, RETRO_MESSAGE_TARGET_OSD,
+	                                   percent >= 0 ? RETRO_MESSAGE_TYPE_PROGRESS : RETRO_MESSAGE_TYPE_NOTIFICATION,
+	                                   (int8_t) (percent < 0 ? -1 : percent > 100 ? 100 : percent) };
+	if (!environment(RETRO_ENVIRONMENT_SET_MESSAGE_EXT, &shown)) {
+		notify(text, 60);
+	}
+}
+
 // The Game Genie with a game on top: its code options list the database's cheats for the game, and
 // take those its save names.
 static void offerGenieCheats(void) {
@@ -2322,11 +2351,14 @@ static void importCheats(void) {
 		// Without RetroArch's, the app downloads it; the import goes on once it's in (retro_run)
 		int const fetched = cheatFetch ? cheatFetch(replayGamePath, !gameBoy, true, database, sizeof(database)) : CHEAT_FETCH_NONE;
 		if (fetched == CHEAT_FETCH_BUSY) {
-			if (!importWaiting) {
-				notify("Downloading RetroArch's cheat database...", 600);
-			}
+			showCheatProgress();
 			importWaiting = true;
 			return;
+		}
+		// The bar filled as the download ends
+		if (importWaiting && fetched == CHEAT_FETCH_READY) {
+			struct retro_message_ext shown = { "Cheats Downloaded", 1000, 2, RETRO_LOG_INFO, RETRO_MESSAGE_TARGET_OSD, RETRO_MESSAGE_TYPE_PROGRESS, 100 };
+			environment(RETRO_ENVIRONMENT_SET_MESSAGE_EXT, &shown);
 		}
 		importWaiting = false;
 		if (fetched != CHEAT_FETCH_READY) {

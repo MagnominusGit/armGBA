@@ -40,6 +40,8 @@ enum { SYSTEMS = sizeof(systems) / sizeof(*systems), ADVANCE = 2 };
 // The download: none, running, or done with result for game (its folder in folder).
 enum { IDLE, RUNNING, DONE };
 static SDL_atomic_t state;
+// Set while a file is downloading, as opposed to unpacking.
+static SDL_atomic_t downloading;
 static int result;
 static char game[PATH_SIZE];
 static bool advance;
@@ -164,7 +166,9 @@ static bool downloadDatabase(const char* to) {
 	dataPath(zip, sizeof(zip), "cheat-database.zip");
 	dataPath(fresh, sizeof(fresh), "cheat-database.new");
 	removeFolder(fresh);
+	SDL_AtomicSet(&downloading, 1);
 	bool ok = httpDownload(ZIP_URL, zip) == 200;
+	SDL_AtomicSet(&downloading, 0);
 	struct Extraction x = { .files = 0 };
 	snprintf(x.folder, sizeof(x.folder), "%s", fresh);
 	for (int i = 0; ok && i < SYSTEMS; ++i) {
@@ -231,7 +235,9 @@ static bool downloadGame(const char* to) {
 		snprintf(path, sizeof(path), "cht/%s", systems[i]);
 		encode(encoded, sizeof(encoded), path, false);
 		snprintf(url, sizeof(url), TREE_URL "%s", encoded);
+		SDL_AtomicSet(&downloading, 1);
 		char* const text = makeFolders(system) && httpDownload(url, listing) == 200 ? readText(listing) : NULL;
+		SDL_AtomicSet(&downloading, 0);
 		unlink(listing);
 		if (!text || !strstr(text, "\"tree\"")) {
 			free(text);
@@ -341,65 +347,36 @@ static int fetch(const char* gamePath, bool forAdvance, bool start, char* out, s
 	return CHEAT_FETCH_BUSY;
 }
 
+static bool progress(int* doneKib, int* allKib);
+
 void cheatDatabaseStart(void) {
 	libretroSetCheatFetch(fetch);
+	libretroSetCheatProgress(progress);
 }
 
-// Extras > Cheats...: Import Cheats from RetroArch. Without RetroArch's database, the app's copy is
-// brought up to date first (unless it's from the last day), on this page with a progress bar; then
-// the option goes to Import, which the core takes as the game runs again, so the menu closes.
-static bool importAfterDownload;
+// The download's progress for the core's message: false once it's unpacking.
+static bool progress(int* doneKib, int* allKib) {
+	httpProgress(doneKib, allKib);
+	return SDL_AtomicGet(&downloading) != 0;
+}
 
-static void importNow(void) {
+// Extras > Cheats...: Import Cheats from RetroArch, and the cheat database in use. Without
+// RetroArch's, the app's copy is brought up to date first, unless it's from the last day: the option
+// goes to Import and the menu closes, and the core downloads, showing its progress, then imports.
+static void importRow(int unused, int delta) {
+	(void) unused;
 	struct Option* const option = optionFind("armgba_cheat_import");
-	if (option) {
+	if (!delta && option) {
+		refreshWanted = true;
 		optionSet(option, "import");
 		uiCloseMenu();
 	}
 }
 
-static void importRow(int unused, int delta) {
-	(void) unused;
-	const char* game;
-	bool advance, retroArchs;
-	if (delta || SDL_AtomicGet(&state) == RUNNING || !libretroCheatImportFor(&game, &advance, &retroArchs)) {
-		return;
-	}
-	if (!retroArchs) {
-		refreshWanted = true;
-		char folder[PATH_SIZE];
-		if (fetch(game, advance, true, folder, sizeof(folder)) == CHEAT_FETCH_BUSY) {
-			importAfterDownload = true;
-			return;
-		}
-	}
-	importNow();
-}
-
 static void cheatsPage(void) {
 	const char* game;
 	bool advance, retroArchs;
-	bool const can = libretroCheatImportFor(&game, &advance, &retroArchs);
-	bool const running = SDL_AtomicGet(&state) == RUNNING;
-	// The download done: the import, which reads what it brought (or says why it can't)
-	if (importAfterDownload && !running) {
-		importAfterDownload = false;
-		if (can) {
-			importNow();
-		}
-	}
-	if (running) {
-		int done, all;
-		httpProgress(&done, &all);
-		char value[64];
-		if (all > 0) {
-			snprintf(value, sizeof(value), "%.1f of %.1f MB", done / 1024.0, all / 1024.0);
-		} else {
-			snprintf(value, sizeof(value), "%.1f MB", done / 1024.0);
-		}
-		addProgress("Downloading Cheats", value, all > 0 ? (int) ((long long) done * 100 / all) : -1);
-		helpFor("RetroArch's cheat database, from libretro's server, as RetroArch's Online Updater gets it.");
-	} else if (can) {
+	if (libretroCheatImportFor(&game, &advance, &retroArchs)) {
 		addItem("Import Cheats from RetroArch", importRow, 0);
 		helpFor("Adds the latest RetroArch cheats for the game on top to the cheat cartridge's list, switched off.");
 	}
