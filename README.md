@@ -26,6 +26,10 @@ interrupts, DMA, timers and what's on screen all happen when they would on the h
 - **Not Nintendo.** armGBA is an independent project, not affiliated with or endorsed by Nintendo.
   Game Boy, Game Boy Pocket, Game Boy Light, Game Boy Color and Game Boy Advance are trademarks of
   Nintendo, and the consoles' BIOS and boot ROMs are Nintendo's copyright.
+- **Not the cheat cartridges' makers.** armGBA isn't affiliated with or endorsed by Datel, InterAct,
+  Galoob, Blaze, Pelican or Future Console Design. Action Replay, GameShark, Game Genie, Xploder and
+  CodeBreaker are trademarks of their owners, named here only to say which cartridges armGBA runs,
+  and the cartridges' programs are their makers' copyright. armGBA comes with none of them.
 
 ## Controls
 
