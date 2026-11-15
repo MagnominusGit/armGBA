@@ -769,6 +769,10 @@ struct GBA {
 	bool jitDeferred;
 	// Set when compiled code has to leave at its next instruction boundary.
 	bool jitLeave;
+	// A cheat cartridge watching for the CPU to run the halfword at cartridge offset cartTrapAt (see
+	// fcd.c): the exact CPU tells it, and compiled code leaves the 32 bytes around it to the exact CPU.
+	bool cartTrapped;
+	uint32_t cartTrapAt;
 	// The prefetch buffer's base in compiled code, counted like r14d relative to the next event.
 	int32_t jitBase;
 	// A waiting loop's last time round: the block key its way back left, when it started (like
@@ -1116,6 +1120,23 @@ bool overridesLogoValid(struct GBA*);
 
 // actionreplay.c
 bool actionReplayDetect(const void* data, size_t size);
+// Future Console Design's Xploder Advance and CodeBreaker, behind the actionReplay functions
+bool fcdDetect(const void* data, size_t size);
+bool fcdActive(const struct GBA*);
+bool fcdAttach(struct GBA*, const void* game, size_t size);
+void fcdDetach(struct GBA*);
+void fcdReset(struct GBA*);
+void fcdTrap(struct GBA*);
+bool fcdRead(struct GBA*, uint32_t address, int size, uint32_t* value);
+const uint8_t* fcdCode(struct GBA*, uint32_t address);
+bool fcdWrite16(struct GBA*, uint32_t address, uint16_t value);
+uint8_t* fcdFlash(size_t* size);
+const uint8_t* fcdKept(size_t* size);
+bool fcdFlashChanged(void);
+size_t fcdStateSize(void);
+void fcdSaveState(struct GBA*, void* state);
+bool fcdPrepareState(struct GBA*, const void* state);
+void fcdLoadState(struct GBA*, const void* state);
 bool actionReplayActive(const struct GBA*);
 bool actionReplayAttach(struct GBA*, const void* game, size_t size);
 void actionReplayDetach(struct GBA*);

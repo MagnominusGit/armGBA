@@ -114,6 +114,7 @@ ActionReplayGb::ActionReplayGb(MemPtrs &memptrs, Mbc *game, RomHook *gameHook,
 , flashChanged_(false)
 {
 	std::memcpy(&flash_[0], flash, size);
+	factory_ = flash_;
 	std::memset(&s_, 0, sizeof s_);
 	reset();
 }
@@ -329,6 +330,12 @@ bool ActionReplayGb::isAddressWithinAreaRombankCanBeMappedTo(unsigned addr, unsi
 void ActionReplayGb::SyncState(NewState *ns, bool isReader) {
 	game_->SyncState(ns, isReader);
 	NSS(s_);
+	// The flash chip too, so every device in netplay has the same code lists and menus: as it differs
+	// from the cartridge's image, which every player has (see swapFactory)
+	if (!isReader)
+		swapFactory();
+	PSS(&flash_[0], flash_.size());
+	swapFactory();
 	if (isReader) {
 		memptrs_.setRomHooked(true);
 		memptrs_.setSramHooked(first_);

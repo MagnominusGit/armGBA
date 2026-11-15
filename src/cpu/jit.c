@@ -118,6 +118,18 @@ static bool inRom(uint32_t address) {
 	return (address >> 24) >= REGION_ROM0 && (address >> 24) <= REGION_ROM2_EX;
 }
 
+// A cheat cartridge's hook (see fcd.c): its 32-byte block, which the cartridge changes under the
+// CPU, runs on the exact CPU, which tells the cartridge when it reaches the trigger. No compiled
+// block holds an instruction there, or one whose prefetch reaches it, so changing the block leaves
+// compiled code as it is.
+static bool inCartTrap(struct GBA* gba, uint32_t address) {
+	if (!gba->cartTrapped || !inRom(address)) {
+		return false;
+	}
+	uint32_t const block = gba->cartTrapAt & ~0x1Fu;
+	return (address & (SIZE_ROM - 1)) - (block - 12) < 12 + 32;
+}
+
 // The cartridge starts a new burst every 128 KiB, so fetching an address there is nonsequential
 // whatever came before. The instruction two back makes that fetch. When compiled for the prefetch
 // buffer, its cost is the buffer's; without the buffer, only the exact CPU counts it. The
@@ -406,6 +418,11 @@ bool jitRomLiteral(struct GBA* gba, const struct Inst* in, uint32_t* value, int*
 	uint32_t offset = address & (SIZE_ROM - 1);
 	if (region < REGION_ROM0 || region >= REGION_ROM2_EX || (address & 3) || offset + 4 > gba->romSize ||
 	    (offset < 0xCA && offset + 4 > 0xC4)) {
+		return false;
+	}
+	// A cheat cartridge's hook block shows the game or the hook as it turns on and off, so a load from
+	// it reads what shows when it runs
+	if (inCartTrap(gba, address)) {
 		return false;
 	}
 	if (value) {
@@ -1126,7 +1143,8 @@ static struct Block* compileBlockTimed(struct GBA* gba, uint32_t pc, bool thumb,
 			break;
 		}
 		address += width;
-		if (codeKindOf(gba, address) != kind || ((address ^ pc) & ~mask) || address == limit || burstEdge(gba, address, thumb)) {
+		if (codeKindOf(gba, address) != kind || ((address ^ pc) & ~mask) || address == limit || burstEdge(gba, address, thumb) ||
+		    inCartTrap(gba, address)) {
 			break;
 		}
 		if (!careful && (address & 3) == 0 && (alone(jit, kind, address, thumb) || alone(jit, kind, address - 4, thumb))) {
@@ -1377,6 +1395,9 @@ static void linkExit(struct Jit* jit, struct Link* link, struct Block* target) {
 // word-aligned. The prefetch buffer's bookkeeping in compiled code assumes whole words, so that
 // code goes to the exact CPU.
 static bool compilable(struct GBA* gba, uint32_t pc, bool thumb) {
+	if (inCartTrap(gba, pc)) {
+		return false;
+	}
 	// ARM code at a halfword address only runs compiled from the cartridge without the prefetch
 	// buffer; anywhere else it is a game running astray, which the exact CPU follows.
 	if (!thumb && (pc & 2) && (!inRom(pc) || gba->prefetchEnabled)) {

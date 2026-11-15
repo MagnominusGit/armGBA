@@ -59,7 +59,7 @@ enum {
 	CONTROL_ENGINE = 0x40,
 
 	SLOTS = 6,
-	STATE_MAGIC = 0x52414741,
+	STATE_MAGIC = 0x52414743,
 };
 
 // A patch slot that holds nothing.
@@ -70,7 +70,8 @@ static const uint16_t slotRegisters[SLOTS][3] = {
 	{ 0x200, 0x220, 0x0E0 }, { 0x280, 0x2A0, 0x240 }, { 0x2C0, 0x2E0, 0x260 },
 };
 
-// What a state holds of the cartridge: everything but the two images.
+// What a state holds of the cartridge besides its flash chip, which follows it: everything but the
+// game's image.
 struct ActionReplayState {
 	uint32_t magic;
 	uint16_t control;
@@ -98,10 +99,18 @@ static struct {
 	uint32_t engine;
 	// The flash chip as kept, while the ID shows over its start (see actionReplayKept)
 	uint8_t* kept;
+	// The flash chip as the cartridge's image has it, before its save: a state holds what differs
+	// from it, so that every player has their own copy of the cartridge and none is sent in netplay
+	uint8_t* factory;
 	bool button;
 	bool flashChanged;
 	struct ActionReplayState s;
 } ar;
+
+// Whether the cartridge attached is Future Console Design's (fcd.c), whose functions these hand to.
+static bool fcd(void) {
+	return !ar.gba && fcdFlash(&(size_t) { 0 });
+}
 
 static uint16_t get16(const uint8_t* p) {
 	return (uint16_t) (p[0] | p[1] << 8);
@@ -123,16 +132,23 @@ static uint32_t count32(const uint8_t* data, size_t size, uint32_t value) {
 
 // An Action Replay's program uses its status register and its control register all through.
 bool actionReplayDetect(const void* data, size_t size) {
+	if (fcdDetect(data, size)) {
+		return true;
+	}
 	return size >= 0x40000 && size <= 0x200000 && count32(data, size, 0x09FE01C0) >= 3 && count32(data, size, 0x0800009C) >= 3;
 }
 
-bool actionReplayActive(const struct GBA* gba) {
+static bool arActive(const struct GBA* gba) {
 	return gba && ar.gba == gba;
+}
+
+bool actionReplayActive(const struct GBA* gba) {
+	return arActive(gba) || fcdActive(gba);
 }
 
 // The cartridge answers in the first 32 MiB of the space, not in its mirrors with other wait states.
 static bool ours(const struct GBA* gba, uint32_t address) {
-	return actionReplayActive(gba) && (address >> 25) == 4;
+	return arActive(gba) && (address >> 25) == 4;
 }
 
 static bool gameShown(void) {
@@ -376,6 +392,9 @@ static uint16_t read16(uint32_t offset) {
 // A read past the end of what the cartridge space shows: the registers, and the engine while the
 // hook runs it.
 bool actionReplayRead(struct GBA* gba, uint32_t address, int size, uint32_t* value) {
+	if (fcdActive(gba)) {
+		return fcdRead(gba, address, size, value);
+	}
 	uint32_t const offset = address & (SIZE_ROM - 1);
 	if (!ours(gba, address) || (offset & ~(AR_WINDOW_SIZE - 1)) != AR_WINDOW) {
 		return false;
@@ -397,6 +416,9 @@ bool actionReplayRead(struct GBA* gba, uint32_t address, int size, uint32_t* val
 
 // The engine, for running: the block's code at 0x09FE0400 while the hook calls it.
 const uint8_t* actionReplayCode(struct GBA* gba, uint32_t address) {
+	if (fcdActive(gba)) {
+		return fcdCode(gba, address);
+	}
 	uint32_t const offset = address & (SIZE_ROM - 1);
 	if (!ours(gba, address) || (offset & ~(AR_WINDOW_SIZE - 1)) != AR_WINDOW || (offset & (AR_WINDOW_SIZE - 1)) < ar.engine ||
 	    !(ar.s.control & CONTROL_ENGINE) || AR_BLOCK + AR_WINDOW_SIZE > ar.flashSize) {
@@ -407,6 +429,9 @@ const uint8_t* actionReplayCode(struct GBA* gba, uint32_t address) {
 
 // A halfword written in the cartridge space. Returns whether the cartridge took it.
 bool actionReplayWrite16(struct GBA* gba, uint32_t address, uint16_t value) {
+	if (fcdActive(gba)) {
+		return fcdWrite16(gba, address, value);
+	}
 	if (!ours(gba, address)) {
 		return false;
 	}
@@ -449,7 +474,8 @@ static void resetState(void) {
 // Power on: the program shows, and the game's own hardware (its save memory and clock) is what the
 // console has, as the game would have without the Action Replay.
 void actionReplayReset(struct GBA* gba) {
-	if (!actionReplayActive(gba)) {
+	fcdReset(gba);
+	if (!arActive(gba)) {
 		return;
 	}
 	unpatch();
@@ -468,6 +494,10 @@ void actionReplayReset(struct GBA* gba) {
 // Puts the Action Replay in a console that has loaded its image, with a game on top (or none).
 bool actionReplayAttach(struct GBA* gba, const void* game, size_t size) {
 	actionReplayDetach(ar.gba);
+	fcdDetach(gba);
+	if (gba && fcdDetect(gba->rom, gba->romSize)) {
+		return fcdAttach(gba, game, size);
+	}
 	if (!gba || !gba->rom || !gba->romSize) {
 		return false;
 	}
@@ -483,6 +513,13 @@ bool actionReplayAttach(struct GBA* gba, const void* game, size_t size) {
 	ar.gba = gba;
 	ar.flash = gba->rom;
 	ar.flashSize = gba->romSize;
+	ar.factory = malloc(ar.flashSize);
+	if (!ar.factory) {
+		free(ar.game);
+		memset(&ar, 0, sizeof(ar));
+		return false;
+	}
+	memcpy(ar.factory, ar.flash, ar.flashSize);
 	// A program for the first cartridges calls the engine at 0x09FE0201, a later one at 0x09FE0401.
 	bool const first = count32(ar.flash, ar.flashSize, 0x08000000 + AR_WINDOW + AR_ENGINE_FIRST + 1) > 0 &&
 	                   !count32(ar.flash, ar.flashSize, 0x08000000 + AR_WINDOW + AR_ENGINE + 1);
@@ -494,7 +531,8 @@ bool actionReplayAttach(struct GBA* gba, const void* game, size_t size) {
 
 // Takes the Action Replay out, leaving its image in the cartridge space for the console to free.
 void actionReplayDetach(struct GBA* gba) {
-	if (!actionReplayActive(gba)) {
+	fcdDetach(gba);
+	if (!arActive(gba)) {
 		return;
 	}
 	unpatch();
@@ -504,11 +542,15 @@ void actionReplayDetach(struct GBA* gba) {
 	gba->romMask = pow2(ar.flashSize) - 1;
 	free(ar.game);
 	free(ar.kept);
+	free(ar.factory);
 	memset(&ar, 0, sizeof(ar));
 }
 
 // The flash chip, which holds the codes added and the settings: the cartridge's own save.
 uint8_t* actionReplayFlash(size_t* size) {
+	if (fcd()) {
+		return fcdFlash(size);
+	}
 	*size = ar.gba ? ar.flashSize : 0;
 	return ar.gba ? ar.flash : NULL;
 }
@@ -516,6 +558,9 @@ uint8_t* actionReplayFlash(size_t* size) {
 // What the chip holds, to keep: the flash, or while the program reads the chip's ID (shown over its
 // first two halfwords), a copy with what those hold.
 const uint8_t* actionReplayKept(size_t* size) {
+	if (fcd()) {
+		return fcdKept(size);
+	}
 	*size = ar.gba ? ar.flashSize : 0;
 	if (!ar.gba || !ar.s.flashId) {
 		return ar.gba ? ar.flash : NULL;
@@ -531,27 +576,54 @@ const uint8_t* actionReplayKept(size_t* size) {
 }
 
 bool actionReplayFlashChanged(void) {
+	if (fcd()) {
+		return fcdFlashChanged();
+	}
 	bool const was = ar.flashChanged;
 	ar.flashChanged = false;
 	return was;
 }
 
-// States: the registers and what is patched where; the images aren't kept.
+// States: the registers and what is patched where, then the flash chip (as kept, without the ID
+// showing), so every device in netplay has the same code lists, menus and codes running.
 size_t actionReplayStateSize(void) {
-	return sizeof(struct ActionReplayState);
+	if (fcd()) {
+		return fcdStateSize();
+	}
+	return sizeof(struct ActionReplayState) + ar.flashSize;
 }
 
 void actionReplaySaveState(struct GBA* gba, void* state) {
-	if (actionReplayActive(gba)) {
-		memcpy(state, &ar.s, sizeof(ar.s));
+	if (fcdActive(gba)) {
+		fcdSaveState(gba, state);
+		return;
+	}
+	if (arActive(gba)) {
+		size_t size;
+		const uint8_t* const kept = actionReplayKept(&size);
+		// What the game and the chip had under the patches, the overlay and the ID come from this
+		// device's own copies as a state loads, so a state holds none of the game or the cartridge
+		struct ActionReplayState s = ar.s;
+		memset(s.patchWas, 0, sizeof(s.patchWas));
+		memset(s.overlayWas, 0, sizeof(s.overlayWas));
+		memset(s.idWas, 0, sizeof(s.idWas));
+		memcpy(state, &s, sizeof(s));
+		// The chip as it differs from the cartridge's own image
+		uint8_t* const out = (uint8_t*) state + sizeof(s);
+		for (size_t i = 0; kept && i < size; ++i) {
+			out[i] = kept[i] ^ ar.factory[i];
+		}
 	}
 }
 
 // Before the console's state loads: the image the state ran with shows, so its size matches.
 bool actionReplayPrepareState(struct GBA* gba, const void* state) {
+	if (fcdActive(gba)) {
+		return fcdPrepareState(gba, state);
+	}
 	struct ActionReplayState s;
 	memcpy(&s, state, sizeof(s));
-	if (!actionReplayActive(gba) || s.magic != STATE_MAGIC) {
+	if (!arActive(gba) || s.magic != STATE_MAGIC) {
 		return false;
 	}
 	unpatch();
@@ -563,7 +635,11 @@ bool actionReplayPrepareState(struct GBA* gba, const void* state) {
 
 // After it: the registers, and the patches and ID put back as the state had them.
 void actionReplayLoadState(struct GBA* gba, const void* state) {
-	if (!actionReplayActive(gba)) {
+	if (fcdActive(gba)) {
+		fcdLoadState(gba, state);
+		return;
+	}
+	if (!arActive(gba)) {
 		return;
 	}
 	struct ActionReplayState s;
@@ -573,6 +649,18 @@ void actionReplayLoadState(struct GBA* gba, const void* state) {
 	memcpy(ar.s.registers, s.registers, sizeof(s.registers));
 	ar.s.flashStep = s.flashStep;
 	ar.s.flashProgram = s.flashProgram;
+	// The state's flash chip, as it differs from the cartridge's image (the ID isn't showing here,
+	// after actionReplayPrepareState)
+	const uint8_t* const flash = (const uint8_t*) state + sizeof(s);
+	bool changes = false;
+	for (uint32_t i = 0; i < ar.flashSize; ++i) {
+		uint8_t const value = flash[i] ^ ar.factory[i];
+		changes |= ar.flash[i] != value;
+		ar.flash[i] = value;
+	}
+	if (changes) {
+		jitRomChanged(gba);
+	}
 	map();
 	showId(s.flashId);
 	patch();

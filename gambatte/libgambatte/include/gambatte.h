@@ -310,10 +310,11 @@ public:
 	  * kind as GB::MEGA_DUCK_MAPPER numbers it. */
 	bool swapMegaDuckCartridge(char const *romdata, std::size_t size, unsigned kind);
 
-	/** armGBA: puts Datel's Action Replay, its flash chip holding these bytes, in front of the
-	  * cartridge loaded, which is the game on top of it; with hasGame false nothing is on top.
-	  * Call after load(); it powers on with the console's next reset. */
-	bool attachActionReplay(char const *flash, std::size_t size, bool hasGame);
+	/** armGBA: puts a cheat cartridge, its program these bytes, in front of the cartridge loaded, which
+	  * is the game on top of it; with hasGame false nothing is on top. Galoob's Game Genie by its
+	  * program, else Datel's Action Replay, its flash chip holding them. Call after load(); it powers
+	  * on with the console's next reset. */
+	bool attachCheatCart(char const *program, std::size_t size, bool hasGame);
 	/** armGBA: the Action Replay's button and switch (on: codes on) */
 	void setActionReplayControls(bool button, bool switchOn);
 	/** armGBA: what the Action Replay keeps with the power off (its flash chip, or the first one's
@@ -321,6 +322,8 @@ public:
 	unsigned char * actionReplayFlash(std::size_t *size);
 	/** armGBA: whether the Action Replay's flash chip was written since this was last asked */
 	bool actionReplayFlashChanged();
+	// armGBA: codes for the Game Genie to put in its empty slots (see CheatCartGb::setCodes)
+	void setGameGenieCodes(unsigned char const *digits, unsigned char const *counts);
 
 	/**
 	  * Saves emulator state to the state slot selected with selectState().
@@ -513,6 +516,8 @@ public:
 private:
 	struct Priv;
 	Priv *const p_;
+	// armGBA: a cheat cartridge's chip, in a state, as it differs from its image (see CheatCartGb)
+	void swapCheatFactory();
 
 	GB(GB const &);
 	GB & operator=(GB const &);

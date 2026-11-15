@@ -64,6 +64,17 @@ extern bool tiltCartridge;
 extern bool megaDuckGame;
 // An Action Replay is the game loaded, with a game on top of it or none.
 extern bool actionReplayLoaded;
+// The cheat cartridge loaded is Galoob's Game Genie (for the Game Boy), which has no button or switch
+extern bool gameGenieLoaded;
+extern bool xploderLoaded;
+// The Xploder Advance or CodeBreaker for the Game Boy Advance (which have no button or switch)
+extern const char* fcdLoaded;
+bool replayHasButton(void);
+// How many cheats RetroArch's database has for the game on top of the Game Genie
+size_t genieCheatCount(void);
+// Whether Import Cheats from RetroArch works with the cheat cartridge loaded
+bool cheatImportable(void);
+bool cheatRestorable(void);
 enum { THREADED_OFF, THREADED_ON, THREADED_LATE };
 extern int threadedVideo;
 // The threads that draw with Threaded Video: 1 or 2.
@@ -103,14 +114,39 @@ void ereaderStart(void);
 void ereaderFrame(void);
 void ereaderForget(void);
 
+// cht.c: RetroArch's cheat database. chtDatabase finds its folder (systemFolder is the frontend's
+// system folder); chtCheats reads the cheats it has for the game at gamePath, those whose every code
+// accepts takes, the file named as the game first, leaving out cheats already read; returns how many.
+struct ChtCheat {
+	char description[96];
+	char code[160];
+	// Which of the database's files it came from, in the order read
+	unsigned file;
+};
+bool chtDatabase(const char* systemFolder, char* out, size_t outSize);
+size_t chtCheats(const char* database, bool advance, const char* gamePath, bool (*accepts)(const char* code), struct ChtCheat* cheats, size_t most);
+bool chtGameGenieCode(const char* code);
+bool chtGameSharkCode(const char* code);
+bool chtCodeBreakerPart(const char* code);
+// gbacheats.c: fcdImport adds cheats to the Xploder Advance's or CodeBreaker's database in its flash chip, under
+// the game (gameSize bytes at game) its master code knows; returns how many, -3 when it has no
+// master code for the game, or -1 when the database can't be read. fcdCipherWorks checks the cipher.
+int fcdImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize, const struct ChtCheat* cheats, size_t count,
+              size_t* already, size_t* left);
+bool fcdCipherWorks(void);
+// arGbaImport adds them to the Action Replay v3's or GBX's list in its flash chip, likewise (and -4
+// for the Action Replay MAX's, which it doesn't know)
+int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize, const struct ChtCheat* cheats, size_t count,
+                size_t* already, size_t* left);
+bool arGbaCipherWorks(void);
+// maxImport adds them to the Action Replay MAX's code list file for the game, likewise
+int maxImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize, const struct ChtCheat* cheats, size_t count,
+              size_t* already, size_t* left);
+
 // printout.c: the Game Boy Printer's paper, saved as a picture in the save folder once it is cut, or
 // as the game closes.
 void printoutPage(const uint8_t* pixels, int rows, bool cut, uint32_t number);
 void printoutFinish(void);
-
-// replaycodes.c: the Action Replay's codes, from what it keeps (its flash chip, or the Pro Action
-// Replay's RAM), written as text to file under title; nothing is written for what isn't known.
-void replayCodesWrite(const char* file, const char* title, const uint8_t* kept, size_t size, bool gameBoy);
 
 // saves.c: each player's save memory and files, the saves the core keeps itself (the other
 // players', and player 1's with a pair file or Player 1's Save Folder), and the Saves options.

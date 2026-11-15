@@ -161,20 +161,46 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_megaduck_slot", "Mega Duck Laptop Cartridge", NULL,
 	  "The cartridge in the laptop's slot, from the laptop program's folder; the laptop runs it when asked. Applies on Restart.",
 	  NULL, "system", { { "none", "None" }, { NULL, NULL } }, "none" },
-	{ "armgba_action_replay_game", "Action Replay Cartridge", NULL,
-	  "The game plugged in on top of the Action Replay, from the games beside it (those played last first); "
-	  "Action Replay Button, Open Action Replay Menu and Hold Action Replay Button press its button. Applies on Restart.",
+	{ "armgba_action_replay_game", "Game on Top", NULL,
+	  "The game plugged in on top of the cheat cartridge (an Action Replay, Game Genie, Xploder or "
+	  "CodeBreaker), from the games beside it (those played last first); Cheat Cartridge Button, Open "
+	  "Cheat Cartridge Menu and Hold Action Replay Button press the cartridge's button. Applies on Restart.",
 	  NULL, "system", { { "none", "None" }, { NULL, NULL } }, "none" },
-	{ "armgba_action_replay_press", "Open Action Replay Menu", NULL,
-	  "Presses the Game Boy Action Replay's button once as this menu closes, which opens its in-game menu "
-	  "(on the cartridges that have one). Then goes back to Off.",
+	{ "armgba_game_genie_code_1", "Game Genie Code 1", NULL,
+	  "A cheat from RetroArch's cheat database for the game on top, which the Game Genie shows in an empty "
+	  "slot of its code screen, as if typed in (a cheat of two codes takes two). Applies as the code screen "
+	  "shows: on Restart, once in the game.",
+	  NULL, "system", { { "none", "None" }, { NULL, NULL } }, "none" },
+	{ "armgba_game_genie_code_2", "Game Genie Code 2", NULL,
+	  "A cheat from RetroArch's cheat database for the game on top, which the Game Genie shows in an empty "
+	  "slot of its code screen, as if typed in (a cheat of two codes takes two). Applies as the code screen "
+	  "shows: on Restart, once in the game.",
+	  NULL, "system", { { "none", "None" }, { NULL, NULL } }, "none" },
+	{ "armgba_game_genie_code_3", "Game Genie Code 3", NULL,
+	  "A cheat from RetroArch's cheat database for the game on top, which the Game Genie shows in an empty "
+	  "slot of its code screen, as if typed in (a cheat of two codes takes two). Applies as the code screen "
+	  "shows: on Restart, once in the game.",
+	  NULL, "system", { { "none", "None" }, { NULL, NULL } }, "none" },
+	{ "armgba_cheat_import", "Import Cheats from RetroArch", NULL,
+	  "Adds to the cheat cartridge's list the cheats RetroArch's cheat database has for the game on top, "
+	  "those it doesn't have yet (alike by their codes), switched off, then restarts so the cartridge "
+	  "reads them. Then goes back to Off. Not in netplay.",
+	  NULL, "system", { { "off", "Off" }, { "import", "Import" }, { NULL, NULL } }, "off" },
+	{ "armgba_cheat_restore", "Restore Factory Cheats", NULL,
+	  "Puts the cheat cartridge's chip back as its ROM has it, as on its first start: the cheats, codes "
+	  "and settings kept since go, and the game on top stays. Then restarts, and goes back to Off. Not in "
+	  "netplay.",
+	  NULL, "system", { { "off", "Off" }, { "restore", "Restore" }, { NULL, NULL } }, "off" },
+	{ "armgba_action_replay_press", "Open Cheat Cartridge Menu", NULL,
+	  "Presses the button of the Game Boy cheat cartridge (an Action Replay or Xploder) once as this menu "
+	  "closes, which opens its in-game menu (on the cartridges that have one). Then goes back to Off.",
 	  NULL, "system", { { "off", "Off" }, { "press", "Open" }, { NULL, NULL } }, "off" },
 	{ "armgba_action_replay_hold", "Hold Action Replay Button", NULL,
 	  "Holds the Game Boy Advance Action Replay's button down while On, for its button codes: those that "
 	  "write only while it's held, and the slow-down, which stops the game until it's Off again. Goes "
 	  "back to Off when a game starts.",
 	  NULL, "system", { { "off", "Off" }, { "on", "On" }, { NULL, NULL } }, "off" },
-	{ "armgba_action_replay_press_mode", "Action Replay Button Press", NULL,
+	{ "armgba_action_replay_press_mode", "Cheat Cartridge Button Press", NULL,
 	  "How the Game Boy Advance Action Replay's stick click works its button: Toggle holds it down until "
 	  "clicked again (as Hold Action Replay Button does); Hold, only while the stick click is held.",
 	  NULL, "system", { { "toggle", "Toggle" }, { "hold", "Hold" }, { NULL, NULL } }, "toggle" },
@@ -183,11 +209,11 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "in the game; Off, the game runs alone, with the codes the Action Replay wrote before starting it (as "
 	  "its menu asks for Pokemon games).",
 	  NULL, "system", { { "on", "On" }, { "off", "Off" }, { NULL, NULL } }, "on" },
-	{ "armgba_action_replay_button", "Action Replay Button", NULL,
-	  "A stick click that's the Action Replay's button: on the Game Boy, it opens the in-game menu, as Open "
-	  "Action Replay Menu does; on the Game Boy Advance, it holds the button down for the button codes, "
-	  "as Action Replay Button Press says. Off leaves both stick clicks to their own uses; R3 or L3 takes "
-	  "that one from them.",
+	{ "armgba_action_replay_button", "Cheat Cartridge Button", NULL,
+	  "A stick click that's the cheat cartridge's button: on the Game Boy (an Action Replay or Xploder), it "
+	  "opens the in-game menu, as Open Cheat Cartridge Menu does; on the Game Boy Advance (an Action "
+	  "Replay), it holds the button down for the button codes, as Cheat Cartridge Button Press says. Off "
+	  "leaves both stick clicks to their own uses; R3 or L3 takes that one from them.",
 	  NULL, "system", { { "r3", "R3" }, { "l3", "L3" }, { "off", "Off" }, { NULL, NULL } }, "r3" },
 	{ "armgba_threaded_video", "Threaded Video", NULL,
 	  "Draws on a second CPU core for speed. One Frame Late is faster but a frame behind.", NULL, "video",
@@ -301,7 +327,7 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_l3_button", "L3 Button", NULL,
 	  "Fast-Forward Toggle: click L3 to fast-forward until it's clicked again. Soft Reset: hold L3 for half "
 	  "a second to press A + B + Select + Start, which resets most games at once (Pokemon among them). "
-	  "L3 keeps a Restart or Switch Controller Combo or the Action Replay's button instead.",
+	  "L3 keeps a Restart or Switch Controller Combo or the cheat cartridge's button instead.",
 	  NULL, "input", { { "fast forward", "Fast-Forward Toggle" }, { "soft reset", "Soft Reset (Hold)" }, { "off", "Off" }, { NULL, NULL } }, "fast forward" },
 	{ "armgba_gb_tilt", "Tilt Control", NULL,
 	  "What tilts motion sensor cartridges; L flicks a Game Boy one. Device Motion uses the device's own motion sensors where the frontend has them, and the left stick in netplay.",
@@ -450,7 +476,7 @@ int optionChoice(const char* key, const struct Choice* choices, size_t count, in
 	return fallback;
 }
 
-// An Action Replay or a Mega Duck plays alone, whatever Link Mode says.
+// A cheat cartridge or a Mega Duck plays alone, whatever Link Mode says.
 bool togetherWanted(void) {
 	const char* value = option("armgba_link_mode");
 	return !actionReplayLoaded && !megaDuckGame && value && !strcmp(value, "together");
@@ -533,12 +559,17 @@ bool showOptions(void) {
 		{ "armgba_megaduck_speech", megaDuckGame },
 		{ "armgba_megaduck_slot", megaDuckGame },
 		{ "armgba_action_replay_game", actionReplayLoaded },
-		{ "armgba_action_replay_switch", actionReplayLoaded && !advance },
+		{ "armgba_cheat_import", cheatImportable() },
+		{ "armgba_cheat_restore", cheatRestorable() },
+		{ "armgba_game_genie_code_1", gameGenieLoaded && genieCheatCount() },
+		{ "armgba_game_genie_code_2", gameGenieLoaded && genieCheatCount() },
+		{ "armgba_game_genie_code_3", gameGenieLoaded && genieCheatCount() },
+		{ "armgba_action_replay_switch", actionReplayLoaded && !gameGenieLoaded && !xploderLoaded && !advance },
 		{ "armgba_l2_r2", advance },
-		{ "armgba_action_replay_press", actionReplayLoaded && !advance },
-		{ "armgba_action_replay_hold", actionReplayLoaded && advance },
-		{ "armgba_action_replay_press_mode", actionReplayLoaded && advance },
-		{ "armgba_action_replay_button", actionReplayLoaded },
+		{ "armgba_action_replay_press", actionReplayLoaded && !gameGenieLoaded && !advance },
+		{ "armgba_action_replay_hold", replayHasButton() && advance },
+		{ "armgba_action_replay_press_mode", replayHasButton() && advance },
+		{ "armgba_action_replay_button", replayHasButton() },
 		{ "armgba_gb_color_correction", !advance },
 		{ "armgba_gb_screen", !advance },
 		{ "armgba_gb_contrast", lcdCastsShadow() },

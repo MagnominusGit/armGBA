@@ -366,7 +366,7 @@ gb_ulong Memory::dma(gb_ulong cc) {
 		unsigned const data = (src & -vrambank_size()) == mm_vram_begin || src >= mm_wram_mirror_begin
 			? cartBus(cc + 4) // cart bus seems to pull up sooner here? might be prefetch related
 			// armGBA: the Action Replay answers DMA's reads of the ROM area without a CPU read's effects
-			: src < mm_vram_begin && cart_.actionReplay() ? cart_.romHookDmaRead(src)
+			: src < mm_vram_begin && cart_.cheatCart() ? cart_.romHookDmaRead(src)
 			: read<false, false, false, false>(src, cc);
 
 		cc += 2 + 2 * doubleSpeed;
@@ -594,7 +594,7 @@ void Memory::updateOamDma(gb_ulong const cc) {
 
 		if (oamDmaPos_ < oam_size) {
 			// armGBA: the Action Replay answers OAM DMA's reads of the ROM area too
-			if (cart_.oamDmaSrc() == oam_dma_src_rom && cart_.actionReplay())
+			if (cart_.oamDmaSrc() == oam_dma_src_rom && cart_.cheatCart())
 				ioamhram_[oamDmaPos_] = cart_.romHookDmaRead(ioamhram_[0x146] * 0x100 + oamDmaPos_);
 			else if (oamDmaSrc) ioamhram_[oamDmaPos_] = oamDmaSrc[oamDmaPos_];
 			else if (cart_.isHuC3()) ioamhram_[oamDmaPos_] = cart_.HuC3Read(oamDmaPos_, cc);

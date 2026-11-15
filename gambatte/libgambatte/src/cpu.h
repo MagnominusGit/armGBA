@@ -41,8 +41,8 @@ public:
 
 	bool getMemoryArea(int which, unsigned char **data, int *length) { return mem_.getMemoryArea(which, data, length); }
 	bool swapMegaDuckCartridge(unsigned char const *data, std::size_t size, unsigned kind) { return mem_.swapMegaDuckCartridge(data, size, kind); }
-	bool attachActionReplay(unsigned char const *flash, std::size_t size, bool hasGame) { return mem_.attachActionReplay(flash, size, hasGame); }
-	ActionReplayGb *actionReplay() const { return mem_.actionReplay(); }
+	bool attachCheatCart(unsigned char const *program, std::size_t size, bool hasGame) { return mem_.attachCheatCart(program, size, hasGame); }
+	CheatCartGb *cheatCart() const { return mem_.cheatCart(); }
 	void resetCartChip() { mem_.resetCartChip(); }
 
 	void setVideoBuffer(uint_least32_t *videoBuf, std::ptrdiff_t pitch) {

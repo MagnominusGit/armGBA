@@ -106,7 +106,13 @@ unsigned long long Time::diff(gb_ulong const cc) {
 }
 
 SYNCFUNC(Time) {
-	NSS(lastCycles_);
+	// armGBA: on the device's time the console's cycles aren't counted, and the cycle they were last
+	// counted at is set again on load (setDeviceTime), so a state holds 0 for it then: one saved
+	// straight after a load is the same as the one loaded, as netplay checks.
+	gb_ulong cycles = isReader || useCycles_ ? lastCycles_ : 0;
+	NSS(cycles);
+	if (isReader)
+		lastCycles_ = cycles;
 	NSS(useCycles_);
 	NSS(ds_);
 }

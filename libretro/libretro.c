@@ -21,6 +21,7 @@
 #include "patch.h"
 #include "workers.h"
 
+#include <ctype.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -75,6 +76,14 @@ static struct {
 	uint8_t turboA[MAX_PLAYERS], turboB[MAX_PLAYERS], turboL, turboR;
 	uint8_t solarHeld, flickHeld;
 } pressed;
+// The same for the Action Replay's button and L3, in a part of the state of their own, after the rest
+// (a state from before has none, and they start up): Hold Action Replay Button, whether its stick
+// click was held, the frames left of Open Action Replay Menu's press; whether L3 was held and for how
+// many frames, and the frames left of its soft reset.
+static struct {
+	uint8_t replayHold, replayClicked, replayPressing;
+	uint8_t l3Held, l3HeldFor, softResetFrames;
+} controls;
 // Shared Controls with one console: everyone's buttons, or one player's at a time, passed around.
 enum { SHARED_OFF, SHARED_EVERYONE, SHARED_PASS };
 static int sharedControls;
@@ -212,7 +221,6 @@ enum { L3_FAST_FORWARD, L3_SOFT_RESET, L3_OFF };
 enum { SOFT_RESET_HOLD = 30, SOFT_RESET_PRESS = 10 };
 static int l3Button = L3_FAST_FORWARD;
 static bool fastForwardLatched;
-static unsigned softResetFrames;
 // Screen Layout Control: in netplay, whose L2 and R2 change this device's screens, -1 for Auto.
 // Show Player Numbers: each player's number on their screen.
 static int r2Follows = -1;
@@ -242,6 +250,7 @@ static struct retro_core_option_v2_definition* secondOption;
 // Mega Duck Laptop Cartridge, whose choices are the Mega Duck cartridges beside the laptop program
 static struct retro_core_option_v2_definition* slotOption;
 static struct retro_core_option_v2_definition* replayOption;
+static struct retro_core_option_v2_definition* genieOptions[3];
 static struct ListedGame slotGames[SECOND_CHOICES];
 static size_t slotCount;
 static char slotFirst[PATH_SIZE];
@@ -276,13 +285,13 @@ static void stopFastForward(void);
 // Open Action Replay Menu holds it.
 enum { REPLAY_BUTTON_OFF = ~0u, REPLAY_PRESS_FRAMES = 6 };
 static unsigned replayButton = RETRO_DEVICE_ID_JOYPAD_R3;
-static unsigned replayPressing;
 // Hold Action Replay Button: the Game Boy Advance one's button held down; and whether its stick click
 // toggles that (Action Replay Button Press) rather than holding the button only while it's held.
-static bool replayHold;
+// The Hold option as last read, so only a change made in the menu holds or lets go of the button.
+static bool replayHoldOption;
 static bool replayToggles = true;
 // How to use the Action Replay just loaded, shown as it starts: which one it is, or none to show.
-enum ReplayHint { HINT_NONE, HINT_NO_GAME, HINT_GAME_BOY, HINT_GAME_BOY_FIRST, HINT_ADVANCE };
+enum ReplayHint { HINT_NONE, HINT_NO_GAME, HINT_GAME_BOY, HINT_GAME_BOY_FIRST, HINT_GAME_GENIE, HINT_XPLODER, HINT_ADVANCE, HINT_FCD };
 static enum ReplayHint replayHint;
 // In rollback netplay every device runs the host's session. Each device tags its session, and the
 // tag goes in every state. A device that loads a state with another device's tag has joined that
@@ -296,6 +305,15 @@ bool netplayJoined;
 bool tiltCartridge;
 bool megaDuckGame;
 bool actionReplayLoaded;
+bool gameGenieLoaded;
+bool xploderLoaded;
+const char* fcdLoaded;
+
+// Whether the cheat cartridge loaded has a button, which a stick click can be: the Action Replays and
+// the Xploder GB.
+bool replayHasButton(void) {
+	return actionReplayLoaded && !gameGenieLoaded && !fcdLoaded;
+}
 // Whether the GameCube link was last shown as connected.
 static bool gamecubeShown;
 
@@ -381,14 +399,14 @@ void retro_set_environment(retro_environment_t callback) {
 		{ "Cartridge in the Slot", "bin|duck|md1|md2|md20s|md25s", false, false, true, NULL, 0 },
 	};
 	static const struct retro_subsystem_rom_info replayRoms[] = {
-		{ "Action Replay", "gba|bin|gb|gbc", false, false, true, NULL, 0 },
+		{ "Cheat Cartridge", "gba|bin|gb|gbc", false, false, true, NULL, 0 },
 		{ "Game on Top", "gba|bin|gb|gbc", false, false, true, firstMemory, 1 },
 	};
 	static const struct retro_subsystem_info subsystems[] = {
 		{ "Two Game Boys (Link Cable)", "gblink", roms, 2, SUBSYSTEM_LINK },
 		{ "Two Game Boy Advances (Link Cable)", "gbalink", advanceRoms, 2, SUBSYSTEM_ADVANCE_LINK },
 		{ "Mega Duck Laptop (Cartridge in the Slot)", "megaducklaptop", laptopRoms, 2, SUBSYSTEM_MEGADUCK_LAPTOP },
-		{ "Action Replay (Game on Top)", "actionreplay", replayRoms, 2, SUBSYSTEM_ACTION_REPLAY },
+		{ "Cheat Cartridge (Game on Top)", "actionreplay", replayRoms, 2, SUBSYSTEM_ACTION_REPLAY },
 		{ NULL, NULL, NULL, 0, 0 },
 	};
 	callback(RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO, (void*) subsystems);
@@ -403,6 +421,9 @@ void retro_set_environment(retro_environment_t callback) {
 		secondOption = optionDefinition("armgba_player2_game");
 		slotOption = optionDefinition("armgba_megaduck_slot");
 		replayOption = optionDefinition("armgba_action_replay_game");
+		genieOptions[0] = optionDefinition("armgba_game_genie_code_1");
+		genieOptions[1] = optionDefinition("armgba_game_genie_code_2");
+		genieOptions[2] = optionDefinition("armgba_game_genie_code_3");
 		findSaveOptions();
 	}
 	// Low Memory: the frontend gives the core the game's path, and the core maps the file.
@@ -438,7 +459,7 @@ unsigned retro_api_version(void) {
 void retro_get_system_info(struct retro_system_info* info) {
 	memset(info, 0, sizeof(*info));
 	info->library_name = "armGBA";
-	info->library_version = "1.6";
+	info->library_version = "1.7";
 	info->valid_extensions = "gba|bin|gb|gbc|gb2|gba2|duck|md0|md1|md2|md20s|md25s";
 	info->need_fullpath = false;
 	info->block_extract = false;
@@ -614,14 +635,14 @@ static void showButtons(void) {
 		// that console. With a tilt cartridge, L is the flick.
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, tiltCartridge ? "Flick (Motion Sensor)" : "Stretch (Game Boy Advance Model)");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "Stretch (Game Boy Advance Model)");
-		if (actionReplayLoaded && replayButton != REPLAY_BUTTON_OFF) {
-			BUTTON(RETRO_DEVICE_JOYPAD, 0, replayButton, "Action Replay Button");
+		if (replayHasButton() && replayButton != REPLAY_BUTTON_OFF) {
+			BUTTON(RETRO_DEVICE_JOYPAD, 0, replayButton, "Cheat Cartridge Button");
 		}
 	} else {
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "L");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "R");
-		if (actionReplayLoaded && replayButton != REPLAY_BUTTON_OFF) {
-			BUTTON(RETRO_DEVICE_JOYPAD, 0, replayButton, "Action Replay Button");
+		if (replayHasButton() && replayButton != REPLAY_BUTTON_OFF) {
+			BUTTON(RETRO_DEVICE_JOYPAD, 0, replayButton, "Cheat Cartridge Button");
 		}
 	}
 	if (l3Free()) {
@@ -723,14 +744,30 @@ static void readScreenSize(unsigned* width, unsigned* height) {
 // The Game Boy Action Replay's switch (Action Replay Switch), which the cartridge reads all the time.
 static bool replaySwitch = true;
 
+static void applyGenieCodes(void);
+
 static void readOptions(void) {
 	replaySwitch = !optionIs("armgba_action_replay_switch", "off");
-	replayHold = optionIs("armgba_action_replay_hold", "on");
-	replayToggles = !optionIs("armgba_action_replay_press_mode", "hold");
+	applyGenieCodes();
+	// In netplay the button only comes from the controller, which every device sees alike; the menu's
+	// options are each device's own.
+	bool const hold = optionIs("armgba_action_replay_hold", "on");
+	if (hold != replayHoldOption) {
+		replayHoldOption = hold;
+		if (!netplaySeen) {
+			controls.replayHold = hold;
+		}
+	}
+	// In netplay what the stick clicks and combos do is the host's, which its states bring (see
+	// retro_unserialize); this device's options wait until a game is loaded again.
+	bool const toggles = !optionIs("armgba_action_replay_press_mode", "hold");
 	unsigned const button = optionIs("armgba_action_replay_button", "off")  ? REPLAY_BUTTON_OFF
 	                        : optionIs("armgba_action_replay_button", "l3") ? RETRO_DEVICE_ID_JOYPAD_L3
 	                                                                        : RETRO_DEVICE_ID_JOYPAD_R3;
-	if (button != replayButton) {
+	if (!netplaySeen) {
+		replayToggles = toggles;
+	}
+	if (button != replayButton && !netplaySeen) {
 		replayButton = button;
 		if (actionReplayLoaded) {
 			showButtons();
@@ -885,10 +922,12 @@ static void readOptions(void) {
 	static const struct Choice l3Choices[] = { { "fast forward", L3_FAST_FORWARD }, { "soft reset", L3_SOFT_RESET }, { "off", L3_OFF } };
 	int const l3 = optionChoice("armgba_l3_button", l3Choices, COUNT(l3Choices), L3_FAST_FORWARD);
 	int const restart = optionChoice("armgba_restart_buttons", restartChoices, COUNT(restartChoices), RESTART_L_R_START);
-	if (triggers != turboOnTriggers || l3 != l3Button || restart != restartButtons) {
+	if (triggers != turboOnTriggers || (!netplaySeen && (l3 != l3Button || restart != restartButtons))) {
 		turboOnTriggers = triggers;
-		l3Button = l3;
-		restartButtons = restart;
+		if (!netplaySeen) {
+			l3Button = l3;
+			restartButtons = restart;
+		}
 		if (gba || gameBoy) {
 			showButtons();
 		}
@@ -1534,7 +1573,7 @@ static void rememberSlotChoice(void) {
 
 // Action Replay Cartridge: the game on top of an Action Replay, from the Game Boy Advance games
 // beside it, those played most recently first, remembered for each Action Replay. The subsystem
-// "Action Replay (Game on Top)" takes any game.
+// "Cheat Cartridge (Game on Top)" takes any game.
 static struct ListedGame replayGames[SECOND_CHOICES];
 static size_t replayCount;
 static char replayFirst[PATH_SIZE];
@@ -1544,6 +1583,8 @@ static char replayGamePath[PATH_SIZE];
 static bool replayHasGame;
 static const struct retro_game_info* replayGameGiven;
 
+// Before, the game on top was kept in this file, for every cheat cartridge; it's read for a
+// cartridge whose save doesn't say.
 static void replayMemoryFile(char* out, size_t outSize) {
 	const char* saveDirectory = NULL;
 	environment(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &saveDirectory);
@@ -1566,17 +1607,90 @@ static const char* chosenReplayGame(void) {
 	return NULL;
 }
 
-// How recently a game was played: its save's time, or 0 without one. Other Action Replays come last.
+// How recently a game was played: its save's time, or 0 without one. Other cheat cartridges come last.
 static long long replayRank(const char* path, void* context) {
 	(void) context;
-	if (strstr(path, "Action Replay")) {
-		return -1;
+	static const char* const carts[] = { "Action Replay", "Game Genie", "GameShark", "Xploder", "CodeBreaker", "Code Breaker" };
+	for (size_t i = 0; i < sizeof(carts) / sizeof(*carts); ++i) {
+		if (strstr(path, carts[i])) {
+			return -1;
+		}
 	}
 	char file[SAVE_PATH_SIZE];
 	char rtc[SAVE_PATH_SIZE];
 	saveFilesFor(path, file, rtc);
 	struct stat info;
 	return stat(file, &info) ? 0 : (long long) info.st_mtime;
+}
+
+// The game on top is kept in the cheat cartridge's save, after what the cartridge itself keeps (its
+// flash chip or RAM; nothing for the Game Genie): this mark, the game's file name (empty for none) and
+// a newline. A save without it is from before, or has no game chosen yet.
+static const char replayTopMark[] = "\nROM Inserted: ";
+static char replayTop[512];
+static bool replayTopKept;
+// The Game Genie's save then names the cheats chosen for its code screen, a line each:
+// "Game Genie Code 1: " and the codes, as RetroArch's cheat database writes them.
+static const char genieMark[] = "Game Genie Code ";
+enum { GENIE_SLOTS = 3, GENIE_CODE = sizeof(((struct ChtCheat*) 0)->code) };
+static char genieKept[GENIE_SLOTS][GENIE_CODE];
+// Whether the cheat cartridge's save file is one armGBA can't tell, which isn't written for the game
+// on top alone.
+static bool replaySaveForeign;
+
+// Reads the game on top (and the Game Genie's cheats) from the end of the save at file. Returns where
+// that starts (the file's size without it), or -1 with no file.
+static long readReplayTop(const char* file) {
+	replayTopKept = false;
+	memset(genieKept, 0, sizeof(genieKept));
+	FILE* f = fopen(file, "rb");
+	if (!f) {
+		return -1;
+	}
+	enum { MARK = sizeof(replayTopMark) - 1, MOST = MARK + sizeof(replayTop) + GENIE_SLOTS * (sizeof(genieMark) + 4 + GENIE_CODE) };
+	char tail[MOST + 1];
+	long size = fseek(f, 0, SEEK_END) ? 0 : ftell(f);
+	long const from = size > MOST ? size - MOST : 0;
+	size_t const n = size > 0 && !fseek(f, from, SEEK_SET) ? fread(tail, 1, (size_t) (size - from), f) : 0;
+	fclose(f);
+	// The last mark: then lines of text, the first the game's name, that end the file
+	for (size_t i = n > MARK ? n - MARK : 0; n > MARK && i-- > 0;) {
+		if (memcmp(&tail[i], replayTopMark, MARK)) {
+			continue;
+		}
+		char* const lines = &tail[i + MARK];
+		size_t const length = n - i - MARK;
+		if (tail[n - 1] != '\n' || memchr(lines, '\0', length)) {
+			break;
+		}
+		tail[n] = '\0';
+		char* const end = strchr(lines, '\n');
+		size_t const nameLength = (size_t) (end - lines);
+		if (nameLength >= sizeof(replayTop) || memchr(lines, '/', nameLength)) {
+			break;
+		}
+		memcpy(replayTop, lines, nameLength);
+		replayTop[nameLength] = '\0';
+		replayTopKept = true;
+		for (char* line = end + 1; *line;) {
+			char* const next = strchr(line, '\n');
+			*next = '\0';
+			int slot = 0;
+			int used = 0;
+			if (!strncmp(line, genieMark, sizeof(genieMark) - 1) && sscanf(line + sizeof(genieMark) - 1, "%d: %n", &slot, &used) == 1 &&
+			    used && slot >= 1 && slot <= GENIE_SLOTS) {
+				snprintf(genieKept[slot - 1], GENIE_CODE, "%s", line + sizeof(genieMark) - 1 + used);
+			}
+			line = next + 1;
+		}
+		return from + (long) i;
+	}
+	return size;
+}
+
+static const char* fileName(const char* path) {
+	const char* const slash = strrchr(path, '/');
+	return slash ? slash + 1 : path;
 }
 
 static void offerReplayGames(const char* path) {
@@ -1594,64 +1708,752 @@ static void offerReplayGames(const char* path) {
 	}
 	replayOption->values[n] = (struct retro_core_option_value) { NULL, NULL };
 	setOptions();
+	// RetroArch drops the option's value as the core starts, when the list holds only None, so the
+	// core keeps it: in the cartridge's save, or before, in the file for all of them.
+	char save[SAVE_PATH_SIZE];
+	char rtc[SAVE_PATH_SIZE];
+	saveFilesFor(path, save, rtc);
+	readReplayTop(save);
 	char memory[PATH_SIZE];
 	char choice[PATH_SIZE];
 	replayMemoryFile(memory, sizeof(memory));
-	if (choiceRecall(memory, replayFirst, choice, sizeof(choice))) {
-		for (size_t i = 0; i < replayCount; ++i) {
-			if (!strcmp(choice, replayGames[i].path)) {
-				struct retro_variable variable = { "armgba_action_replay_game", choice };
-				environment(RETRO_ENVIRONMENT_SET_VARIABLE, &variable);
-			}
+	bool const before = !replayTopKept && choiceRecall(memory, replayFirst, choice, sizeof(choice));
+	for (size_t i = 0; (replayTopKept || before) && i < replayCount; ++i) {
+		if (replayTopKept ? !strcmp(replayTop, fileName(replayGames[i].path)) : !strcmp(choice, replayGames[i].path)) {
+			struct retro_variable variable = { "armgba_action_replay_game", replayGames[i].path };
+			environment(RETRO_ENVIRONMENT_SET_VARIABLE, &variable);
 		}
 	}
 }
 
-static void rememberReplayChoice(void) {
-	const char* value = option("armgba_action_replay_game");
-	if (*replayFirst && value && (!strcmp(value, "none") || chosenReplayGame())) {
-		char memory[PATH_SIZE];
-		replayMemoryFile(memory, sizeof(memory));
-		choiceRemember(memory, replayFirst, value);
+// Game Genie Code 1-3: the Game Genie cheats RetroArch's cheat database has for the game on top.
+static struct ChtCheat genieCheats[RETRO_NUM_CORE_OPTION_VALUES_MAX - 2];
+static size_t genieCount;
+
+size_t genieCheatCount(void) {
+	return genieCount;
+}
+
+// The cheat a Game Genie Code option has chosen, or NULL.
+static const char* genieChosen(int slot) {
+	char key[32];
+	snprintf(key, sizeof(key), "armgba_game_genie_code_%d", slot + 1);
+	const char* const value = option(key);
+	for (size_t i = 0; value && i < genieCount; ++i) {
+		if (!strcmp(value, genieCheats[i].code)) {
+			return genieCheats[i].code;
+		}
+	}
+	return NULL;
+}
+
+// The chosen cheats' codes go to the Game Genie, in order, one slot each, as far as three go.
+static void applyGenieCodes(void) {
+	// In netplay the codes are the host's, which its states bring; each device's options are its own.
+	if (!gameGenieLoaded || netplaySeen) {
+		return;
+	}
+	uint8_t digits[GENIE_SLOTS * 9];
+	uint8_t counts[GENIE_SLOTS] = { 0 };
+	memset(digits, 0x10, sizeof(digits));
+	int slot = 0;
+	for (int i = 0; i < GENIE_SLOTS; ++i) {
+		const char* const chosen = genieChosen(i);
+		char codes[GENIE_CODE];
+		snprintf(codes, sizeof(codes), "%s", chosen ? chosen : "");
+		for (char* code = strtok(codes, "+"); code && slot < GENIE_SLOTS; code = strtok(NULL, "+")) {
+			if (!chtGameGenieCode(code)) {
+				continue;
+			}
+			int n = 0;
+			for (const char* c = code; *c; ++c) {
+				if (*c != '-') {
+					digits[slot * 9 + n++] = (uint8_t) (isdigit((unsigned char) *c) ? *c - '0' : toupper((unsigned char) *c) - 'A' + 10);
+				}
+			}
+			counts[slot++] = (uint8_t) n;
+		}
+	}
+	libretroGbSetGameGenieCodes(digits, counts);
+}
+
+// The Game Genie with a game on top: its code options list the database's cheats for the game, and
+// take those its save names.
+static void offerGenieCheats(void) {
+	genieCount = 0;
+	const char* system = NULL;
+	environment(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system);
+	char database[PATH_SIZE];
+	if (gameGenieLoaded && *replayGamePath && chtDatabase(system, database, sizeof(database))) {
+		genieCount = chtCheats(database, false, replayGamePath, chtGameGenieCode, genieCheats, COUNT(genieCheats));
+	}
+	for (int i = 0; coreOptions && i < GENIE_SLOTS; ++i) {
+		struct retro_core_option_v2_definition* const definition = genieOptions[i];
+		if (!definition) {
+			continue;
+		}
+		size_t n = 0;
+		definition->values[n++] = (struct retro_core_option_value) { "none", "None" };
+		for (size_t k = 0; k < genieCount; ++k) {
+			definition->values[n++] = (struct retro_core_option_value) { genieCheats[k].code, genieCheats[k].description };
+		}
+		definition->values[n] = (struct retro_core_option_value) { NULL, NULL };
+	}
+	if (coreOptions) {
+		setOptions();
+	}
+	for (int i = 0; i < GENIE_SLOTS; ++i) {
+		for (size_t k = 0; *genieKept[i] && k < genieCount; ++k) {
+			if (!strcmp(genieKept[i], genieCheats[k].code)) {
+				char key[32];
+				snprintf(key, sizeof(key), "armgba_game_genie_code_%d", i + 1);
+				struct retro_variable variable = { key, genieCheats[k].code };
+				environment(RETRO_ENVIRONMENT_SET_VARIABLE, &variable);
+			}
+		}
+	}
+	applyGenieCodes();
+}
+
+static void writeReplayFlash(void);
+
+// Import Cheats from RetroArch, into the Xploder GB's list in its flash chip from 0x20000 (see
+// XploderGb): for each game its name, its number of cheats, and for each cheat its name, its number
+// of codes and the codes, 4 bytes each (type, value, address low, address high, as a GameShark code
+// writes them); an empty name ends it. Its program takes up to 64 KiB of it, 63 codes a cheat, and
+// 0x0AAA rows in its list (a row for each game, cheat and code, and a NEW one after each).
+enum {
+	XPLODER_CHEATS = 0x20000,
+	XPLODER_ROOM = 0x10000,
+	XPLODER_ROWS = 0x0AAA,
+	XPLODER_CODES = 63,
+	XPLODER_NAME = 17,
+};
+
+// The end of the string at at, within end, or 0.
+static size_t xploderSkipName(const uint8_t* list, size_t at, size_t end) {
+	while (at < end && list[at]) {
+		++at;
+	}
+	return at < end ? at + 1 : 0;
+}
+
+// A name as the Xploder shows it: printable characters, as many as fit.
+static void xploderName(const char* from, char* out) {
+	size_t n = 0;
+	for (; *from && n < XPLODER_NAME; ++from) {
+		out[n++] = *from >= 0x20 && *from < 0x7F ? *from : '?';
+	}
+	while (n && out[n - 1] == ' ') {
+		--n;
+	}
+	out[n] = '\0';
+}
+
+// Whether the codes at a and b (count each) are the same, in any order.
+static bool xploderSameCodes(const uint8_t* a, size_t count, const uint8_t* b, size_t bCount) {
+	if (count != bCount) {
+		return false;
+	}
+	for (size_t i = 0; i < count; ++i) {
+		bool found = false;
+		for (size_t k = 0; k < count && !found; ++k) {
+			found = !memcmp(&a[i * 4], &b[k * 4], 4);
+		}
+		if (!found) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// The later Game Boy Action Replays (Online, Xtreme) and the GameShark Online, as LibreShark's
+// sharkdumps documents their ROM (imhex-gbc-gs-rom-pattern): at 8000 a count, then up to 455 games
+// of 18 bytes (a 12-bit number counted from 1, flags above it, and a name of 16, padded with
+// spaces); at A000, C000 and E000 a count, then up to 455 codes of 18 bytes each (the game's number,
+// with 10 above it while the code is on, a name of 12 and the 4 bytes of a GameShark code). A cheat
+// of several codes is as many codes of one name.
+enum {
+	AR_GAMES = 0x8000,
+	AR_ENTRY = 18,
+	AR_SLOTS = 455,
+	AR_GAME_NAME = 16,
+	AR_CODE_NAME = 12,
+};
+
+static const size_t arCodeBanks[] = { 0xA000, 0xC000, 0xE000 };
+
+static unsigned arCount(const uint8_t* flash, size_t at) {
+	unsigned const count = flash[at] | flash[at + 1] << 8;
+	return count <= AR_SLOTS ? count : 0;
+}
+
+static void arName(const char* from, uint8_t* out, size_t size) {
+	size_t n = 0;
+	for (; *from && n < size; ++from) {
+		out[n++] = (uint8_t) (*from >= 0x20 && *from < 0x7F ? *from : '?');
+	}
+	memset(&out[n], ' ', size - n);
+}
+
+static bool arSameName(const uint8_t* a, const uint8_t* b, size_t size) {
+	for (size_t i = 0; i < size; ++i) {
+		if (toupper(a[i]) != toupper(b[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// Returns how many cheats went in, or -1 when the list can't be read.
+static int arGbImport(uint8_t* flash, size_t size, const char* title, const struct ChtCheat* cheats, size_t count, size_t* already, size_t* left) {
+	*already = *left = 0;
+	if (size < 0x10000 || (flash[AR_GAMES] == 0xFF && flash[AR_GAMES + 1] == 0xFF)) {
+		return -1;
+	}
+	unsigned games = arCount(flash, AR_GAMES);
+	uint8_t name[AR_GAME_NAME];
+	arName(title, name, sizeof(name));
+	unsigned id = 0;
+	unsigned most = 0;
+	for (unsigned i = 0; i < games; ++i) {
+		const uint8_t* const game = &flash[AR_GAMES + 2 + i * AR_ENTRY];
+		unsigned const number = game[0] | (game[1] & 0x0F) << 8;
+		most = number > most ? number : most;
+		if (!id && arSameName(&game[2], name, sizeof(name))) {
+			id = number;
+		}
+	}
+	bool const newGame = !id;
+	if (newGame) {
+		if (games >= AR_SLOTS || most >= 0xFFF) {
+			*left = count;
+			return 0;
+		}
+		id = most + 1;
+	}
+	int added = 0;
+	for (size_t i = 0; i < count; ++i) {
+		uint8_t codes[64][4];
+		size_t n = 0;
+		char copy[sizeof(cheats[i].code)];
+		snprintf(copy, sizeof(copy), "%s", cheats[i].code);
+		bool fits = true;
+		for (char* code = strtok(copy, "+"); code && fits; code = strtok(NULL, "+")) {
+			fits = n < COUNT(codes) && chtGameSharkCode(code);
+			for (int b = 0; fits && b < 4; ++b) {
+				unsigned value;
+				sscanf(&code[b * 2], "%2x", &value);
+				codes[n][b] = (uint8_t) value;
+			}
+			n += fits;
+		}
+		if (!fits || !n) {
+			continue;
+		}
+		// Already the game's, if each of its codes is, under any name
+		size_t have = 0;
+		for (size_t c = 0; c < n; ++c) {
+			bool found = false;
+			for (size_t b = 0; b < COUNT(arCodeBanks) && !found; ++b) {
+				unsigned const codesThere = arCount(flash, arCodeBanks[b]);
+				for (unsigned k = 0; k < codesThere && !found; ++k) {
+					const uint8_t* const entry = &flash[arCodeBanks[b] + 2 + k * AR_ENTRY];
+					found = (entry[0] | (entry[1] & 0x0F) << 8) == id && !memcmp(&entry[14], codes[c], 4);
+				}
+			}
+			have += found;
+		}
+		if (have == n) {
+			++*already;
+			continue;
+		}
+		size_t room = 0;
+		for (size_t b = 0; b < COUNT(arCodeBanks); ++b) {
+			room += AR_SLOTS - arCount(flash, arCodeBanks[b]);
+		}
+		if (room < n) {
+			++*left;
+			continue;
+		}
+		if (newGame && !added) {
+			uint8_t* const game = &flash[AR_GAMES + 2 + games * AR_ENTRY];
+			game[0] = (uint8_t) id;
+			game[1] = (uint8_t) (id >> 8 & 0x0F);
+			memcpy(&game[2], name, sizeof(name));
+			++games;
+			flash[AR_GAMES] = (uint8_t) games;
+			flash[AR_GAMES + 1] = (uint8_t) (games >> 8);
+		}
+		for (size_t c = 0; c < n; ++c) {
+			for (size_t b = 0; b < COUNT(arCodeBanks); ++b) {
+				unsigned const there = arCount(flash, arCodeBanks[b]);
+				if (there >= AR_SLOTS) {
+					continue;
+				}
+				uint8_t* const entry = &flash[arCodeBanks[b] + 2 + there * AR_ENTRY];
+				entry[0] = (uint8_t) id;
+				entry[1] = (uint8_t) (id >> 8 & 0x0F);
+				arName(cheats[i].description, &entry[2], AR_CODE_NAME);
+				memcpy(&entry[14], codes[c], 4);
+				flash[arCodeBanks[b]] = (uint8_t) (there + 1);
+				flash[arCodeBanks[b] + 1] = (uint8_t) ((there + 1) >> 8);
+				break;
+			}
+		}
+		++added;
+	}
+	return added;
+}
+
+// The first Game Boy Action Replay (the Pro Action Replay) keeps four codes in its RAM, from 4A, 4
+// bytes each in a GameShark code's order, all 0 for none. Its program sets 40 to 1 as it first
+// starts, clearing them; until then they'd be cleared.
+enum { AR_FIRST_RAM = 0x1000, AR_FIRST_SET_UP = 0x40, AR_FIRST_CODES = 0x4A, AR_FIRST_SLOTS = 4 };
+
+// Returns how many cheats went in its empty slots, all of each one's codes or none.
+static int arFirstImport(uint8_t* ram, size_t size, const struct ChtCheat* cheats, size_t count, size_t* already, size_t* left) {
+	*already = *left = 0;
+	if (size != AR_FIRST_RAM) {
+		return -1;
+	}
+	if (ram[AR_FIRST_SET_UP] != 1) {
+		*left = count;
+		return -2;
+	}
+	uint8_t* const slots = &ram[AR_FIRST_CODES];
+	int added = 0;
+	for (size_t i = 0; i < count; ++i) {
+		uint8_t codes[AR_FIRST_SLOTS][4];
+		size_t n = 0;
+		char copy[sizeof(cheats[i].code)];
+		snprintf(copy, sizeof(copy), "%s", cheats[i].code);
+		bool fits = true;
+		for (char* code = strtok(copy, "+"); code && fits; code = strtok(NULL, "+")) {
+			fits = chtGameSharkCode(code);
+			for (int b = 0; fits && n < AR_FIRST_SLOTS && b < 4; ++b) {
+				unsigned value;
+				sscanf(&code[b * 2], "%2x", &value);
+				codes[n][b] = (uint8_t) value;
+			}
+			n += fits;
+		}
+		if (!fits || !n) {
+			continue;
+		}
+		// More codes than it has slots: it can't take this one
+		if (n > AR_FIRST_SLOTS) {
+			++*left;
+			continue;
+		}
+		// Each of its codes in a slot already, once however many slots hold it
+		size_t have = 0;
+		size_t empty = 0;
+		for (size_t c = 0; c < n; ++c) {
+			bool found = false;
+			for (int k = 0; k < AR_FIRST_SLOTS && !found; ++k) {
+				found = !memcmp(&slots[k * 4], codes[c], 4);
+			}
+			have += found;
+		}
+		for (int k = 0; k < AR_FIRST_SLOTS; ++k) {
+			static const uint8_t none[4];
+			empty += !memcmp(&slots[k * 4], none, 4);
+		}
+		if (have >= n) {
+			++*already;
+			continue;
+		}
+		if (empty < n) {
+			++*left;
+			continue;
+		}
+		for (size_t c = 0, k = 0; c < n; ++k) {
+			static const uint8_t none[4];
+			if (!memcmp(&slots[k * 4], none, 4)) {
+				memcpy(&slots[k * 4], codes[c++], 4);
+			}
+		}
+		++added;
+	}
+	return added;
+}
+
+// Whether the Game Boy Action Replay loaded is the first one (see isGameBoyActionReplay)
+static bool replayFirstKind;
+
+static bool cheatImportOn(void) {
+	bool const takes = actionReplayLoaded && !gameGenieLoaded;
+	return takes && replayHasGame && *replayGamePath;
+}
+
+bool cheatImportable(void) {
+	return cheatImportOn();
+}
+
+// Returns how many cheats went in, or -1 when the list can't be read; *already counts those it had
+// and *left those that didn't fit.
+static int xploderImport(uint8_t* flash, size_t size, const char* title, const struct ChtCheat* cheats, size_t count, size_t* already, size_t* left) {
+	*already = *left = 0;
+	if (size < XPLODER_CHEATS + XPLODER_ROOM) {
+		return -1;
+	}
+	uint8_t* const list = &flash[XPLODER_CHEATS];
+	char name[XPLODER_NAME + 1];
+	xploderName(title, name);
+	// The list as it is: where the game is, where its cheats end, and where the list ends
+	size_t at = 0;
+	size_t game = SIZE_MAX;
+	size_t gameCheats = 0;
+	size_t rows = 1;
+	while (at < XPLODER_ROOM && list[at]) {
+		size_t const start = at;
+		if (!(at = xploderSkipName(list, at, XPLODER_ROOM)) || at >= XPLODER_ROOM) {
+			return -1;
+		}
+		bool const ours = game == SIZE_MAX && !strcasecmp((const char*) &list[start], name);
+		size_t const countAt = at++;
+		rows += 2;
+		for (unsigned c = 0; c < list[countAt]; ++c) {
+			if (!(at = xploderSkipName(list, at, XPLODER_ROOM)) || at >= XPLODER_ROOM) {
+				return -1;
+			}
+			rows += 2 + list[at];
+			at += 1 + 4u * list[at];
+			if (at > XPLODER_ROOM) {
+				return -1;
+			}
+		}
+		if (ours) {
+			game = start;
+			gameCheats = at;
+		}
+	}
+	if (at >= XPLODER_ROOM) {
+		return -1;
+	}
+	size_t const listEnd = at;
+	// The new list, the cheats added at the end of the game's own (or a new game's)
+	uint8_t* const out = malloc(XPLODER_ROOM);
+	if (!out) {
+		return -1;
+	}
+	size_t const before = game == SIZE_MAX ? listEnd : gameCheats;
+	memcpy(out, list, before);
+	size_t used = before;
+	size_t countAt = SIZE_MAX;
+	if (game == SIZE_MAX) {
+		size_t const length = strlen(name);
+		if (!length || used + length + 3 > XPLODER_ROOM || rows + 2 > XPLODER_ROWS) {
+			free(out);
+			*left = count;
+			return 0;
+		}
+		memcpy(&out[used], name, length + 1);
+		used += length + 1;
+		countAt = used;
+		out[used++] = 0;
+		rows += 2;
+	} else {
+		countAt = xploderSkipName(list, game, XPLODER_ROOM);
+	}
+	int added = 0;
+	for (size_t i = 0; i < count; ++i) {
+		// Its codes, as the Xploder keeps them
+		uint8_t codes[XPLODER_CODES * 4];
+		size_t n = 0;
+		char copy[sizeof(cheats[i].code)];
+		snprintf(copy, sizeof(copy), "%s", cheats[i].code);
+		bool fits = true;
+		for (char* code = strtok(copy, "+"); code && fits; code = strtok(NULL, "+")) {
+			fits = n < XPLODER_CODES && chtGameSharkCode(code);
+			for (int b = 0; fits && b < 4; ++b) {
+				unsigned value;
+				sscanf(&code[b * 2], "%2x", &value);
+				codes[n * 4 + b] = (uint8_t) value;
+			}
+			n += fits;
+		}
+		if (!fits || !n) {
+			continue;
+		}
+		// Already the game's, under any name?
+		bool known = false;
+		for (size_t c = countAt + 1, k = 0; game != SIZE_MAX && k < list[countAt] && !known; ++k) {
+			c = xploderSkipName(list, c, XPLODER_ROOM);
+			known = xploderSameCodes(codes, n, &list[c + 1], list[c]);
+			c += 1 + 4u * list[c];
+		}
+		for (size_t c = countAt + 1 + (game != SIZE_MAX ? gameCheats - countAt - 1 : 0), k = 0; k < (size_t) added && !known; ++k) {
+			c = xploderSkipName(out, c, used);
+			known = xploderSameCodes(codes, n, &out[c + 1], out[c]);
+			c += 1 + 4u * out[c];
+		}
+		if (known) {
+			++*already;
+			continue;
+		}
+		char cheatName[XPLODER_NAME + 1];
+		xploderName(cheats[i].description, cheatName);
+		size_t const length = strlen(cheatName);
+		size_t const need = length + 2 + n * 4;
+		if (out[countAt] == 0xFF || used + need + (listEnd - before) + 1 > XPLODER_ROOM || rows + 2 + n > XPLODER_ROWS) {
+			++*left;
+			continue;
+		}
+		memcpy(&out[used], cheatName, length + 1);
+		used += length + 1;
+		out[used++] = (uint8_t) n;
+		memcpy(&out[used], codes, n * 4);
+		used += n * 4;
+		++out[countAt];
+		rows += 2 + n;
+		++added;
+	}
+	// The games after it, then the end
+	memcpy(&out[used], &list[before], listEnd - before);
+	used += listEnd - before;
+	out[used++] = 0;
+	memset(&out[used], 0xFF, XPLODER_ROOM - used);
+	// Nothing added, the list stays as it was (without a new game of no cheats)
+	if (added) {
+		memcpy(list, out, XPLODER_ROOM);
+	}
+	free(out);
+	return added;
+}
+
+static bool cheatRestartDue;
+
+// Whether the Action Replay loaded is one InterAct sold as a GameShark (the GameShark GBA, and the
+// GameShark Online, which is the Action Replay Online's program), by its file's name: its ROM
+// names itself an Action Replay.
+static bool replayGameShark;
+// The CRC-32 of the cheat cartridge's file as loaded, 0 with none: states say which they were made with
+static uint32_t replayCartCrc;
+
+static bool namesGameShark(const char* path) {
+	static const char brand[] = "gameshark";
+	const char* const name = path ? fileName(path) : "";
+	for (const char* at = name; *at; ++at) {
+		size_t i = 0;
+		for (const char* c = at; brand[i] && *c; ++c) {
+			if (*c == ' ' || *c == '-' || *c == '_') {
+				continue;
+			}
+			if (tolower((unsigned char) *c) != brand[i]) {
+				break;
+			}
+			++i;
+		}
+		if (!brand[i]) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// The cheat cartridge's name, for its notifications.
+static const char* cartridgeName(void) {
+	return gameGenieLoaded ? "Game Genie" : fcdLoaded ? fcdLoaded : xploderLoaded ? "Xploder" : replayFirstKind ? "Pro Action Replay" : replayGameShark ? "GameShark" : "Action Replay";
+}
+
+static void importCheats(void) {
+	const char* system = NULL;
+	environment(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system);
+	char database[PATH_SIZE];
+	if (!chtDatabase(system, database, sizeof(database))) {
+		showMessage("armGBA can't find RetroArch's cheat database");
+		return;
+	}
+	static struct ChtCheat cheats[1024];
+	size_t const count = chtCheats(database, !gameBoy, replayGamePath, gameBoy ? chtGameSharkCode : chtCodeBreakerPart, cheats, COUNT(cheats));
+	char title[256];
+	snprintf(title, sizeof(title), "%.255s", fileName(replayGamePath));
+	char* const dot = strrchr(title, '.');
+	if (dot) {
+		*dot = '\0';
+	}
+	title[strcspn(title, "(")] = '\0';
+	char* end = title + strlen(title);
+	while (end > title && (end[-1] == ' ' || end[-1] == '.')) {
+		*--end = '\0';
+	}
+	char message[300];
+	if (!count) {
+		snprintf(message, sizeof(message), "RetroArch's cheat database has no %s cheats for %.200s", gameBoy ? "GameShark" : "CodeBreaker", title);
+		notify(message, 300);
+		logMessage(RETRO_LOG_INFO, message);
+		return;
+	}
+	size_t size;
+	uint8_t* const flash = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayFlash(&size);
+	size_t already = 0;
+	size_t left = 0;
+	const char* const cartridge = cartridgeName();
+	int added = -1;
+	if (!flash) {
+	} else if (!gameBoy) {
+		size_t gameSize = 0;
+		uint8_t* const game = gameRead(replayGamePath, &gameSize);
+		added = !game ? -1
+		        : fcdLoaded ? fcdImport(flash, size, game, gameSize, cheats, count, &already, &left)
+		        : (added = arGbaImport(flash, size, game, gameSize, cheats, count, &already, &left)) != -4 ? added
+		                    : maxImport(flash, size, game, gameSize, cheats, count, &already, &left);
+		free(game);
+	} else if (xploderLoaded) {
+		added = xploderImport(flash, size, title, cheats, count, &already, &left);
+	} else if (replayFirstKind) {
+		added = arFirstImport(flash, size, cheats, count, &already, &left);
+	} else {
+		added = arGbImport(flash, size, title, cheats, count, &already, &left);
+	}
+	if (added == -3) {
+		snprintf(message, sizeof(message), "%s: its list has no master code for %.150s, so its codes can't run", cartridge, title);
+		notify(message, 300);
+		logMessage(RETRO_LOG_INFO, message);
+		return;
+	}
+	if (added == -2) {
+		notify("Pro Action Replay: import once its menu shows", 300);
+		logMessage(RETRO_LOG_INFO, "Pro Action Replay: import once its menu shows");
+		return;
+	}
+	if (added < 0) {
+		snprintf(message, sizeof(message), "armGBA can't read the %s's cheat list", cartridge);
+		showMessage(message);
+		return;
+	}
+	if (added) {
+		writeReplayFlash();
+		cheatRestartDue = true;
+	}
+	int n = snprintf(message, sizeof(message), "%s: %d cheat%s for %.150s imported", cartridge, added, added == 1 ? "" : "s", title);
+	if (already) {
+		n += snprintf(message + n, sizeof(message) - (size_t) n, ", %zu already there", already);
+	}
+	if (left) {
+		snprintf(message + n, sizeof(message) - (size_t) n, ", %zu didn't fit", left);
+	}
+	notify(message, 300);
+	logMessage(RETRO_LOG_INFO, message);
+}
+
+// What the cheat cartridge's chip held as it loaded, before its save went over it: its ROM, as the core
+// starts it (with the Xploder GB's empty cheat list, and the Xploder Advance (Europe) dump's missing
+// byte), for Restore Factory Cheats.
+static uint8_t* replayFactory;
+static size_t replayFactorySize;
+
+static void keepReplayFactory(const uint8_t* flash, size_t size) {
+	free(replayFactory);
+	replayFactory = flash && size ? malloc(size) : NULL;
+	replayFactorySize = replayFactory ? size : 0;
+	if (replayFactory) {
+		memcpy(replayFactory, flash, size);
 	}
 }
 
-// The Action Replay's flash chip, which holds its codes and settings, is kept by the core where
-// RetroArch would keep the Action Replay's save. A file of another size, such as a save from before
-// the Action Replay was emulated, is left alone, so it can't overwrite the program.
+static bool cheatRestoreOn(void) {
+	return actionReplayLoaded && !gameGenieLoaded && replayFactory;
+}
+
+bool cheatRestorable(void) {
+	return cheatRestoreOn();
+}
+
+// Restore Factory Cheats: the chip as it came, the game on top kept; then the console restarts.
+static void restoreCheats(void) {
+	size_t size;
+	uint8_t* const flash = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayFlash(&size);
+	char message[200];
+	if (!flash || size != replayFactorySize) {
+		snprintf(message, sizeof(message), "armGBA can't restore the %s's cheats", cartridgeName());
+		showMessage(message);
+		return;
+	}
+	if (!memcmp(flash, replayFactory, size)) {
+		snprintf(message, sizeof(message), "%s: its cheats are as they came already", cartridgeName());
+		notify(message, 300);
+		logMessage(RETRO_LOG_INFO, message);
+		return;
+	}
+	memcpy(flash, replayFactory, size);
+	writeReplayFlash();
+	cheatRestartDue = true;
+	snprintf(message, sizeof(message), "%s: its cheats are back as they came", cartridgeName());
+	notify(message, 300);
+	logMessage(RETRO_LOG_INFO, message);
+}
+
+static void readCheatRestore(bool act) {
+	if (optionIs("armgba_cheat_restore", "restore")) {
+		struct retro_variable off = { "armgba_cheat_restore", "off" };
+		environment(RETRO_ENVIRONMENT_SET_VARIABLE, &off);
+		if (act && cheatRestoreOn() && !netplaySeen) {
+			restoreCheats();
+		}
+	}
+}
+
+static void readCheatImport(bool act) {
+	if (optionIs("armgba_cheat_import", "import")) {
+		struct retro_variable off = { "armgba_cheat_import", "off" };
+		environment(RETRO_ENVIRONMENT_SET_VARIABLE, &off);
+		if (act && cheatImportOn() && !netplaySeen) {
+			importCheats();
+		}
+	}
+}
+
+static void writeReplayFlash(void);
+
+// The game on top, and the Game Genie's cheats, chosen as the game closes go in the cartridge's save,
+// when they changed.
+static void rememberReplayChoice(void) {
+	bool changed = false;
+	const char* value = option("armgba_action_replay_game");
+	const char* const chosen = chosenReplayGame();
+	if (*replayFirst && value && (!strcmp(value, "none") || chosen)) {
+		const char* const name = chosen ? fileName(chosen) : "";
+		if ((!replayTopKept || strcmp(name, replayTop)) && strlen(name) < sizeof(replayTop)) {
+			snprintf(replayTop, sizeof(replayTop), "%s", name);
+			replayTopKept = true;
+			changed = true;
+		}
+	}
+	for (int i = 0; gameGenieLoaded && genieCount && i < GENIE_SLOTS; ++i) {
+		const char* const code = genieChosen(i);
+		if (strcmp(genieKept[i], code ? code : "")) {
+			snprintf(genieKept[i], GENIE_CODE, "%s", code ? code : "");
+			changed = true;
+		}
+	}
+	if (changed && replayTopKept && !replaySaveForeign) {
+		writeReplayFlash();
+	}
+}
+
+// What the cheat cartridge keeps (its flash chip with its codes and settings, or the Pro Action
+// Replay's RAM), then the game on top, is kept by the core where RetroArch would keep the cartridge's
+// save. A file of another size, such as a save from before the cartridge was emulated, is left
+// alone, so it can't overwrite the program.
 static char replayFlashFile[SAVE_PATH_SIZE];
 static bool attachActionReplay(const struct retro_game_info* game);
 static int replayFlashWait;
 
-// The Action Replay's codes as text, beside what it keeps and named as it is, with .txt.
-static void writeReplayCodes(void) {
-	size_t size;
-	const uint8_t* const kept = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayKept(&size);
-	char file[SAVE_PATH_SIZE];
-	snprintf(file, sizeof(file), "%s", replayFlashFile);
-	char* const dot = strrchr(file, '.');
-	char* const slash = strrchr(file, '/');
-	if (!kept || !*file || !dot || (slash && dot < slash) || (size_t) (dot - file) + 5 > sizeof(file)) {
-		return;
-	}
-	strcpy(dot, ".txt");
-	char title[SAVE_PATH_SIZE];
-	snprintf(title, sizeof(title), "%s", slash ? replayFlashFile + (slash - file) + 1 : replayFlashFile);
-	*strrchr(title, '.') = '\0';
-	makeFolders(file);
-	replayCodesWrite(file, title, kept, size, gameBoy);
-}
-
-// Reads what the Action Replay at path keeps (its flash chip, or RAM) over what it starts with.
+// Reads what the cheat cartridge at path keeps (its flash chip, or RAM) over what it starts with.
 static void readReplayFlashInto(const char* path, uint8_t* flash, size_t size) {
+	keepReplayFactory(flash, size);
+	replayGameShark = namesGameShark(path);
 	char rtc[SAVE_PATH_SIZE];
 	saveFilesFor(path, replayFlashFile, rtc);
-	struct stat info;
-	if (flash && !stat(replayFlashFile, &info) && (size_t) info.st_size == size) {
+	long const kept = readReplayTop(replayFlashFile);
+	replaySaveForeign = kept >= 0 && (size_t) kept != size;
+	if (flash && size && kept >= 0 && (size_t) kept == size) {
 		readFileInto(replayFlashFile, flash, size);
 	}
 	replayFlashWait = 0;
-	writeReplayCodes();
 }
 
 static void readReplayFlash(const char* path) {
@@ -1665,13 +2467,32 @@ static bool replayFlashChanged(void) {
 	return gameBoy ? libretroGbActionReplayFlashChanged() : actionReplayFlashChanged();
 }
 
+// A device that joined another's netplay session runs that session's Action Replay, which goes with
+// its states; its own save stays as it was, as its other saves do.
 static void writeReplayFlash(void) {
+	if (netplayJoined) {
+		replayFlashWait = 0;
+		return;
+	}
 	size_t size;
 	const uint8_t* const flash = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayKept(&size);
-	if (flash && *replayFlashFile) {
+	char tail[sizeof(replayTopMark) + sizeof(replayTop) + GENIE_SLOTS * (sizeof(genieMark) + 4 + GENIE_CODE)];
+	int top = replayTopKept ? snprintf(tail, sizeof(tail), "%s%s\n", replayTopMark, replayTop) : 0;
+	for (int i = 0; top && i < GENIE_SLOTS; ++i) {
+		if (*genieKept[i]) {
+			top += snprintf(tail + top, sizeof(tail) - (size_t) top, "%s%d: %s\n", genieMark, i + 1, genieKept[i]);
+		}
+	}
+	uint8_t* const save = (flash || !size) && *replayFlashFile && size + (size_t) top ? malloc(size + (size_t) top) : NULL;
+	if (save) {
+		if (size) {
+			memcpy(save, flash, size);
+		}
+		memcpy(save + size, tail, (size_t) top);
 		makeFolders(replayFlashFile);
-		writeWholeFile(replayFlashFile, flash, size);
-		writeReplayCodes();
+		writeWholeFile(replayFlashFile, save, size + (size_t) top);
+		replaySaveForeign = false;
+		free(save);
 	}
 	replayFlashWait = 0;
 }
@@ -1745,6 +2566,28 @@ static bool isGameBoyRom(const void* data, size_t size) {
 // Whether the last Game Boy Action Replay seen is the first one (the Pro Action Replay, without a
 // button or in-game menu).
 static bool replayFirstKind;
+
+// Galoob's Game Genie for the Game Boy: its own program of 8 KiB, with no logo for the boot ROM (the
+// game's shows), and its name in it (see GameGenieGb).
+static bool isGameGenie(const void* data, size_t size) {
+	static const char name[] = "GAME GENIE";
+	if (!data || size < 0x2000 || size > 0x8000 || isGameBoyRom(data, size)) {
+		return false;
+	}
+	for (size_t i = 0; i + sizeof(name) - 1 <= size; ++i) {
+		if (!memcmp((const uint8_t*) data + i, name, sizeof(name) - 1)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Blaze's Xploder GB: its program of 128 KiB, with "Future Console Design" where the boot ROM would
+// look for the logo (the game's shows; see XploderGb).
+static bool isXploder(const void* data, size_t size) {
+	static const char name[] = "Future Console Design";
+	return data && size >= 0x150 && size <= 0x40000 && !memcmp((const uint8_t*) data + 0x104, name, sizeof(name) - 1);
+}
 
 static bool isGameBoyActionReplay(const void* data, size_t size) {
 	if (!data || size < 0x4000 || size > 0x80000 || isGameBoyRom(data, size)) {
@@ -1823,11 +2666,15 @@ static bool loadGameBoy(const struct retro_game_info* game, const struct retro_g
 	libretroGbSelect(0);
 	// An Action Replay runs the game on top of it, which the Game Boy core loads as its cartridge.
 	gameBoy = true;
-	actionReplayLoaded = !isMegaDuck(game) && !second && isGameBoyActionReplay(game->data, game->size);
+	gameGenieLoaded = !isMegaDuck(game) && !second && isGameGenie(game->data, game->size);
+	xploderLoaded = !isMegaDuck(game) && !second && isXploder(game->data, game->size);
+	fcdLoaded = NULL;
+	actionReplayLoaded = gameGenieLoaded || xploderLoaded || (!isMegaDuck(game) && !second && isGameBoyActionReplay(game->data, game->size));
+	replayCartCrc = actionReplayLoaded && game->data ? (uint32_t) crc32(0, game->data, (unsigned) game->size) : 0;
 	struct retro_game_info top = *game;
 	void* topData = NULL;
 	if (actionReplayLoaded && !prepareGameBoyReplay(game, &top, &topData)) {
-		actionReplayLoaded = false;
+		actionReplayLoaded = gameGenieLoaded = xploderLoaded = false;
 	}
 	if (!actionReplayLoaded) {
 		libretroGbSetActionReplay(NULL, 0, false);
@@ -1840,7 +2687,7 @@ static bool loadGameBoy(const struct retro_game_info* game, const struct retro_g
 		showMessage(error);
 		libretroGbUnload();
 		gameBoy = false;
-		actionReplayLoaded = false;
+		actionReplayLoaded = gameGenieLoaded = xploderLoaded = false;
 		return false;
 	}
 	gbStretched = false;
@@ -1851,7 +2698,12 @@ static bool loadGameBoy(const struct retro_game_info* game, const struct retro_g
 		readReplayFlashInto(game->path ? game->path : firstPath, kept, size);
 		libretroGbActionReplayFlashChanged();
 	}
-	replayHint = !actionReplayLoaded ? HINT_NONE : !replayHasGame ? HINT_NO_GAME : replayFirstKind ? HINT_GAME_BOY_FIRST : HINT_GAME_BOY;
+	replayHint = !actionReplayLoaded ? HINT_NONE : !replayHasGame ? HINT_NO_GAME : gameGenieLoaded ? HINT_GAME_GENIE
+	                                                                             : xploderLoaded ? HINT_XPLODER
+	                                                                             : replayFirstKind ? HINT_GAME_BOY_FIRST : HINT_GAME_BOY;
+	if (gameGenieLoaded) {
+		offerGenieCheats();
+	}
 	if (actionReplayLoaded && *replayGamePath) {
 		// The game on top keeps its own save, where it is when the game runs by itself; the core keeps
 		// the Action Replay's flash.
@@ -1935,9 +2787,14 @@ static bool loadAdvance(const struct retro_game_info* game, const struct retro_g
 	if (!gba) {
 		return false;
 	}
+	gameGenieLoaded = xploderLoaded = replayFirstKind = false;
 	actionReplayLoaded = actionReplayDetect(gba->rom, gba->romSize);
+	// Before the cartridge fixes its image (the Xploder Advance (Europe) dump's byte)
+	replayCartCrc = actionReplayLoaded ? (uint32_t) crc32(0, gba->rom, gba->romSize) : 0;
+	fcdLoaded = !fcdDetect(gba->rom, gba->romSize) ? NULL : gba->romSize > 0x10000 ? "Xploder Advance" : "CodeBreaker";
 	if (actionReplayLoaded && !startActionReplay(game)) {
 		actionReplayLoaded = false;
+		fcdLoaded = NULL;
 	}
 	showButtons();
 	threadedVideo = 0;
@@ -1947,7 +2804,7 @@ static bool loadAdvance(const struct retro_game_info* game, const struct retro_g
 	applyCartridge();
 	cartridgeSaveUnread = cartridgeOut && !noGame;
 	resetAdvance(gba);
-	replayHint = !actionReplayLoaded ? HINT_NONE : !replayHasGame ? HINT_NO_GAME : HINT_ADVANCE;
+	replayHint = !actionReplayLoaded ? HINT_NONE : !replayHasGame ? HINT_NO_GAME : fcdLoaded ? HINT_FCD : HINT_ADVANCE;
 	if (actionReplayLoaded && *replayGamePath) {
 		// The game on top keeps its own save, where it is when the game runs by itself; the
 		// frontend keeps the Action Replay's flash.
@@ -2020,7 +2877,7 @@ static bool loadNoGame(void) {
 bool retro_load_game(const struct retro_game_info* game) {
 	readSaveActions(false);
 	readReplayPress(false);
-	replayPressing = 0;
+	controls.replayPressing = 0;
 	stopFastForward();
 	megaDuckGame = false;
 	libretroGbSetMegaDuck(-1);
@@ -2100,7 +2957,7 @@ static bool loadMegaDuckLaptop(const struct retro_game_info* system, const struc
 bool retro_load_game_special(unsigned type, const struct retro_game_info* info, size_t count) {
 	readSaveActions(false);
 	readReplayPress(false);
-	replayPressing = 0;
+	controls.replayPressing = 0;
 	stopFastForward();
 	megaDuckGame = false;
 	libretroGbSetMegaDuck(-1);
@@ -2117,9 +2974,10 @@ bool retro_load_game_special(unsigned type, const struct retro_game_info* info, 
 	}
 	if (type == SUBSYSTEM_ACTION_REPLAY && count == 2 && info[0].data && (info[1].data || info[1].path)) {
 		// Only an Action Replay goes underneath; anything else isn't loaded at all.
-		bool const gameBoyReplay = isGameBoyActionReplay(info[0].data, info[0].size);
+		bool const gameBoyReplay = isGameBoyActionReplay(info[0].data, info[0].size) || isGameGenie(info[0].data, info[0].size)
+		                           || isXploder(info[0].data, info[0].size);
 		if (!gameBoyReplay && !actionReplayDetect(info[0].data, info[0].size)) {
-			showMessage("armGBA: the Action Replay subsystem's first file isn't an Action Replay");
+			showMessage("armGBA: the Cheat Cartridge subsystem's first file isn't a cheat cartridge");
 			return false;
 		}
 		gameBoy = false;
@@ -2143,8 +3001,10 @@ void retro_unload_game(void) {
 		rememberReplayChoice();
 		keepReplayFlash(true);
 	}
+	keepReplayFactory(NULL, 0);
 	stopFastForward();
-	actionReplayLoaded = false;
+	actionReplayLoaded = gameGenieLoaded = xploderLoaded = false;
+	fcdLoaded = NULL;
 	replayGamePath[0] = '\0';
 	writeCoreSaves(true);
 	forgetSaves();
@@ -2319,7 +3179,7 @@ static bool contrastStick(void) {
 
 // Whether a stick click is the Action Replay's button.
 static bool replayStick(unsigned button) {
-	return actionReplayLoaded && button == replayButton;
+	return replayHasButton() && button == replayButton;
 }
 
 // Open Action Replay Menu presses the Game Boy Action Replay's button once when chosen, then goes back
@@ -2330,39 +3190,47 @@ static void readReplayPress(bool act) {
 	if (!act && optionIs("armgba_action_replay_hold", "on")) {
 		struct retro_variable off = { "armgba_action_replay_hold", "off" };
 		environment(RETRO_ENVIRONMENT_SET_VARIABLE, &off);
-		replayHold = false;
+		replayHoldOption = false;
+		controls.replayHold = 0;
 	}
 	if (optionIs("armgba_action_replay_press", "press")) {
 		struct retro_variable off = { "armgba_action_replay_press", "off" };
 		environment(RETRO_ENVIRONMENT_SET_VARIABLE, &off);
-		if (act && actionReplayLoaded && gameBoy) {
-			replayPressing = REPLAY_PRESS_FRAMES;
+		if (act && actionReplayLoaded && gameBoy && !netplaySeen) {
+			controls.replayPressing = REPLAY_PRESS_FRAMES;
 		}
 	}
 }
 
 // Whether the Action Replay's button is held this frame: by its stick click, by Hold Action Replay
-// Button, or for Open Action Replay Menu's frames (counted on the frames shown, so run-ahead holds it
-// as long). On the Game Boy Advance, the stick click toggles Hold Action Replay Button by default, so
-// a button code keeps working without the stick held in.
+// Button, or for Open Action Replay Menu's frames. On the Game Boy Advance, the stick click toggles
+// Hold Action Replay Button by default, so a button code keeps working without the stick held in. What
+// it keeps is in the state and goes on in every frame run, so rollback and run-ahead run it alike;
+// the option and the notification change only with a frame shown.
 static bool replayButtonHeld(void) {
-	static bool clicked;
-	bool const pressing = replayPressing > 0;
-	bool const click = replayButton != REPLAY_BUTTON_OFF && inputState(0, RETRO_DEVICE_JOYPAD, 0, replayButton);
-	bool const toggling = !gameBoy && replayToggles;
-	if (!rerunning()) {
-		if (pressing) {
-			--replayPressing;
-		}
-		if (toggling && click && !clicked) {
-			replayHold = !replayHold;
-			struct retro_variable hold = { "armgba_action_replay_hold", replayHold ? "on" : "off" };
-			environment(RETRO_ENVIRONMENT_SET_VARIABLE, &hold);
-			notify(replayHold ? "Action Replay button held" : "Action Replay button released", 120);
-		}
-		clicked = click;
+	bool const pressing = controls.replayPressing > 0;
+	if (pressing) {
+		--controls.replayPressing;
 	}
-	return pressing || (replayHold && !gameBoy) || (!toggling && click);
+	// Only a cartridge with a button has a stick click for it (the Xploder Advance and CodeBreaker
+	// have none)
+	bool const click = replayButton != REPLAY_BUTTON_OFF && replayStick(replayButton) && inputState(0, RETRO_DEVICE_JOYPAD, 0, replayButton);
+	bool const toggling = !gameBoy && replayToggles;
+	if (toggling && click && !controls.replayClicked) {
+		controls.replayHold = !controls.replayHold;
+	}
+	controls.replayClicked = click;
+	// The option and the notification follow on a frame shown: with run-ahead, the click is first
+	// seen in a frame run ahead, whose state the frame shown starts from.
+	if (toggling && !rerunning() && controls.replayHold != replayHoldOption) {
+		replayHoldOption = controls.replayHold;
+		struct retro_variable hold = { "armgba_action_replay_hold", controls.replayHold ? "on" : "off" };
+		environment(RETRO_ENVIRONMENT_SET_VARIABLE, &hold);
+		char message[48];
+		snprintf(message, sizeof(message), "%s button %s", cartridgeName(), controls.replayHold ? "held" : "released");
+		notify(message, 120);
+	}
+	return pressing || (controls.replayHold && !gameBoy) || (!toggling && click);
 }
 
 // Whether clicking the right stick resets the contrast: R3 isn't a Restart Button or Switch Player
@@ -2470,29 +3338,32 @@ static bool l3Free(void) {
 	       restartButtons != RESTART_STICKS;
 }
 
-// L3 Button, once a frame shown: its click turns Fast-Forward Toggle's fast-forward on or off, or held
-// for half a second, Soft Reset presses A + B + Select + Start for a few frames, which most games
-// take as a reset; held on, it doesn't again until let go.
+// L3 Button: its click turns Fast-Forward Toggle's fast-forward on or off, or held for half a
+// second, Soft Reset presses A + B + Select + Start for a few frames, which most games take as a
+// reset; held on, it doesn't again until let go. What it keeps is in the state and goes on in every
+// frame run, as the Action Replay's button's does; fast-forward, which isn't the game's, changes only
+// with a frame shown (and never in netplay).
 static void readL3Button(void) {
-	static bool held;
-	static unsigned heldFor;
-	if (rerunning()) {
-		return;
-	}
 	bool const now = l3Free() && inputState(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3);
+	// Fast-forward is the frontend's, so it toggles on the frames shown, from whether L3 was held on
+	// the last one shown: with run-ahead, the click is first seen in a frame run ahead.
+	static bool heldShown;
 	if (l3Button != L3_FAST_FORWARD || linkSession() || netplaySeen) {
 		fastForwardLatched = false;
-	} else if (now && !held) {
+	} else if (now && !heldShown && !rerunning()) {
 		fastForwardLatched = !fastForwardLatched;
 	}
-	if (softResetFrames) {
-		--softResetFrames;
+	if (!rerunning()) {
+		heldShown = now;
 	}
-	heldFor = now && l3Button == L3_SOFT_RESET ? heldFor + 1 : 0;
-	if (heldFor == SOFT_RESET_HOLD) {
-		softResetFrames = SOFT_RESET_PRESS;
+	if (controls.softResetFrames) {
+		--controls.softResetFrames;
 	}
-	held = now;
+	controls.l3HeldFor = now && l3Button == L3_SOFT_RESET ? (uint8_t) (controls.l3HeldFor < SOFT_RESET_HOLD ? controls.l3HeldFor + 1 : SOFT_RESET_HOLD + 1) : 0;
+	if (controls.l3HeldFor == SOFT_RESET_HOLD) {
+		controls.softResetFrames = SOFT_RESET_PRESS;
+	}
+	controls.l3Held = now;
 }
 
 static bool allHeld(uint16_t keys, uint16_t wanted) {
@@ -2546,7 +3417,7 @@ static uint16_t readKeys(unsigned port) {
 	if (port == 0 && switchController >= SWITCH_START_L3 && switchStick(stick) && inputState(0, RETRO_DEVICE_JOYPAD, 0, stick)) {
 		keys &= ~KEY_START;
 	}
-	if (port == 0 && softResetFrames) {
+	if (port == 0 && controls.softResetFrames) {
 		keys |= KEY_A | KEY_B | KEY_SELECT | KEY_START;
 	}
 	return withoutOpposites(keys);
@@ -2766,7 +3637,7 @@ static void setFastForward(bool on) {
 // normal speed.
 static void stopFastForward(void) {
 	fastForwardLatched = false;
-	softResetFrames = 0;
+	memset(&controls, 0, sizeof(controls));
 	if (fastForwardHeld) {
 		setFastForward(false);
 	}
@@ -3525,16 +4396,25 @@ static void showReplayHint(void) {
 	char message[300];
 	switch (replayHint) {
 	case HINT_NO_GAME:
-		snprintf(message, sizeof(message), "Action Replay with no game on top: pick one in Core Options > System > Action Replay Cartridge, then Restart");
+		snprintf(message, sizeof(message), "%s with no game on top: pick one in Core Options > System > Game on Top, then Restart", cartridgeName());
 		break;
 	case HINT_GAME_BOY:
-		snprintf(message, sizeof(message), "Action Replay: switch codes on in its menu, then start the game. In the game, Core Options > System > Open Action Replay Menu%s opens its menu", stick);
+		snprintf(message, sizeof(message), "%s: switch codes on in its menu, then start the game. In the game, Core Options > System > Open Cheat Cartridge Menu%s opens its menu", cartridgeName(), stick);
+		break;
+	case HINT_GAME_GENIE:
+		snprintf(message, sizeof(message), "Game Genie: enter up to three codes, then start the game");
+		break;
+	case HINT_XPLODER:
+		snprintf(message, sizeof(message), "Xploder: add codes under Select Cheats, then Start Game. In the game, Core Options > System > Open Cheat Cartridge Menu%s opens its menu", stick);
+		break;
+	case HINT_FCD:
+		snprintf(message, sizeof(message), "%s: open a game's codes with Right, switch them on with A, then start the game with Start", fcdLoaded);
 		break;
 	case HINT_GAME_BOY_FIRST:
 		snprintf(message, sizeof(message), "Pro Action Replay: enter codes in its menu, then start the game. Core Options > System > Action Replay Switch turns them off");
 		break;
 	default:
-		snprintf(message, sizeof(message), "Action Replay: switch codes on in its menu, then start the game. Button codes: Core Options > System > Hold Action Replay Button%s", stick);
+		snprintf(message, sizeof(message), "%s: switch codes on in its menu, then start the game. Button codes: Core Options > System > Hold Action Replay Button%s", cartridgeName(), stick);
 		break;
 	}
 	replayHint = HINT_NONE;
@@ -3556,7 +4436,14 @@ void retro_run(void) {
 		readClockOptions(true);
 		saveOptionsChanged();
 		readReplayPress(true);
+		readCheatImport(true);
+		readCheatRestore(true);
 		applyCpuClock();
+	}
+	if (cheatRestartDue) {
+		// The cartridge reads its new list as it starts again.
+		cheatRestartDue = false;
+		retro_reset();
 	}
 	checkBooted();
 	showReplayHint();
@@ -3722,14 +4609,38 @@ static bool loadConsoles(const void* data, size_t size) {
 // - with the consoles of a link here, how long each player has held the restart buttons, so a
 //   rollback restarts a console on the same frame;
 // - what the buttons have done (pressed) and the sunlight level;
-// - the session's tag, which tells a device in netplay that it joined another's session.
+// - the session's tag, which tells a device in netplay that it joined another's session;
+// - what Pass Around and the controls had done;
+// - with one console (or each its own), how long each player has held the restart buttons, after
+//   the rest so a state from before still loads: its padding, if it has any, reads as none held.
 // A state from before the buttons were kept still loads, and a single-console one from before the tag.
 static size_t extraStateSize(void) {
 	return togetherRunning() ? sizeof(restartHeld) : 0;
 }
 
+// The state as far as the controls, and the whole of it: rounded up to a multiple of 8 bytes, as
+// RetroArch's netplay goes wrong now and then with some lengths (3 past a multiple of 4: a client's
+// picture jumps until its next check against the host's).
+static size_t stateBeforeRestarts(void) {
+	return consolesStateSize() + extraStateSize() + sizeof(pressed) + 1 + sizeof(sessionTag) + sizeof(passed) + sizeof(controls);
+}
+
+// What the stick clicks and combos do, after the restart buttons: Cheat Cartridge Button (its stick,
+// or 0xFF for none), Cheat Cartridge Button Press (whether it toggles), L3 Button and Restart Combo.
+// Each device's own options set them, but in netplay they shape what the state holds, so a state that
+// netplay loads brings the host's.
+struct SharedControls {
+	uint8_t replayButton, replayToggles, l3Button, restartButtons;
+};
+
+// Last, the CRC-32 of the cheat cartridge's file (replayCartCrc). A state holds the cartridge's chip as
+// it differs from that image, which every player has, so a state only loads with the same one.
+static size_t stateUsed(void) {
+	return stateBeforeRestarts() + sizeof(restartHeld) + sizeof(struct SharedControls) + sizeof(replayCartCrc);
+}
+
 size_t retro_serialize_size(void) {
-	return consolesStateSize() + extraStateSize() + sizeof(pressed) + 1 + sizeof(sessionTag) + sizeof(passed);
+	return (stateUsed() + 7) & ~(size_t) 7;
 }
 
 bool retro_serialize(void* data, size_t size) {
@@ -3745,15 +4656,42 @@ bool retro_serialize(void* data, size_t size) {
 	*at++ = (uint8_t) solarLevel;
 	memcpy(at, &sessionTag, sizeof(sessionTag));
 	memcpy(at + sizeof(sessionTag), &passed, sizeof(passed));
+	memcpy(at + sizeof(sessionTag) + sizeof(passed), &controls, sizeof(controls));
+	// Linked consoles keep theirs before the buttons; written here too, and read only when not linked
+	memcpy((uint8_t*) data + stateBeforeRestarts(), restartHeld, sizeof(restartHeld));
+	struct SharedControls const shared = {
+		replayButton == REPLAY_BUTTON_OFF ? 0xFF : (uint8_t) replayButton, replayToggles, (uint8_t) l3Button, (uint8_t) restartButtons,
+	};
+	memcpy((uint8_t*) data + stateBeforeRestarts() + sizeof(restartHeld), &shared, sizeof(shared));
+	memcpy((uint8_t*) data + stateBeforeRestarts() + sizeof(restartHeld) + sizeof(shared), &replayCartCrc, sizeof(replayCartCrc));
+	memset((uint8_t*) data + stateUsed(), 0, retro_serialize_size() - stateUsed());
 	return true;
 }
 
 bool retro_unserialize(const void* data, size_t size) {
 	bool const byNetplay = checkNetplay();
-	// A state from before Pass Around was kept is as long as this one without it.
-	size_t const buttons = sizeof(pressed) + 1, unpassed = retro_serialize_size() - sizeof(passed);
-	bool const full = size >= unpassed, older = size == unpassed - buttons, holding = size >= retro_serialize_size();
+	// A state from before Pass Around was kept is as long as this one without it, and one from before
+	// the Action Replay's button and L3 were, without them.
+	size_t const controlled = stateBeforeRestarts(), buttons = sizeof(pressed) + 1;
+	size_t const unpassed = controlled - sizeof(controls) - sizeof(passed);
+	bool const full = size >= unpassed, older = size == unpassed - buttons, holding = size >= unpassed + sizeof(passed);
 	bool const tagged = full || older;
+	// With a cheat cartridge, only a state made with the same one: its chip is held as it differs from
+	// the cartridge's image
+	if (actionReplayLoaded) {
+		size_t const at = controlled + sizeof(restartHeld) + sizeof(struct SharedControls);
+		uint32_t crc = 0;
+		if (size >= at + sizeof(crc)) {
+			memcpy(&crc, (const uint8_t*) data + at, sizeof(crc));
+		}
+		if (crc != replayCartCrc) {
+			char message[200];
+			snprintf(message, sizeof(message), "This state was made with another copy of the %s: every player needs the same one", cartridgeName());
+			notify(message, 360);
+			logMessage(RETRO_LOG_WARN, message);
+			return false;
+		}
+	}
 	if (!(tagged || (size == consolesStateSize() && !togetherRunning())) || !loadConsoles(data, consolesStateSize())) {
 		return false;
 	}
@@ -3778,6 +4716,33 @@ bool retro_unserialize(const void* data, size_t size) {
 			memcpy(&passed, at + sizeof(tag), sizeof(passed));
 		} else {
 			memset(&passed, 0, sizeof(passed));
+		}
+		if (size >= controlled) {
+			memcpy(&controls, at + sizeof(tag) + sizeof(passed), sizeof(controls));
+		} else {
+			memset(&controls, 0, sizeof(controls));
+		}
+		// Without it, a rollback in netplay would leave the hold counted on, and restart the console
+		// on another frame than the other devices'.
+		if (!togetherRunning()) {
+			if (size >= controlled + sizeof(restartHeld)) {
+				memcpy(restartHeld, (const uint8_t*) data + controlled, sizeof(restartHeld));
+			} else {
+				memset(restartHeld, 0, sizeof(restartHeld));
+			}
+		}
+		struct SharedControls shared;
+		if (byNetplay && size >= controlled + sizeof(restartHeld) + sizeof(shared)) {
+			memcpy(&shared, (const uint8_t*) data + controlled + sizeof(restartHeld), sizeof(shared));
+			bool const known = (shared.replayButton == 0xFF || shared.replayButton == RETRO_DEVICE_ID_JOYPAD_L3 ||
+			                    shared.replayButton == RETRO_DEVICE_ID_JOYPAD_R3) &&
+			                   shared.l3Button <= L3_OFF && shared.restartButtons <= RESTART_OFF;
+			if (known) {
+				replayButton = shared.replayButton == 0xFF ? REPLAY_BUTTON_OFF : shared.replayButton;
+				replayToggles = shared.replayToggles != 0;
+				l3Button = shared.l3Button;
+				restartButtons = shared.restartButtons;
+			}
 		}
 	}
 	return true;

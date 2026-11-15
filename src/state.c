@@ -310,6 +310,10 @@ bool gbaLoadState(struct GBA* gba, const void* state, size_t size) {
 	memcpy(gba->iwramCode, host->iwramCode, sizeof(gba->iwramCode));
 	memcpy(gba->ewramCode, host->ewramCode, sizeof(gba->ewramCode));
 	gba->videoCode = host->videoCode;
+	// What a cheat cartridge has the CPU watch, which compiled code is laid out around: the
+	// cartridge's state sets it after this (fcd.c), throwing compiled code away if it changes.
+	gba->cartTrapped = host->cartTrapped;
+	gba->cartTrapAt = host->cartTrapAt;
 
 	// The events: what they call is the host's; when they come and in what order is the state's.
 	for (int i = 0; i < EVENTS; ++i) {

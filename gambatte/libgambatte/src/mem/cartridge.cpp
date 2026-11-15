@@ -279,10 +279,13 @@ void Cartridge::setStatePtrs(SaveState &state) {
 
 	huc3_.setStatePtrs(state);
 	camera_.setStatePtrs(state);
-	if (actionReplay_)
-		state.mem.cartChip.set(actionReplay_->stateData(), sizeof(ActionReplayGb::State));
-	else
+	if (cheatCart_) {
+		state.mem.cartChip.set(cheatCart_->stateData(), cheatCart_->stateSize());
+		state.mem.cartFlash.set(cheatCart_->flashData(), cheatCart_->flashSize());
+	} else {
 		state.mem.cartChip.set(0, 0);
+		state.mem.cartFlash.set(0, 0);
+	}
 }
 
 void Cartridge::saveState(SaveState &state, gb_ulong const cc) {
@@ -492,7 +495,7 @@ LoadRes Cartridge::loadROM(Array<unsigned char> &buffer,
 	huc1_ = false;
 	io_ = 0;
 	romHook_ = 0;
-	actionReplay_ = 0;
+	cheatCart_ = 0;
 	sramHook_ = 0;
 	pocketCamera_ = false;
 
@@ -903,16 +906,20 @@ bool Cartridge::swapMegaDuckRom(unsigned char const *const data, std::size_t con
 	return true;
 }
 
-// armGBA: the Action Replay takes the place of the cartridge's mapper and answers its ROM reads; the
+// armGBA: the cheat cartridge takes the place of the cartridge's mapper and answers its ROM reads; the
 // game's mapper (and its own answers, for a cartridge that has them) stay behind it.
-bool Cartridge::attachActionReplay(unsigned char const *const flash, std::size_t const size, bool const hasGame) {
-	if (!mbc_ || !size || size > 0x80000 || actionReplay_)
+bool Cartridge::attachCheatCart(unsigned char const *const program, std::size_t const size, bool const hasGame) {
+	if (!mbc_ || !size || size > 0x80000 || cheatCart_)
 		return false;
 
-	ActionReplayGb *const chip = new ActionReplayGb(memptrs_, mbc_.release(), romHook_, flash, size, hasGame);
+	CheatCartGb *const chip = GameGenieGb::is(program, size)
+		? static_cast<CheatCartGb *>(new GameGenieGb(memptrs_, mbc_.release(), romHook_, program, size, hasGame))
+		: XploderGb::is(program, size)
+		? static_cast<CheatCartGb *>(new XploderGb(memptrs_, mbc_.release(), romHook_, program, size, hasGame))
+		: new ActionReplayGb(memptrs_, mbc_.release(), romHook_, program, size, hasGame);
 	mbc_.reset(chip);
 	romHook_ = chip;
 	sramHook_ = chip;
-	actionReplay_ = chip;
+	cheatCart_ = chip;
 	return true;
 }

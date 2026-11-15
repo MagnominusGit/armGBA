@@ -85,6 +85,10 @@ std::vector<unsigned char> laptopCartridge;
 int laptopCartridgeKind = 0;
 // Whether the cartridge in the laptop's slot has taken the system ROM's place, as states keep it
 bool laptopSlotIn;
+// The codes the Game Genie fills its empty slots with (libretroGbSetGameGenieCodes)
+static unsigned char genieDigits[27] = { 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10,
+                                         0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10 };
+static unsigned char genieCounts[3];
 // Datel's Action Replay in front of the game (libretroGbSetActionReplay): its program, whether a game
 // is on top, and what it keeps with the power off as it was last read out of the console
 std::vector<unsigned char> replayProgram;
@@ -788,8 +792,8 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	}
 	laptopSlotIn = false;
 	if (!replayProgram.empty()) {
-		if (!s->gb->attachActionReplay(reinterpret_cast<const char*>(&replayProgram[0]), replayProgram.size(), replayGame)) {
-			std::snprintf(error, errorSize, "armGBA can't run this Action Replay");
+		if (!s->gb->attachCheatCart(reinterpret_cast<const char*>(&replayProgram[0]), replayProgram.size(), replayGame)) {
+			std::snprintf(error, errorSize, "armGBA can't run this cheat cartridge");
 			return false;
 		}
 		std::size_t size = 0;
@@ -797,6 +801,7 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 		if (kept && size == replayKept.size()) {
 			std::memcpy(kept, &replayKept[0], size);
 		}
+		s->gb->setGameGenieCodes(genieDigits, genieCounts);
 	}
 	s->gb->linkStatus(players > 1 || s->linked ? LINK_ON : LINK_OFF);
 	if (!boot.empty()) {
@@ -959,6 +964,14 @@ void libretroGbSetMegaDuckLaptop(bool on, int printer, int language) {
 	laptopWanted = on;
 	laptopPrinter = printer;
 	laptopLanguage = language ? DUCK_LAPTOP_GERMAN : DUCK_LAPTOP_SPANISH;
+}
+
+void libretroGbSetGameGenieCodes(const uint8_t digits[27], const uint8_t counts[3]) {
+	std::memcpy(genieDigits, digits, sizeof(genieDigits));
+	std::memcpy(genieCounts, counts, sizeof(genieCounts));
+	if (s->gb) {
+		s->gb->setGameGenieCodes(genieDigits, genieCounts);
+	}
 }
 
 void libretroGbSetActionReplay(const void* program, size_t size, bool game) {

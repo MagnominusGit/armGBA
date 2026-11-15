@@ -90,12 +90,13 @@ public:
 	bool getMemoryArea(int which, unsigned char **data, int *length) const;
 	// armGBA: the Mega Duck laptop's slot (see GB::swapMegaDuckCartridge)
 	bool swapMegaDuckRom(unsigned char const *data, std::size_t size, unsigned kind);
-	// armGBA: puts Datel's Action Replay in front of the cartridge loaded (see ActionReplayGb); hasGame:
-	// whether that is a game, else nothing is on top
-	bool attachActionReplay(unsigned char const *flash, std::size_t size, bool hasGame);
-	ActionReplayGb *actionReplay() const { return actionReplay_; }
+	// armGBA: puts a cheat cartridge in front of the cartridge loaded, by its program: Galoob's Game Genie
+	// (GameGenieGb) or Datel's Action Replay (ActionReplayGb); hasGame: whether that is a game, else
+	// nothing is on top
+	bool attachCheatCart(unsigned char const *program, std::size_t size, bool hasGame);
+	CheatCartGb *cheatCart() const { return cheatCart_; }
 	// armGBA: power on for a chip of the cartridge's own that a state's reset doesn't reach
-	void resetChip() { if (actionReplay_) actionReplay_->reset(); }
+	void resetChip() { if (cheatCart_) cheatCart_->reset(); }
 	std::string const saveBasePath() const;
 	void setSaveDir(std::string const &dir);
 	// armGBA: megaDuck is 0 for a Game Boy cartridge, else 1 + its MegaDuck::Kind
@@ -150,7 +151,7 @@ private:
 	bool huc1_;
 	CartIo *io_ = 0;
 	RomHook *romHook_ = 0;
-	ActionReplayGb *actionReplay_ = 0;
+	CheatCartGb *cheatCart_ = 0;
 	SramHook *sramHook_ = 0;
 	bool pocketCamera_;
 	struct AddrData {

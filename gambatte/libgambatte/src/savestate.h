@@ -66,8 +66,10 @@ struct SaveState {
 	struct Mem {
 		Ptr<unsigned char> vram;
 		Ptr<unsigned char> sram;
-		// armGBA: the Action Replay's registers and RAM (ActionReplayGb::State), when one is in
+		// armGBA: a cheat cartridge's registers and RAM (CheatCartGb::stateData), when one is in
 		Ptr<unsigned char> cartChip;
+		// armGBA: the Action Replay's flash chip, so netplay's devices run the same codes and menus
+		Ptr<unsigned char> cartFlash;
 		Ptr<unsigned char> wram;
 		Ptr<unsigned char> ioamhram;
 		gb_ulong divLastUpdate;

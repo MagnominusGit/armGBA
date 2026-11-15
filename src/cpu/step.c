@@ -650,6 +650,14 @@ static void step(struct GBA* gba) {
 		stepTrace(gba);
 	}
 	bool thumb = cpu->cpsr & PSR_T;
+	if (gba->cartTrapped) {
+		// A cheat cartridge's trigger (see fcd.c), which changes what the CPU reads from there.
+		uint32_t const at = cpu->r[15] - (thumb ? 2 : 4);
+		if ((at >> 24) >= REGION_ROM0 && (at >> 24) <= REGION_ROM2_EX && (at & (SIZE_ROM - 1)) == gba->cartTrapAt) {
+			fcdTrap(gba);
+			refetch(gba);
+		}
+	}
 	uint32_t opcode = cpu->prefetch[0];
 	// The I flag as it is before the instruction decides whether an IRQ is taken after it.
 	cpu->irqMasked = cpu->cpsr & PSR_I;
