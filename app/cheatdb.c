@@ -345,23 +345,96 @@ void cheatDatabaseStart(void) {
 	libretroSetCheatFetch(fetch);
 }
 
-// Extras: Import Cheats from RetroArch with a press, as Core > System has it (the option goes to
-// Import, which the core takes as the game runs again), the app's copy of the database brought up to
-// date first.
-static void importRow(int unused, int delta) {
-	(void) unused;
+// Extras > Cheats...: Import Cheats from RetroArch. Without RetroArch's database, the app's copy is
+// brought up to date first (unless it's from the last day), on this page with a progress bar; then
+// the option goes to Import, which the core takes as the game runs again, so the menu closes.
+static bool importAfterDownload;
+
+static void importNow(void) {
 	struct Option* const option = optionFind("armgba_cheat_import");
-	if (!delta && option) {
-		refreshWanted = true;
+	if (option) {
 		optionSet(option, "import");
 		uiCloseMenu();
 	}
 }
 
-void cheatExtrasRows(void) {
-	const struct Option* const option = optionFind("armgba_cheat_import");
-	if (option && option->visible) {
+static void importRow(int unused, int delta) {
+	(void) unused;
+	const char* game;
+	bool advance, retroArchs;
+	if (delta || SDL_AtomicGet(&state) == RUNNING || !libretroCheatImportFor(&game, &advance, &retroArchs)) {
+		return;
+	}
+	if (!retroArchs) {
+		refreshWanted = true;
+		char folder[PATH_SIZE];
+		if (fetch(game, advance, true, folder, sizeof(folder)) == CHEAT_FETCH_BUSY) {
+			importAfterDownload = true;
+			return;
+		}
+	}
+	importNow();
+}
+
+static void cheatsPage(void) {
+	const char* game;
+	bool advance, retroArchs;
+	bool const can = libretroCheatImportFor(&game, &advance, &retroArchs);
+	bool const running = SDL_AtomicGet(&state) == RUNNING;
+	// The download done: the import, which reads what it brought (or says why it can't)
+	if (importAfterDownload && !running) {
+		importAfterDownload = false;
+		if (can) {
+			importNow();
+		}
+	}
+	if (running) {
+		int done, all;
+		httpProgress(&done, &all);
+		char value[64];
+		if (all > 0) {
+			snprintf(value, sizeof(value), "%.1f of %.1f MB", done / 1024.0, all / 1024.0);
+		} else {
+			snprintf(value, sizeof(value), "%.1f MB", done / 1024.0);
+		}
+		addProgress("Downloading Cheats", value, all > 0 ? (int) ((long long) done * 100 / all) : -1);
+		helpFor("RetroArch's cheat database, from libretro's server, as RetroArch's Online Updater gets it.");
+	} else if (can) {
 		addItem("Import Cheats from RetroArch", importRow, 0);
 		helpFor("Adds the latest RetroArch cheats for the game on top to the cheat cartridge's list, switched off.");
+	}
+	char whole[PATH_SIZE];
+	dataPath(whole, sizeof(whole), "cheat-database");
+	long long age = 0;
+	static char status[64];
+	if (retroArchs) {
+		snprintf(status, sizeof(status), "RetroArch's");
+	} else if (hasDatabase(whole, &age)) {
+		time_t const when = time(NULL) - (time_t) age;
+		struct tm day;
+		if (!localtime_r(&when, &day) || !strftime(status, sizeof(status), "Downloaded %d %b %Y", &day)) {
+			snprintf(status, sizeof(status), "Downloaded");
+		}
+	} else {
+		snprintf(status, sizeof(status), "Not Downloaded");
+	}
+	addChoice("Cheat Database", status, NULL, 0);
+	helpFor(retroArchs ? "RetroArch's own, which its Online Updater keeps up to date."
+	                   : "The app's copy of RetroArch's, downloaded again as an import needs it.");
+}
+
+static void openCheatsPage(int unused, int delta) {
+	(void) unused;
+	if (!delta) {
+		pushMenu(cheatsPage, "Cheats");
+	}
+}
+
+void cheatExtrasRows(void) {
+	const char* game;
+	bool advance, retroArchs;
+	if (libretroCheatImportFor(&game, &advance, &retroArchs)) {
+		addItem("Cheats...", openCheatsPage, 0);
+		helpFor("The cheat cartridge's: importing RetroArch's cheats for the game on top.");
 	}
 }

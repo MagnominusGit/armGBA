@@ -95,6 +95,10 @@ bool linkGbArrived(void);
 // returning CHEAT_FETCH_BUSY until they're in; CHEAT_FETCH_NONE when they can't be had.
 enum { CHEAT_FETCH_NONE, CHEAT_FETCH_READY, CHEAT_FETCH_BUSY };
 void libretroSetCheatFetch(int (*fetch)(const char* gamePath, bool advance, bool start, char* out, size_t outSize));
+// The cheat cartridge's game on top, for Import Cheats from RetroArch: false when there's none to
+// import for (no cartridge that takes them, or no game on top, or netplay). retroArchs is whether
+// RetroArch's own cheat database is found, which the import reads then.
+bool libretroCheatImportFor(const char** gamePath, bool* advance, bool* retroArchs);
 // Whether the .cht file named chtName in RetroArch's cheat database is for the game at gamePath: the
 // same title, and a region of its (cht.c).
 bool chtFileFits(const char* chtName, const char* gamePath);

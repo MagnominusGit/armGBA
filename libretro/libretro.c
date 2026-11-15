@@ -2301,6 +2301,19 @@ static const char* cartridgeName(void) {
 	return gameGenieLoaded ? "Game Genie" : fcdLoaded ? fcdLoaded : xploderLoaded ? "Xploder" : replayFirstKind ? "Pro Action Replay" : replayGameShark ? "GameShark" : "Action Replay";
 }
 
+bool libretroCheatImportFor(const char** gamePath, bool* advance, bool* retroArchs) {
+	if (!cheatImportOn() || netplaySeen) {
+		return false;
+	}
+	const char* system = NULL;
+	environment(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system);
+	char database[PATH_SIZE];
+	*gamePath = replayGamePath;
+	*advance = !gameBoy;
+	*retroArchs = chtDatabase(system, database, sizeof(database));
+	return true;
+}
+
 static void importCheats(void) {
 	const char* system = NULL;
 	environment(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system);
