@@ -373,12 +373,36 @@ static void importRow(int unused, int delta) {
 	}
 }
 
+// The cartridge's resets, as Core > System > Reset Cheats has them, each asking for a second press
+static const struct {
+	const char* value;
+	const char* label;
+	const char* help;
+} resets[] = {
+	{ "factory", "Factory Reset (Keep Master Codes)", "Empties the cartridge's lists but keeps each game's master code, which Advance codes need." },
+	{ "wipe", "Full Wipe (Erase All Contents)", "Empties the cartridge's lists, master codes too; its program and settings stay." },
+	{ "dump", "Reset to Dump", "Puts the cartridge's chip back as its ROM file has it." },
+};
+
+static void resetRow(int which, int delta) {
+	struct Option* const option = optionFind("armgba_cheat_restore");
+	if (!delta && option) {
+		optionSet(option, resets[which].value);
+		uiCloseMenu();
+	}
+}
+
 static void cheatsPage(void) {
-	const char* game;
-	bool advance, retroArchs;
+	const char* game = NULL;
+	bool advance = false, retroArchs = false;
 	if (libretroCheatImportFor(&game, &advance, &retroArchs)) {
 		addItem("Import Cheats from RetroArch", importRow, 0);
 		helpFor("Adds the latest RetroArch cheats for the game on top to the cheat cartridge's list, switched off.");
+	}
+	const struct Option* const reset = optionFind("armgba_cheat_restore");
+	for (int i = 0; reset && reset->visible && i < (int) (sizeof(resets) / sizeof(*resets)); ++i) {
+		addItem(resets[i].label, resetRow, i)->confirm = true;
+		helpFor(resets[i].help);
 	}
 	char whole[PATH_SIZE];
 	dataPath(whole, sizeof(whole), "cheat-database");
@@ -410,8 +434,9 @@ static void openCheatsPage(int unused, int delta) {
 void cheatExtrasRows(void) {
 	const char* game;
 	bool advance, retroArchs;
-	if (libretroCheatImportFor(&game, &advance, &retroArchs)) {
+	const struct Option* const reset = optionFind("armgba_cheat_restore");
+	if (libretroCheatImportFor(&game, &advance, &retroArchs) || (reset && reset->visible)) {
 		addItem("Cheats...", openCheatsPage, 0);
-		helpFor("The cheat cartridge's: importing RetroArch's cheats for the game on top.");
+		helpFor("The cheat cartridge's lists: importing RetroArch's cheats, and resetting them.");
 	}
 }

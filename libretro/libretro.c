@@ -2295,6 +2295,77 @@ static int xploderImport(uint8_t* flash, size_t size, const char* title, const s
 	return added;
 }
 
+// The Game Boy cartridges' resets (see clearCheats). The later Action Replays' games kept or not,
+// their codes gone, emptied as their program leaves a slot (zeros).
+static int arGbClear(uint8_t* flash, size_t size, bool keepGames) {
+	if (size < 0x10000 || (flash[AR_GAMES] == 0xFF && flash[AR_GAMES + 1] == 0xFF)) {
+		return -1;
+	}
+	for (size_t b = 0; b < COUNT(arCodeBanks); ++b) {
+		memset(&flash[arCodeBanks[b]], 0, 2 + (size_t) AR_SLOTS * AR_ENTRY);
+	}
+	if (!keepGames) {
+		memset(&flash[AR_GAMES], 0, 2 + (size_t) AR_SLOTS * AR_ENTRY);
+	}
+	return 0;
+}
+
+// The Pro Action Replay's four codes gone; wiped, its RAM all cleared, as before its first start.
+static int arFirstClear(uint8_t* ram, size_t size, bool keepRest) {
+	if (size != AR_FIRST_RAM) {
+		return -1;
+	}
+	if (keepRest) {
+		memset(&ram[AR_FIRST_CODES], 0, AR_FIRST_SLOTS * 4);
+	} else {
+		memset(ram, 0, size);
+	}
+	return 0;
+}
+
+// The Xploder GB's games kept with no cheats, or none.
+static int xploderClear(uint8_t* flash, size_t size, bool keepGames) {
+	if (size < XPLODER_CHEATS + XPLODER_ROOM) {
+		return -1;
+	}
+	uint8_t* const list = &flash[XPLODER_CHEATS];
+	uint8_t* const out = malloc(XPLODER_ROOM);
+	if (!out) {
+		return -1;
+	}
+	size_t used = 0;
+	size_t at = 0;
+	while (at < XPLODER_ROOM && list[at]) {
+		size_t const start = at;
+		if (!(at = xploderSkipName(list, at, XPLODER_ROOM)) || at >= XPLODER_ROOM) {
+			free(out);
+			return -1;
+		}
+		size_t const countAt = at++;
+		for (unsigned c = 0; c < list[countAt]; ++c) {
+			if (!(at = xploderSkipName(list, at, XPLODER_ROOM)) || at >= XPLODER_ROOM) {
+				free(out);
+				return -1;
+			}
+			at += 1 + 4u * list[at];
+			if (at > XPLODER_ROOM) {
+				free(out);
+				return -1;
+			}
+		}
+		if (keepGames) {
+			memcpy(&out[used], &list[start], countAt - start);
+			used += countAt - start;
+			out[used++] = 0;
+		}
+	}
+	out[used++] = 0;
+	memset(&out[used], 0xFF, XPLODER_ROOM - used);
+	memcpy(list, out, XPLODER_ROOM);
+	free(out);
+	return 0;
+}
+
 static bool cheatRestartDue;
 
 // Whether the Action Replay loaded is one InterAct sold as a GameShark (the GameShark GBA, and the
@@ -2442,7 +2513,7 @@ static void importCheats(void) {
 
 // What the cheat cartridge's chip held as it loaded, before its save went over it: its ROM, as the core
 // starts it (with the Xploder GB's empty cheat list, and the Xploder Advance (Europe) dump's missing
-// byte), for Restore Factory Cheats.
+// byte), for Reset to Dump.
 static uint8_t* replayFactory;
 static size_t replayFactorySize;
 
@@ -2463,7 +2534,7 @@ bool cheatRestorable(void) {
 	return cheatRestoreOn();
 }
 
-// Restore Factory Cheats: the chip as it came, the game on top kept; then the console restarts.
+// Reset to Dump: the chip as its ROM file has it, the game on top kept; then the console restarts.
 static void restoreCheats(void) {
 	size_t size;
 	uint8_t* const flash = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayFlash(&size);
@@ -2487,12 +2558,50 @@ static void restoreCheats(void) {
 	logMessage(RETRO_LOG_INFO, message);
 }
 
+// Factory Reset (keep: each game keeps its master code, which the GBA cartridges need to run and
+// import its codes; the Game Boy's, which have none, keep their games) and Full Wipe (the lists
+// emptied, the program's settings kept): what the cartridge's chip keeps, never its program.
+static void clearCheats(bool keep) {
+	size_t size;
+	uint8_t* const flash = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayFlash(&size);
+	int result = -1;
+	if (!flash) {
+	} else if (!gameBoy) {
+		result = fcdLoaded ? fcdClear(flash, size, keep) : (result = arGbaClear(flash, size, keep)) != -4 ? result : maxClear(flash, size, keep);
+	} else if (xploderLoaded) {
+		result = xploderClear(flash, size, keep);
+	} else if (replayFirstKind) {
+		result = arFirstClear(flash, size, keep);
+	} else {
+		result = arGbClear(flash, size, keep);
+	}
+	char message[200];
+	if (result < 0) {
+		snprintf(message, sizeof(message), "armGBA can't read the %s's cheat list", cartridgeName());
+		showMessage(message);
+		return;
+	}
+	writeReplayFlash();
+	cheatRestartDue = true;
+	snprintf(message, sizeof(message), keep ? "%s: factory reset, its games' master codes kept" : "%s: its cheats all wiped", cartridgeName());
+	notify(message, 300);
+	logMessage(RETRO_LOG_INFO, message);
+}
+
 static void readCheatRestore(bool act) {
-	if (optionIs("armgba_cheat_restore", "restore")) {
+	// Copied, as setting it back to Off can free the frontend's copy
+	const char* const set = option("armgba_cheat_restore");
+	char value[16];
+	snprintf(value, sizeof(value), "%s", set ? set : "off");
+	if (strcmp(value, "off")) {
 		struct retro_variable off = { "armgba_cheat_restore", "off" };
 		environment(RETRO_ENVIRONMENT_SET_VARIABLE, &off);
 		if (act && cheatRestoreOn() && !netplaySeen) {
-			restoreCheats();
+			if (!strcmp(value, "dump")) {
+				restoreCheats();
+			} else if (!strcmp(value, "factory") || !strcmp(value, "wipe")) {
+				clearCheats(!strcmp(value, "factory"));
+			}
 		}
 	}
 }

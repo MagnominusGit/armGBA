@@ -142,6 +142,12 @@ bool arGbaCipherWorks(void);
 // maxImport adds them to the Action Replay MAX's code list file for the game, likewise
 int maxImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize, const struct ChtCheat* cheats, size_t count,
               size_t* already, size_t* left);
+// Factory Reset (keepMasters: each game keeps its master code, which runs and finds it) and Full Wipe
+// (the list emptied) of the Xploder Advance's or CodeBreaker's database, the Action Replay v3's or
+// GBX's list (-4 for the MAX's) and the MAX's code list files. 0, or -1 when it can't be read.
+int fcdClear(uint8_t* flash, size_t size, bool keepMasters);
+int arGbaClear(uint8_t* flash, size_t size, bool keepMasters);
+int maxClear(uint8_t* flash, size_t size, bool keepMasters);
 
 // printout.c: the Game Boy Printer's paper, saved as a picture in the save folder once it is cut, or
 // as the game closes.

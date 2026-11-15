@@ -188,11 +188,12 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "those it doesn't have yet (alike by their codes), switched off, then restarts so the cartridge "
 	  "reads them. Then goes back to Off. Not in netplay.",
 	  NULL, "system", { { "off", "Off" }, { "import", "Import" }, { NULL, NULL } }, "off" },
-	{ "armgba_cheat_restore", "Restore Factory Cheats", NULL,
-	  "Puts the cheat cartridge's chip back as its ROM has it, as on its first start: the cheats, codes "
-	  "and settings kept since go, and the game on top stays. Then restarts, and goes back to Off. Not in "
-	  "netplay.",
-	  NULL, "system", { { "off", "Off" }, { "restore", "Restore" }, { NULL, NULL } }, "off" },
+	{ "armgba_cheat_restore", "Reset Cheats", NULL,
+	  "Factory Reset empties the cheat cartridge's lists but keeps each game's master code, which its "
+	  "codes and imports need on the Advance. Full Wipe empties them all. Reset to Dump puts the chip "
+	  "back as its ROM file has it. Then restarts, and goes back to Off. Not in netplay.",
+	  NULL, "system", { { "off", "Off" }, { "factory", "Factory Reset (Keep Master Codes)" }, { "wipe", "Full Wipe (Erase All Contents)" },
+	  { "dump", "Reset to Dump" }, { NULL, NULL } }, "off" },
 	{ "armgba_action_replay_press", "Open Cheat Cartridge Menu", NULL,
 	  "Presses the button of the Game Boy cheat cartridge (an Action Replay or Xploder) once as this menu "
 	  "closes, which opens its in-game menu (on the cartridges that have one). Then goes back to Off.",

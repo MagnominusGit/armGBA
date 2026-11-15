@@ -394,6 +394,66 @@ int fcdImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize,
 	return added;
 }
 
+int fcdClear(uint8_t* flash, size_t size, bool keepMasters) {
+	if (size < RESOURCES + 4) {
+		return -1;
+	}
+	uint32_t const table = read32(&flash[RESOURCES]) & 0x1FFFFFF;
+	if (table + 4 * (DATABASE_END + 1) > size) {
+		return -1;
+	}
+	size_t const start = read32(&flash[table + 4 * DATABASE]) & 0x1FFFFFF;
+	size_t const room = read32(&flash[table + 4 * DATABASE_END]) & 0x1FFFFFF;
+	if (start >= room || room > size) {
+		return -1;
+	}
+	const uint8_t* const db = &flash[start];
+	size_t const end = room - start;
+	uint8_t* const out = malloc(end);
+	if (!out) {
+		return -1;
+	}
+	size_t used = 0;
+	size_t at = 0;
+	while (at + 1 < end && (db[at] || db[at + 1])) {
+		size_t const gameAt = at;
+		unsigned const items = db[at];
+		if (!(at = skipName(db, at + 1, end))) {
+			free(out);
+			return -1;
+		}
+		size_t firstEnd = at;
+		for (unsigned i = 0; i < items; ++i) {
+			unsigned const codes = at < end ? db[at] : 0;
+			if (at >= end || !(at = skipName(db, at + 1, end)) || at + codes * CODE > end) {
+				free(out);
+				return -1;
+			}
+			at += codes * CODE;
+			if (!i) {
+				firstEnd = at;
+			}
+		}
+		// The game with its first item, its master code (whose seed and checksum find the game)
+		if (keepMasters) {
+			out[used] = (uint8_t) (items ? 1 : 0);
+			memcpy(&out[used + 1], &db[gameAt + 1], firstEnd - gameAt - 1);
+			used += firstEnd - gameAt;
+		}
+	}
+	if (at + 1 >= end) {
+		free(out);
+		return -1;
+	}
+	// The end: no items and an empty name
+	out[used++] = 0;
+	out[used++] = 0;
+	memset(&out[used], 0xFF, end - used);
+	memcpy(&flash[start], out, end);
+	free(out);
+	return 0;
+}
+
 // A check of the cipher against the CodeBreaker's own (Castlevania: Circle of the Moon, seed
 // 90173540 1263: 3202566A 0001 is typed C8AD366D 81F1).
 bool fcdCipherWorks(void) {
@@ -615,6 +675,82 @@ int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSiz
 	memcpy(&flash[AR_GAMES], out, used);
 	free(out);
 	return added;
+}
+
+int arGbaClear(uint8_t* flash, size_t size, bool keepMasters) {
+	if (size < AR_GAMES + 4) {
+		return -1;
+	}
+	if (memcmp(&flash[AR_MARK], "GBA_", 4)) {
+		return -4;
+	}
+	uint32_t const games = read32(&flash[AR_GAMES]);
+	if (games > 10000) {
+		return -1;
+	}
+	uint8_t* const out = malloc(size - AR_GAMES);
+	if (!out) {
+		return -1;
+	}
+	size_t used = 4;
+	size_t at = AR_GAMES + 4;
+	for (uint32_t g = 0; g < games; ++g) {
+		if (at + AR_NAME + 4 > size) {
+			free(out);
+			return -1;
+		}
+		size_t const named = used;
+		if (keepMasters) {
+			memcpy(&out[used], &flash[at], AR_NAME);
+			used += AR_NAME + 4;
+		}
+		uint32_t const cheatsThere = read32(&flash[at + AR_NAME]);
+		at += AR_NAME + 4;
+		uint32_t kept = 0;
+		for (uint32_t c = 0; c < cheatsThere; ++c) {
+			if (at + 4 + AR_NAME > size) {
+				free(out);
+				return -1;
+			}
+			uint32_t const word = read32(&flash[at]);
+			size_t const words = word & 0xFFFFFF;
+			if (words > (size - at - 4 - AR_NAME) / 4) {
+				free(out);
+				return -1;
+			}
+			size_t const length = 4 + AR_NAME + words * 4;
+			// A master code (flag 40, with 80 for on), which the game is found by
+			if (keepMasters && (word >> 24 & 0x40)) {
+				memcpy(&out[used], &flash[at], length);
+				used += length;
+				++kept;
+			}
+			at += length;
+		}
+		if (keepMasters) {
+			write32(&out[named + AR_NAME], kept);
+		}
+	}
+	// The empty game after the list goes too, and comes back after the new one
+	size_t listEnd = at;
+	bool marked = listEnd + AR_END_MARK <= size && !read32(&flash[listEnd + AR_NAME]);
+	for (size_t i = 0; marked && i < AR_NAME; ++i) {
+		marked = flash[listEnd + i] == 0xFF;
+	}
+	if (marked) {
+		listEnd += AR_END_MARK;
+	}
+	write32(out, keepMasters ? games : 0);
+	memset(&out[used], 0xFF, AR_NAME);
+	write32(&out[used + AR_NAME], 0);
+	used += AR_END_MARK;
+	size_t const was = listEnd - AR_GAMES;
+	if (used < was) {
+		memset(&out[used], 0xFF, was - used);
+	}
+	memcpy(&flash[AR_GAMES], out, used > was ? used : was);
+	free(out);
+	return 0;
 }
 
 // The GameShark key's encryption against its decryption.
@@ -933,4 +1069,156 @@ int maxImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize,
 	write16Big(&newDirectory[MAX_GENERATION], generation + 2);
 	maxSums(newDirectory, MAX_SUMS, &newDirectory[MAX_SUMS]);
 	return added;
+}
+
+// The MAX's copies in use: the directory and table whose checksums hold, the newer of each, and the
+// highest generation of those whole. False when neither copy of one holds.
+static bool maxCopies(uint8_t* flash, int* dirNow, int* tableNow, unsigned* generation) {
+	uint8_t* const directories[2] = { &flash[MAX_DIRECTORIES], &flash[MAX_DIRECTORIES + MAX_DIRECTORY] };
+	uint8_t* const tables[2] = { &flash[MAX_TABLES], &flash[MAX_TABLES + MAX_TABLE] };
+	unsigned const dirGen[2] = { read16Big(&directories[0][MAX_GENERATION]), read16Big(&directories[1][MAX_GENERATION]) };
+	unsigned const tableGen[2] = { read16Big(&tables[0][4]), read16Big(&tables[1][4]) };
+	*dirNow = dirGen[0] > dirGen[1] ? 0 : 1;
+	if (!maxSumsHold(directories[*dirNow], MAX_SUMS, &directories[*dirNow][MAX_SUMS])) {
+		*dirNow ^= 1;
+		if (!maxSumsHold(directories[*dirNow], MAX_SUMS, &directories[*dirNow][MAX_SUMS])) {
+			return false;
+		}
+	}
+	*tableNow = tableGen[0] > tableGen[1] ? 0 : 1;
+	if (!maxSumsHold(&tables[*tableNow][MAX_TABLE_SUMMED], MAX_TABLE - MAX_TABLE_SUMMED, &tables[*tableNow][0])) {
+		*tableNow ^= 1;
+		if (!maxSumsHold(&tables[*tableNow][MAX_TABLE_SUMMED], MAX_TABLE - MAX_TABLE_SUMMED, &tables[*tableNow][0])) {
+			return false;
+		}
+	}
+	*generation = 0;
+	for (int i = 0; i < 2; ++i) {
+		if (maxSumsHold(directories[i], MAX_SUMS, &directories[i][MAX_SUMS]) && dirGen[i] > *generation) {
+			*generation = dirGen[i];
+		}
+		if (maxSumsHold(&tables[i][MAX_TABLE_SUMMED], MAX_TABLE - MAX_TABLE_SUMMED, &tables[i][0]) && tableGen[i] > *generation) {
+			*generation = tableGen[i];
+		}
+	}
+	return *generation + 2 < 0xFFFF;
+}
+
+// A file's clusters, in order: how many, or 0 when its chain isn't whole.
+static unsigned maxChain(const uint8_t* table, const uint8_t* entry, unsigned* chain) {
+	unsigned const clusters = read16Big(&entry[0x1E]);
+	if (!clusters || clusters > MAX_END - MAX_FIRST) {
+		return 0;
+	}
+	uint8_t seen[(MAX_END + 7) / 8] = { 0 };
+	unsigned cluster = read16Big(&entry[0x1C]);
+	for (unsigned i = 0; i < clusters; ++i) {
+		if (cluster < MAX_FIRST || cluster >= MAX_END || seen[cluster / 8] & 1 << (cluster % 8)) {
+			return 0;
+		}
+		seen[cluster / 8] |= (uint8_t) (1 << (cluster % 8));
+		chain[i] = cluster;
+		cluster = maxLink(table, cluster);
+	}
+	return clusters;
+}
+
+int maxClear(uint8_t* flash, size_t size, bool keepMasters) {
+	if (size < (size_t) MAX_TABLES + (size_t) MAX_END * MAX_CLUSTER) {
+		return -1;
+	}
+	int dirNow, tableNow;
+	unsigned generation;
+	if (!maxCopies(flash, &dirNow, &tableNow, &generation)) {
+		return -1;
+	}
+	uint8_t* const directories[2] = { &flash[MAX_DIRECTORIES], &flash[MAX_DIRECTORIES + MAX_DIRECTORY] };
+	uint8_t* const tables[2] = { &flash[MAX_TABLES], &flash[MAX_TABLES + MAX_TABLE] };
+	const uint8_t* const directory = directories[dirNow];
+	const uint8_t* const table = tables[tableNow];
+	static unsigned chain[MAX_END - MAX_FIRST];
+	if (keepMasters) {
+		// Each code list in its own clusters, its master codes (40000000) only, zeros after
+		uint8_t* const file = malloc((size_t) (MAX_END - MAX_FIRST) * MAX_CLUSTER);
+		uint8_t* const kept = malloc((size_t) (MAX_END - MAX_FIRST) * MAX_CLUSTER);
+		if (!file || !kept) {
+			free(file);
+			free(kept);
+			return -1;
+		}
+		for (size_t i = 0; i < MAX_ENTRIES; ++i) {
+			const uint8_t* const entry = &directory[i * MAX_ENTRY];
+			if (read16Big(&entry[0x1C]) == 0xFFFF || !(entry[0x1B] & MAX_LIST)) {
+				continue;
+			}
+			unsigned const clusters = maxChain(table, entry, chain);
+			if (!clusters) {
+				continue;
+			}
+			size_t const fileSize = (size_t) clusters * MAX_CLUSTER;
+			for (unsigned c = 0; c < clusters; ++c) {
+				memcpy(&file[c * MAX_CLUSTER], &flash[MAX_TABLES + (size_t) chain[c] * MAX_CLUSTER], MAX_CLUSTER);
+			}
+			unsigned const cheatsThere = (unsigned) (read32(file) & 0xFFFF);
+			size_t at = 4, used = 4;
+			unsigned keptCount = 0;
+			bool whole = true;
+			for (unsigned c = 0; c < cheatsThere && whole; ++c) {
+				uint32_t const word = at + 4 <= fileSize ? read32(&file[at]) : 0;
+				size_t const length = 4 + AR_NAME + (word & 0xFFFF) * 4;
+				whole = at + length <= fileSize;
+				if (whole && (word & 0x40000000u)) {
+					memcpy(&kept[used], &file[at], length);
+					used += length;
+					++keptCount;
+				}
+				at += length;
+			}
+			if (!whole) {
+				continue;
+			}
+			write32(kept, (read32(file) & 0xFFFF0000u) | keptCount);
+			memset(&kept[used], 0, fileSize - used);
+			for (unsigned c = 0; c < clusters; ++c) {
+				memcpy(&flash[MAX_TABLES + (size_t) chain[c] * MAX_CLUSTER], &kept[c * MAX_CLUSTER], MAX_CLUSTER);
+			}
+		}
+		free(file);
+		free(kept);
+		return 0;
+	}
+	// Every file gone: its clusters freed in a new table, its entry erased in a new directory, both
+	// in the other copies with generations above all
+	uint8_t* const tableCopy = malloc(MAX_TABLE);
+	if (!tableCopy) {
+		return -1;
+	}
+	memcpy(tableCopy, table, MAX_TABLE);
+	unsigned freeCount = read16Big(&table[6]);
+	uint8_t* const newDirectory = directories[dirNow ^ 1];
+	memmove(newDirectory, directory, MAX_DIRECTORY);
+	for (size_t i = 0; i < MAX_ENTRIES; ++i) {
+		uint8_t* const entry = &newDirectory[i * MAX_ENTRY];
+		if (read16Big(&entry[0x1C]) == 0xFFFF) {
+			continue;
+		}
+		unsigned const clusters = maxChain(table, entry, chain);
+		for (unsigned c = 0; c < clusters; ++c) {
+			if (maxLink(tableCopy, chain[c])) {
+				write16Big(&tableCopy[2 * chain[c]], 0);
+				++freeCount;
+			}
+		}
+		memset(entry, 0xFF, MAX_ENTRY);
+	}
+	uint8_t* const newTable = tables[tableNow ^ 1];
+	write16Big(&tableCopy[4], generation + 1);
+	write16Big(&tableCopy[6], freeCount);
+	maxSums(&tableCopy[MAX_TABLE_SUMMED], MAX_TABLE - MAX_TABLE_SUMMED, &tableCopy[0]);
+	memcpy(newTable, tableCopy, 0x10);
+	memcpy(&newTable[MAX_TABLE_SUMMED], &tableCopy[MAX_TABLE_SUMMED], MAX_TABLE - MAX_TABLE_SUMMED);
+	free(tableCopy);
+	write16Big(&newDirectory[MAX_GENERATION], generation + 2);
+	maxSums(newDirectory, MAX_SUMS, &newDirectory[MAX_SUMS]);
+	return 0;
 }
