@@ -1495,11 +1495,11 @@ bool libretroGbBooting(void) {
 	return false;
 }
 
-void libretroGbSetCpuClock(unsigned quarters) {
+void libretroGbSetCpuClock(unsigned quarters, bool loaded) {
 	cpuQuarters = quarters;
 	for (int i = 0; i < MAX_PLAYERS; ++i) {
 		if (consoles[i].gb) {
-			consoles[i].gb->setCpuQuarters(quarters);
+			consoles[i].gb->setCpuQuarters(quarters, loaded);
 		}
 	}
 }

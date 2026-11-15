@@ -935,19 +935,20 @@ static void readOptions(void) {
 	static const struct Choice l3Choices[] = { { "fast forward", L3_FAST_FORWARD }, { "soft reset", L3_SOFT_RESET }, { "off", L3_OFF } };
 	int const l3 = optionChoice("armgba_l3_button", l3Choices, COUNT(l3Choices), L3_FAST_FORWARD);
 	int const restart = optionChoice("armgba_restart_buttons", restartChoices, COUNT(restartChoices), RESTART_L_R_START);
-	if (triggers != turboOnTriggers || (!netplaySeen && (l3 != l3Button || restart != restartButtons))) {
+	// In netplay, the host's (see retro_unserialize)
+	if (!netplaySeen && (triggers != turboOnTriggers || l3 != l3Button || restart != restartButtons)) {
 		turboOnTriggers = triggers;
-		if (!netplaySeen) {
-			l3Button = l3;
-			restartButtons = restart;
-		}
+		l3Button = l3;
+		restartButtons = restart;
 		if (gba || gameBoy) {
 			showButtons();
 		}
 	}
-	const char* value = option("armgba_turbo_period");
-	turboPeriod = clampInt(value ? atoi(value) : TURBO_FEWEST, TURBO_FEWEST, TURBO_MOST);
-	turboPulse = clampInt(turboPeriod / 2, 2, 15);
+	if (!netplaySeen) {
+		const char* const period = option("armgba_turbo_period");
+		turboPeriod = clampInt(period ? atoi(period) : TURBO_FEWEST, TURBO_FEWEST, TURBO_MOST);
+		turboPulse = clampInt(turboPeriod / 2, 2, 15);
+	}
 	linkSetGbExact(optionIs("armgba_gb_link_timing", "exact"));
 	static const struct Choice rotationChoices[] = { { "90", 1 }, { "180", 2 }, { "270", 3 } };
 	motionRotation = optionChoice("armgba_motion_rotation", rotationChoices, COUNT(rotationChoices), 0);
@@ -958,7 +959,7 @@ static void readOptions(void) {
 			showButtons();
 		}
 	}
-	value = option("armgba_solar_sensor");
+	const char* const value = option("armgba_solar_sensor");
 	if (value) {
 		solarLevel = atoi(value);
 	}
@@ -1096,27 +1097,32 @@ static void resetAdvance(struct GBA* machine) {
 	gbaReset(machine, skipBios);
 }
 
-// Puts the consoles on the CPU Clock chosen, when it changed or a state from another was loaded.
-static void applyCpuClock(void) {
-	libretroGbSetCpuClock(4 + clockNow());
+// Puts the consoles on the CPU Clock chosen, when it changed or a state from another was loaded
+// (loaded).
+static void applyCpuClock(bool loaded) {
+	libretroGbSetCpuClock(4 + clockNow(), loaded);
 	for (int i = 0; !gameBoy && i < playersHere; ++i) {
 		gbaSetOverclock(gbas[i], clockNow());
 	}
 }
 
-// Once the game has started, from the cartridge or a program another console sent, the CPU Clock
-// applies.
-static void checkBooted(void) {
-	if (!booting) {
-		return;
-	}
+// Whether a console is still booting: a Game Boy in its boot ROM, a Game Boy Advance before its BIOS
+// set POSTFLG, as it does just before starting the cartridge or a program another console sent (and
+// as skipping the BIOS does). Only the BIOS sets it and nothing clears it, so the console's state
+// tells, unlike where the CPU is: a game waits for VBlank in the BIOS.
+static bool stillBooting(void) {
 	bool still = gameBoy && libretroGbBooting();
 	for (int i = 0; !gameBoy && i < playersHere; ++i) {
-		still |= gbas[i]->cpu.r[15] < 0x02000000;
+		still |= !(gbas[i]->io[IO(REG_POSTFLG)] & 1);
 	}
-	if (!still) {
+	return still;
+}
+
+// Once the game has started, the CPU Clock applies.
+static void checkBooted(void) {
+	if (booting && !stillBooting()) {
 		booting = false;
-		applyCpuClock();
+		applyCpuClock(false);
 	}
 }
 
@@ -2674,7 +2680,7 @@ static bool loadGameBoy(const struct retro_game_info* game, const struct retro_g
 	readOptions();
 	readClockOptions(false);
 	booting = true;
-	libretroGbSetCpuClock(4 + clockNow());
+	libretroGbSetCpuClock(4 + clockNow(), false);
 	char error[256];
 	libretroGbSelect(0);
 	// An Action Replay runs the game on top of it, which the Game Boy core loads as its cartridge.
@@ -3083,7 +3089,7 @@ void retro_reset(void) {
 	offerLinkNetplay();
 	if (gameBoy) {
 		booting = true;
-		applyCpuClock();
+		applyCpuClock(false);
 		for (int i = playersHere - 1; i >= 0; --i) {
 			libretroGbSelect(i);
 			libretroGbReset(gbModel);
@@ -3689,7 +3695,7 @@ static uint8_t restartHeld[MAX_PLAYERS];
 void restartConsole(int player) {
 	if (gameBoy) {
 		booting = true;
-		applyCpuClock();
+		applyCpuClock(false);
 		libretroGbSelect(player);
 		libretroGbRestart();
 		libretroGbSelect(0);
@@ -4463,7 +4469,7 @@ void retro_run(void) {
 		readReplayPress(true);
 		readCheatImport(true);
 		readCheatRestore(true);
-		applyCpuClock();
+		applyCpuClock(false);
 	}
 	if (cheatRestartDue) {
 		// The cartridge reads its new list as it starts again.
@@ -4652,7 +4658,7 @@ static size_t stateBeforeRestarts(void) {
 
 // What the stick clicks and combos do, after the restart buttons: Cheat Cartridge Button (its stick,
 // or 0xFF for none), Cheat Cartridge Button Press (whether it toggles), L3 Button and Restart Combo;
-// and the CPU Clock.
+// the CPU Clock; and the turbo buttons, L2 and R2 as Turbo L and R and Turbo Button Period.
 // Each device's own options set them, but in netplay they shape what the state holds, so a state that
 // netplay loads brings the host's.
 struct SharedControls {
@@ -4660,6 +4666,7 @@ struct SharedControls {
 	// The CPU Clock (cpuOverclock) and CPU Clock During Boot, which each device's emulation must share
 	int8_t cpuOverclock;
 	uint8_t stockDuringBoot;
+	uint8_t turboTriggers, turboPeriod;
 };
 
 // Last, the CRC-32 of the cheat cartridge's file (replayCartCrc). A state holds the cartridge's chip as
@@ -4690,7 +4697,7 @@ bool retro_serialize(void* data, size_t size) {
 	memcpy((uint8_t*) data + stateBeforeRestarts(), restartHeld, sizeof(restartHeld));
 	struct SharedControls const shared = {
 		replayButton == REPLAY_BUTTON_OFF ? 0xFF : (uint8_t) replayButton, replayToggles, (uint8_t) l3Button, (uint8_t) restartButtons,
-		cpuOverclock, stockDuringBoot,
+		cpuOverclock, stockDuringBoot, turboOnTriggers, (uint8_t) turboPeriod,
 	};
 	memcpy((uint8_t*) data + stateBeforeRestarts() + sizeof(restartHeld), &shared, sizeof(shared));
 	memcpy((uint8_t*) data + stateBeforeRestarts() + sizeof(restartHeld) + sizeof(shared), &replayCartCrc, sizeof(replayCartCrc));
@@ -4735,19 +4742,9 @@ bool retro_unserialize(const void* data, size_t size) {
 		}
 	}
 	// Whether the console is still booting, for CPU Clock During Boot, is the state's, not this run's:
-	// a frame run again from before the game started runs at the boot's clock, as it did. A Game Boy
-	// is in its boot ROM; a Game Boy Advance state from the boot is on the console's own clock where
-	// the CPU Clock isn't.
-	if (gameBoy) {
-		booting = libretroGbBooting();
-	} else {
-		bool stock = false;
-		for (int i = 0; i < playersHere; ++i) {
-			stock |= !gbas[i]->cpu.overclock;
-		}
-		booting = stockDuringBoot && cpuOverclock && stock;
-	}
-	applyCpuClock();
+	// a frame run again from before the game started runs at the boot's clock, as it did.
+	booting = stillBooting();
+	applyCpuClock(true);
 	// A loaded state has every console's save as it was; player 1's isn't copied over them after.
 	copySaves = 0;
 	if (tagged) {
@@ -4788,12 +4785,19 @@ bool retro_unserialize(const void* data, size_t size) {
 			memcpy(&shared, (const uint8_t*) data + controlled + sizeof(restartHeld), sizeof(shared));
 			bool const known = (shared.replayButton == 0xFF || shared.replayButton == RETRO_DEVICE_ID_JOYPAD_L3 ||
 			                    shared.replayButton == RETRO_DEVICE_ID_JOYPAD_R3) &&
-			                   shared.l3Button <= L3_OFF && shared.restartButtons <= RESTART_OFF;
+			                   shared.l3Button <= L3_OFF && shared.restartButtons <= RESTART_OFF && shared.turboTriggers <= 1 &&
+			                   shared.turboPeriod >= TURBO_FEWEST && shared.turboPeriod <= TURBO_MOST;
 			if (known) {
 				replayButton = shared.replayButton == 0xFF ? REPLAY_BUTTON_OFF : shared.replayButton;
 				replayToggles = shared.replayToggles != 0;
 				l3Button = shared.l3Button;
 				restartButtons = shared.restartButtons;
+				turboPeriod = shared.turboPeriod;
+				turboPulse = clampInt(turboPeriod / 2, 2, 15);
+				if (turboOnTriggers != (shared.turboTriggers != 0)) {
+					turboOnTriggers = shared.turboTriggers != 0;
+					showButtons();
+				}
 			}
 		}
 	}

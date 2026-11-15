@@ -154,7 +154,7 @@ public:
 
 	void setGameGenie(std::string const &codes) { mem_.setGameGenie(codes); }
 	void setGameShark(std::string const &codes) { mem_.setGameShark(codes); }
-	void setCpuQuarters(unsigned quarters) { mem_.setCpuQuarters(quarters); }
+	void setCpuQuarters(unsigned quarters, bool keepCarry) { mem_.setCpuQuarters(quarters, keepCarry); }
 	void setBios(Array<unsigned char> &buffer) { mem_.setBios(buffer); }
 
 	unsigned char externalRead(unsigned short addr) {

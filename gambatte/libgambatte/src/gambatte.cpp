@@ -581,8 +581,8 @@ void GB::setGameShark(std::string const &codes) {
 	p_->cpu.setGameShark(codes);
 }
 
-void GB::setCpuQuarters(unsigned quarters) {
-	p_->cpu.setCpuQuarters(quarters);
+void GB::setCpuQuarters(unsigned quarters, bool keepCarry) {
+	p_->cpu.setCpuQuarters(quarters, keepCarry);
 }
 
 unsigned char GB::externalRead(unsigned short addr) {

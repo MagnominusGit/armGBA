@@ -420,9 +420,10 @@ public:
 	void setGameShark(std::string const &codes);
 
 	/**
-	  * armGBA: the CPU Clock, in quarters of the console's (4 = its own, 1 to 16).
+	  * armGBA: the CPU Clock, in quarters of the console's (4 = its own, 1 to 16). keepCarry
+	  * keeps the part of a cycle carried over, as a state just loaded has it at this clock.
 	  */
-	void setCpuQuarters(unsigned quarters);
+	void setCpuQuarters(unsigned quarters, bool keepCarry = false);
 
 	/**
 	  * Read a single byte from the CPU bus. This includes all RAM, ROM, MMIO, etc as

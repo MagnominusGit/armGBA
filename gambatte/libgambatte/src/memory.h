@@ -83,10 +83,12 @@ public:
 	// console keeps the counter's pace. In double speed a dot is two of the counter's cycles: there
 	// the CPU moves a whole dot at a time and goes no faster than 200%, as the picture can't take
 	// more than one access of the CPU's in a dot.
-	void setCpuQuarters(unsigned quarters) {
+	// keepCarry: right after a state loaded, whose carry is from the clock now set.
+	void setCpuQuarters(unsigned quarters, bool keepCarry = false) {
 		if (quarters != cpuQuarters_) {
 			cpuQuarters_ = quarters;
-			cpuCarry_ = 0;
+			if (!keepCarry)
+				cpuCarry_ = 0;
 		}
 	}
 	gb_ulong cpuCycles(unsigned mcycles) {
