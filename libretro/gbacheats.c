@@ -797,6 +797,8 @@ enum {
 	MAX_END = 0xA00,
 	MAX_TABLE_SUMMED = 0x110,
 	MAX_ON = 0x80000000u,
+	MAX_USER = 0x30020,
+	MAX_USER_SIZE = 0x12,
 };
 
 static unsigned read16Big(const uint8_t* p) {
@@ -1137,6 +1139,9 @@ int maxClear(uint8_t* flash, size_t size, bool keepMasters) {
 	const uint8_t* const directory = directories[dirNow];
 	const uint8_t* const table = tables[tableNow];
 	static unsigned chain[MAX_END - MAX_FIRST];
+	// Its user: the name typed in at 0x30020 and the two bytes after it, cleared as on a cartridge no
+	// one has used (whatever a dump of a used one holds), outside what the table's checksums cover
+	memset(&flash[MAX_USER], 0, MAX_USER_SIZE);
 	if (keepMasters) {
 		// Each code list in its own clusters, its master codes (40000000) only, zeros after
 		uint8_t* const file = malloc((size_t) (MAX_END - MAX_FIRST) * MAX_CLUSTER);

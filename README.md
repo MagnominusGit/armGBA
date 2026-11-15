@@ -574,7 +574,8 @@ The Game Genie's codes use that copy once it's there. The save keeps its size wh
 and an import adds only the cheats it doesn't have; the cartridge's list holds what its chip has room
 for, and its own menus delete games and codes. Cheat Cartridge Reset clears what a cartridge keeps, though
 never its program, then restarts with the game on top. Its first two start from the chip as the dump
-has it, so the settings someone changed, such as the Action Replay MAX's user name, go too:
+has it, so the settings someone changed go too, and the Action Replay MAX's user (its name, and its
+default application) is cleared even when the dump has one:
 - Factory Reset (Keep Master Codes) empties its lists but keeps each game's master code: on the Game
   Boy Advance's cartridges, the code their games' codes run with and the import finds the game by,
   so imports go on working. The Action Replay MAX's other files, such as the DS game saves a used
