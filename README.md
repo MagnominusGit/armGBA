@@ -576,7 +576,8 @@ for, and its own menus delete games and codes. Reset Cheats clears what a cartri
 never its program, then restarts with the game on top:
 - Factory Reset (Keep Master Codes) empties its lists but keeps each game's master code: on the Game
   Boy Advance's cartridges, the code their games' codes run with and the import finds the game by,
-  so imports go on working. The Game Boy's, which have none, keep their games without codes, and the
+  so imports go on working. The Action Replay MAX's other files, such as the DS game saves a used
+  cartridge holds, go too. The Game Boy's, which have none, keep their games without codes, and the
   Pro Action Replay its settings.
 - Full Wipe (Erase All Contents) empties them all, master codes too (an Advance cartridge then takes
   only codes for games whose master code is typed in), and the Pro Action Replay starts as it did

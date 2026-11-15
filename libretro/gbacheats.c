@@ -1185,10 +1185,10 @@ int maxClear(uint8_t* flash, size_t size, bool keepMasters) {
 		}
 		free(file);
 		free(kept);
-		return 0;
 	}
-	// Every file gone: its clusters freed in a new table, its entry erased in a new directory, both
-	// in the other copies with generations above all
+	// The files gone (every one, or with keepMasters those that aren't code lists, such as the DS game
+	// saves a used cartridge holds): their clusters freed in a new table, their entries erased in a new
+	// directory, both in the other copies with generations above all
 	uint8_t* const tableCopy = malloc(MAX_TABLE);
 	if (!tableCopy) {
 		return -1;
@@ -1199,7 +1199,7 @@ int maxClear(uint8_t* flash, size_t size, bool keepMasters) {
 	memmove(newDirectory, directory, MAX_DIRECTORY);
 	for (size_t i = 0; i < MAX_ENTRIES; ++i) {
 		uint8_t* const entry = &newDirectory[i * MAX_ENTRY];
-		if (read16Big(&entry[0x1C]) == 0xFFFF) {
+		if (read16Big(&entry[0x1C]) == 0xFFFF || (keepMasters && (entry[0x1B] & MAX_LIST))) {
 			continue;
 		}
 		unsigned const clusters = maxChain(table, entry, chain);
