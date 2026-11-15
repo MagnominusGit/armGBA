@@ -35,7 +35,7 @@ interrupts, DMA, timers and what's on screen all happen when they would on the h
 
 | Button | Game Boy Advance | Game Boy, Game Boy Color |
 | --- | --- | --- |
-| L2, R2 (held) | Fast-forward, up to RetroArch's Maximum Run Speed; or turbo L, turbo R, with L2 and R2 set to Turbo L and R | Fast-forward |
+| L2, R2 (held) | Fast-forward, up to RetroArch's Maximum Run Speed (with L2 and R2 set to Fast-Forward Toggle, a press turns it on until the next); or turbo L, turbo R, with L2 and R2 set to Turbo L and R | Fast-forward (or its toggle) |
 | X, Y (held) | Turbo A, turbo B | Same |
 | L3 | Fast-forward on and off; L3 Button can make it a soft reset instead (held half a second: A + B + Select + Start) | Same |
 | R3 | The cheat cartridge's button, with one | The cheat cartridge's button, with one; otherwise the contrast back to 50% |
@@ -120,7 +120,7 @@ standalone frontend shows as one page with headers.
 | Audio | Low-Pass Filter | Both | Off, 20%, 40%, 60%, 80% |
 | Input | Left Stick as D-Pad | Both | Off, On |
 | | Turbo Button Period | Both | 4 to 120 frames, 4 by default |
-| | L2 and R2 | Game Boy Advance | Fast-Forward, Turbo L and R (for handhelds without stick clicks; L2 and R2 then don't fast-forward or change screen layouts) |
+| | L2 and R2 | Both | Fast-Forward (held), Fast-Forward Toggle (a press until the next, for handhelds without stick clicks; L3's toggle turns the same fast-forward on and off), Turbo L and R (Game Boy Advance; for handhelds without stick clicks; L2 and R2 then don't fast-forward or change screen layouts) |
 | | L3 Button | Both | Fast-Forward Toggle, Soft Reset (Hold), Off; L3 stays a combo's or the cheat cartridge's button when it's one |
 | | Tilt Control | Both | Left Stick, Right Stick, D-Pad, Device Motion |
 | | Device Motion Sensor Rotation (with Device Motion) | Both | 0°, 90°, 180°, 270° |

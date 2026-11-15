@@ -321,9 +321,12 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "Frames per press while a turbo button is held: X/Y for A/B, and L2/R2 for L/R on GBA when L2 and R2 are Turbo L and R.", NULL, "input",
 	  { { NULL, NULL } }, "4" },
 	{ "armgba_l2_r2", "L2 and R2", NULL,
-	  "Held, L2 and R2 fast-forward. On GBA games, Turbo L and R makes them press L and R in turbo instead "
-	  "(L3's Fast-Forward Toggle still fast-forwards).",
-	  NULL, "input", { { "fast forward", "Fast-Forward" }, { "turbo", "Turbo L and R" }, { NULL, NULL } }, "fast forward" },
+	  "Fast-Forward: held, L2 and R2 fast-forward. Fast-Forward Toggle: press L2 or R2 to fast-forward until "
+	  "one of them is pressed again, for devices without stick clicks; L3's Fast-Forward Toggle turns the same "
+	  "fast-forward on and off. Turbo L and R (GBA games): they press L "
+	  "and R in turbo instead (L3's Fast-Forward Toggle still fast-forwards). There is no fast-forward in "
+	  "netplay.",
+	  NULL, "input", { { "fast forward", "Fast-Forward" }, { "toggle", "Fast-Forward Toggle" }, { "turbo", "Turbo L and R" }, { NULL, NULL } }, "fast forward" },
 	{ "armgba_l3_button", "L3 Button", NULL,
 	  "Fast-Forward Toggle: click L3 to fast-forward until it's clicked again. Soft Reset: hold L3 for half "
 	  "a second to press A + B + Select + Start, which resets most games at once (Pokemon among them). "
@@ -565,7 +568,7 @@ bool showOptions(void) {
 		{ "armgba_game_genie_code_2", gameGenieLoaded && genieCheatCount() },
 		{ "armgba_game_genie_code_3", gameGenieLoaded && genieCheatCount() },
 		{ "armgba_action_replay_switch", actionReplayLoaded && !gameGenieLoaded && !xploderLoaded && !advance },
-		{ "armgba_l2_r2", advance },
+		{ "armgba_l2_r2", true },
 		{ "armgba_action_replay_press", actionReplayLoaded && !gameGenieLoaded && !advance },
 		{ "armgba_action_replay_hold", replayHasButton() && advance },
 		{ "armgba_action_replay_press_mode", replayHasButton() && advance },

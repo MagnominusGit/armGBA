@@ -214,6 +214,9 @@ static bool l2FastForward = true;
 // L2 and R2 as Turbo L and R (Game Boy Advance): then they only press them, with no fast-forward or
 // screen layouts.
 static bool turboOnTriggers;
+// L2 and R2's Fast-Forward Toggle: a press turns fast-forward on until the next, the same latch as
+// L3's toggle (fastForwardLatched), so either button turns it off.
+static bool triggersToggle;
 #define TRIGGERS_TURBO (turboOnTriggers && !gameBoy)
 // L3 Button: what clicking L3 does where nothing else has it; fast-forward latched by its toggle;
 // and the frames left of its soft reset's A + B + Select + Start, pressed once it's held long enough.
@@ -624,11 +627,11 @@ static void showButtons(void) {
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "Turbo L");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Turbo R");
 	} else if (togetherRunning()) {
-		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, l2FastForward ? "Fast-Forward (Previous Layout in Netplay)" : "Previous Layout");
+		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, !l2FastForward ? "Previous Layout" : triggersToggle ? "Fast-Forward Toggle (Previous Layout in Netplay)" : "Fast-Forward (Previous Layout in Netplay)");
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Next Screens");
 	} else {
-		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "Fast-Forward");
-		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Fast-Forward");
+		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, triggersToggle ? "Fast-Forward Toggle" : "Fast-Forward");
+		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, triggersToggle ? "Fast-Forward Toggle" : "Fast-Forward");
 	}
 	if (forGameBoy) {
 		// A Game Boy has no L or R; on the Game Boy Advance model either stretches the picture, as on
@@ -919,6 +922,13 @@ static void readOptions(void) {
 		}
 	}
 	bool const triggers = optionIs("armgba_l2_r2", "turbo");
+	bool const toggle = optionIs("armgba_l2_r2", "toggle");
+	if (toggle != triggersToggle) {
+		triggersToggle = toggle;
+		if (gba || gameBoy) {
+			showButtons();
+		}
+	}
 	static const struct Choice l3Choices[] = { { "fast forward", L3_FAST_FORWARD }, { "soft reset", L3_SOFT_RESET }, { "off", L3_OFF } };
 	int const l3 = optionChoice("armgba_l3_button", l3Choices, COUNT(l3Choices), L3_FAST_FORWARD);
 	int const restart = optionChoice("armgba_restart_buttons", restartChoices, COUNT(restartChoices), RESTART_L_R_START);
@@ -3348,9 +3358,10 @@ static void readL3Button(void) {
 	// Fast-forward is the frontend's, so it toggles on the frames shown, from whether L3 was held on
 	// the last one shown: with run-ahead, the click is first seen in a frame run ahead.
 	static bool heldShown;
-	if (l3Button != L3_FAST_FORWARD || linkSession() || netplaySeen) {
+	// The latch is L2 and R2's toggle's too, so it stays while either button toggles
+	if ((l3Button != L3_FAST_FORWARD && !triggersToggle) || linkSession() || netplaySeen) {
 		fastForwardLatched = false;
-	} else if (now && !heldShown && !rerunning()) {
+	} else if (l3Button == L3_FAST_FORWARD && now && !heldShown && !rerunning()) {
 		fastForwardLatched = !fastForwardLatched;
 	}
 	if (!rerunning()) {
@@ -3649,7 +3660,18 @@ static void readFastForward(void) {
 		now |= (!togetherRunning() || l2FastForward) && !switchStart(port) && inputState(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2);
 		now |= !togetherRunning() && inputState(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2);
 	}
-	now = (now && !TRIGGERS_TURBO) || fastForwardLatched;
+	now &= !TRIGGERS_TURBO;
+	// Fast-Forward Toggle: a press turns the latch L3's toggle shares on or off, on the frames shown
+	// (with run-ahead, a press is first seen in a frame run ahead), from whether they were held on the
+	// last one shown. L3's readL3Button clears it where neither toggles.
+	static bool heldShown;
+	if (triggersToggle && now && !heldShown && !rerunning() && !linkSession() && !netplaySeen) {
+		fastForwardLatched = !fastForwardLatched;
+	}
+	if (!rerunning()) {
+		heldShown = now;
+	}
+	now = (now && !triggersToggle) || fastForwardLatched;
 	now &= !linkSession() && !netplaySeen;
 	if (now != fastForwardHeld) {
 		setFastForward(now);
