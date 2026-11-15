@@ -17,6 +17,7 @@ static bool optionShown(const struct Option* option, bool shown) {
 static const char* const cardFiles[] = { ".raw", ".bin", NULL };
 
 const struct AppHooks appHooks = {
+	.start = cheatDatabaseStart,
 	.pictureCame = lcdPictureCame,
 	.pictureUpload = lcdPictureUpload,
 	.pictureDraw = lcdPictureDraw,

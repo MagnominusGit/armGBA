@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "core.h"
+#include "link.h"
 
 #include <ctype.h>
 #include <dirent.h>
@@ -172,6 +173,21 @@ static bool quoted(char* line, char** value) {
 	return true;
 }
 
+// The game's own name: inside an archive, the file's in it
+static const char* ownName(const char* gamePath) {
+	const char* file = strrchr(gamePath, '#');
+	file = file ? file + 1 : gamePath;
+	const char* const slash = strrchr(file, '/');
+	return slash ? slash + 1 : file;
+}
+
+bool chtFileFits(const char* chtName, const char* gamePath) {
+	struct Name game, cht;
+	nameOf(ownName(gamePath), &game);
+	nameOf(chtName, &cht);
+	return !strcasecmp(cht.title, game.title) && regionsMeet(cht.regions, game.regions);
+}
+
 // Adds the cheats in one .cht file whose every code accepts takes, leaving out those already there.
 static size_t readCheats(const char* path, unsigned file, bool (*accepts)(const char* code), struct ChtCheat* cheats, size_t count, size_t most) {
 	FILE* f = fopen(path, "r");
@@ -227,12 +243,7 @@ size_t chtCheats(const char* database, bool advance, const char* gamePath, bool 
 	if (!database || !gamePath || !most) {
 		return 0;
 	}
-	// The game's own name: inside an archive, the file's in it
-	const char* file = strrchr(gamePath, '#');
-	file = file ? file + 1 : gamePath;
-	const char* const slash = strrchr(file, '/');
-	struct Name game;
-	nameOf(slash ? slash + 1 : file, &game);
+	const char* const own = ownName(gamePath);
 	static const char* const gameBoy[] = { "Nintendo - Game Boy", "Nintendo - Game Boy Color", NULL };
 	static const char* const gameBoyAdvance[] = { "Nintendo - Game Boy Advance", NULL };
 	size_t count = 0;
@@ -252,9 +263,7 @@ size_t chtCheats(const char* database, bool advance, const char* gamePath, bool 
 			if (length < 5 || strcasecmp(e->d_name + length - 4, ".cht")) {
 				continue;
 			}
-			struct Name cht;
-			nameOf(e->d_name, &cht);
-			if (strcasecmp(cht.title, game.title) || !regionsMeet(cht.regions, game.regions)) {
+			if (!chtFileFits(e->d_name, gamePath)) {
 				continue;
 			}
 			char (*more)[256] = realloc(names, (found + 1) * sizeof(*names));
@@ -269,16 +278,14 @@ size_t chtCheats(const char* database, bool advance, const char* gamePath, bool 
 		qsort(names, found, sizeof(*names), (int (*)(const void*, const void*)) strcmp);
 		for (size_t pass = 0; pass < 2; ++pass) {
 			for (size_t i = 0; i < found; ++i) {
-				struct Name cht;
-				nameOf(names[i], &cht);
-				char own[300];
-				snprintf(own, sizeof(own), "%s", slash ? slash + 1 : file);
-				char* const dot = strrchr(own, '.');
+				char base[300];
+				snprintf(base, sizeof(base), "%s", own);
+				char* const dot = strrchr(base, '.');
 				if (dot) {
 					*dot = '\0';
 				}
-				size_t const ownLength = strlen(own);
-				bool const exact = !strncmp(names[i], own, ownLength) && !strcmp(names[i] + ownLength, ".cht");
+				size_t const baseLength = strlen(base);
+				bool const exact = !strncmp(names[i], base, baseLength) && !strcmp(names[i] + baseLength, ".cht");
 				if (exact != !pass) {
 					continue;
 				}

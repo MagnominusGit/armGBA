@@ -24,5 +24,7 @@ bool lcdSettingRead(const char* key, const char* value, int n, bool yes);
 void lcdSettingsWrite(FILE* f);
 const char* netSessionValue(const char* key, const char* value);
 uint32_t netCheevosConsole(const uint8_t* data, size_t size);
+// cheatdb.c: hands the core the app's copy of RetroArch's cheat database.
+void cheatDatabaseStart(void);
 
 #endif

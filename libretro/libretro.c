@@ -1796,6 +1796,14 @@ static void applyGenieCodes(void) {
 	libretroGbSetGameGenieCodes(digits, counts);
 }
 
+// The standalone app's copy of RetroArch's cheat database (see link.h), and an import waiting for it
+static int (*cheatFetch)(const char* gamePath, bool advance, bool start, char* out, size_t outSize);
+static bool importWaiting;
+
+void libretroSetCheatFetch(int (*fetch)(const char* gamePath, bool advance, bool start, char* out, size_t outSize)) {
+	cheatFetch = fetch;
+}
+
 // The Game Genie with a game on top: its code options list the database's cheats for the game, and
 // take those its save names.
 static void offerGenieCheats(void) {
@@ -1803,7 +1811,10 @@ static void offerGenieCheats(void) {
 	const char* system = NULL;
 	environment(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system);
 	char database[PATH_SIZE];
-	if (gameGenieLoaded && *replayGamePath && chtDatabase(system, database, sizeof(database))) {
+	// RetroArch's, or the app's copy if it has one already
+	if (gameGenieLoaded && *replayGamePath &&
+	    (chtDatabase(system, database, sizeof(database)) ||
+	     (cheatFetch && cheatFetch(replayGamePath, false, false, database, sizeof(database)) == CHEAT_FETCH_READY))) {
 		genieCount = chtCheats(database, false, replayGamePath, chtGameGenieCode, genieCheats, COUNT(genieCheats));
 	}
 	for (int i = 0; coreOptions && i < GENIE_SLOTS; ++i) {
@@ -2282,9 +2293,22 @@ static void importCheats(void) {
 	environment(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system);
 	char database[PATH_SIZE];
 	if (!chtDatabase(system, database, sizeof(database))) {
-		showMessage("armGBA can't find RetroArch's cheat database");
-		return;
+		// Without RetroArch's, the app downloads it; the import goes on once it's in (retro_run)
+		int const fetched = cheatFetch ? cheatFetch(replayGamePath, !gameBoy, true, database, sizeof(database)) : CHEAT_FETCH_NONE;
+		if (fetched == CHEAT_FETCH_BUSY) {
+			if (!importWaiting) {
+				notify("Downloading RetroArch's cheat database...", 600);
+			}
+			importWaiting = true;
+			return;
+		}
+		importWaiting = false;
+		if (fetched != CHEAT_FETCH_READY) {
+			showMessage(cheatFetch ? "armGBA couldn't download RetroArch's cheat database" : "armGBA can't find RetroArch's cheat database");
+			return;
+		}
 	}
+	importWaiting = false;
 	static struct ChtCheat cheats[1024];
 	size_t const count = chtCheats(database, !gameBoy, replayGamePath, gameBoy ? chtGameSharkCode : chtCodeBreakerPart, cheats, COUNT(cheats));
 	char title[256];
@@ -3035,6 +3059,7 @@ void retro_unload_game(void) {
 	secondFromFrontend = false;
 	secondPath[0] = '\0';
 	netplaySeen = false;
+	importWaiting = false;
 	netplayJoined = false;
 	sessionSaveDue = false;
 	clientTold = sessionOver = playingOn = clientIndexUnknown = false;
@@ -4470,6 +4495,15 @@ void retro_run(void) {
 		readCheatImport(true);
 		readCheatRestore(true);
 		applyCpuClock(false);
+	}
+	// An import waiting for the app's download of RetroArch's cheat database
+	static unsigned importPoll;
+	if (importWaiting && ++importPoll % 15 == 0) {
+		if (cheatImportOn() && !netplaySeen) {
+			importCheats();
+		} else {
+			importWaiting = false;
+		}
 	}
 	if (cheatRestartDue) {
 		// The cartridge reads its new list as it starts again.

@@ -89,6 +89,16 @@ void linkGbRan(unsigned samples);
 // still wait, which ends the frame early.
 bool linkGbArrived(void);
 
+// The standalone app's copy of RetroArch's cheat database, for Import Cheats from RetroArch when
+// RetroArch's own isn't found (app/cheatdb.c). fetch puts the folder that has the cheats for the game
+// at gamePath in out and returns CHEAT_FETCH_READY, or with start downloads them if it has none,
+// returning CHEAT_FETCH_BUSY until they're in; CHEAT_FETCH_NONE when they can't be had.
+enum { CHEAT_FETCH_NONE, CHEAT_FETCH_READY, CHEAT_FETCH_BUSY };
+void libretroSetCheatFetch(int (*fetch)(const char* gamePath, bool advance, bool start, char* out, size_t outSize));
+// Whether the .cht file named chtName in RetroArch's cheat database is for the game at gamePath: the
+// same title, and a region of its (cht.c).
+bool chtFileFits(const char* chtName, const char* gamePath);
+
 #ifdef __cplusplus
 }
 #endif

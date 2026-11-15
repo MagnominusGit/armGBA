@@ -562,7 +562,12 @@ Together starts no other consoles with one. Cheats for the game on top can come 
 cheat database (its .cht files), for the Game Genie (Game Genie Code 1, 2 and 3) and the others
 (Import Cheats from RetroArch): armGBA finds it where RetroArch's own settings say
 (cheat_database_path in retroarch.cfg), or where RetroArch keeps it by default, and takes the files
-for the game's title and one of its regions. The save keeps its size whatever the cartridge holds,
+for the game's title and one of its regions. Without it (on Android, or with no RetroArch), the
+standalone app downloads it for Import Cheats from RetroArch as RetroArch's Online Updater does
+(libretro's cheats.zip, about 40 MB), keeps the Game Boy, Game Boy Color and Game Boy Advance cheats
+in ~/.local/share/armgba/cheat-database, and downloads it again once it's a month old; if
+libretro's server can't be reached, it takes just the game's files from libretro-database on GitHub.
+The Game Genie's codes use that copy once it's there. The save keeps its size whatever the cartridge holds,
 and an import adds only the cheats it doesn't have; the cartridge's list holds what its chip has room
 for, and its own menus delete games and codes. Restore Factory Cheats puts the chip back as the
 cartridge's ROM has it, as on its first start (the cheats, codes and settings kept since go, and the
