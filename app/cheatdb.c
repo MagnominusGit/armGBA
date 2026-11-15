@@ -14,6 +14,7 @@
 
 #include "hooks.h"
 #include "link.h"
+#include "ui.h"
 
 #include <dirent.h>
 #include <file/archive_file.h>
@@ -28,7 +29,10 @@
 #define TREE_URL "https://api.github.com/repos/libretro/libretro-database/git/trees/master:"
 #define FILE_URL "https://raw.githubusercontent.com/libretro/libretro-database/master/"
 
-enum { REFRESH_SECONDS = 30 * 24 * 60 * 60 };
+enum { REFRESH_SECONDS = 30 * 24 * 60 * 60, FRESH_SECONDS = 24 * 60 * 60 };
+
+// Set by Extras' import: the copy is downloaded again first, unless it's from the last day.
+static bool refreshWanted;
 
 static const char* const systems[] = { "Nintendo - Game Boy", "Nintendo - Game Boy Color", "Nintendo - Game Boy Advance" };
 enum { SYSTEMS = sizeof(systems) / sizeof(*systems), ADVANCE = 2 };
@@ -312,7 +316,9 @@ static int fetch(const char* gamePath, bool forAdvance, bool start, char* out, s
 			return CHEAT_FETCH_NONE;
 		}
 	}
-	if (have && (age < REFRESH_SECONDS || !start)) {
+	long long const stale = refreshWanted ? FRESH_SECONDS : REFRESH_SECONDS;
+	refreshWanted = refreshWanted && start ? false : refreshWanted;
+	if (have && (age < stale || !start)) {
 		snprintf(out, outSize, "%s", whole);
 		return CHEAT_FETCH_READY;
 	}
@@ -337,4 +343,25 @@ static int fetch(const char* gamePath, bool forAdvance, bool start, char* out, s
 
 void cheatDatabaseStart(void) {
 	libretroSetCheatFetch(fetch);
+}
+
+// Extras: Import Cheats from RetroArch with a press, as Core > System has it (the option goes to
+// Import, which the core takes as the game runs again), the app's copy of the database brought up to
+// date first.
+static void importRow(int unused, int delta) {
+	(void) unused;
+	struct Option* const option = optionFind("armgba_cheat_import");
+	if (!delta && option) {
+		refreshWanted = true;
+		optionSet(option, "import");
+		uiCloseMenu();
+	}
+}
+
+void cheatExtrasRows(void) {
+	const struct Option* const option = optionFind("armgba_cheat_import");
+	if (option && option->visible) {
+		addItem("Import Cheats from RetroArch", importRow, 0);
+		helpFor("Adds the latest RetroArch cheats for the game on top to the cheat cartridge's list, switched off.");
+	}
 }
