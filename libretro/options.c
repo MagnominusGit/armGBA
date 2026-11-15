@@ -165,7 +165,8 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "The game plugged in on top of the cheat cartridge (an Action Replay, Game Genie, Xploder or "
 	  "CodeBreaker), from the games beside it (those played last first); Most Recently Played picks the "
 	  "one with the newest save. Cheat Cartridge Button, Open "
-	  "Cheat Cartridge Menu and Hold Action Replay Button press the cartridge's button. Applies on Restart.",
+	  "Cheat Cartridge Menu and Hold Action Replay Button press the cartridge's button. A new choice goes in "
+	  "as you go back to the game, which starts again.",
 	  NULL, "system", { { "none", "None" }, { NULL, NULL } }, "none" },
 	{ "armgba_game_genie_code_1", "Game Genie Code 1", NULL,
 	  "A cheat from RetroArch's cheat database for the game on top, which the Game Genie shows in an empty "

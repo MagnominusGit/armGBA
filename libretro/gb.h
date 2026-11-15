@@ -56,6 +56,11 @@ void libretroGbSetMegaDuckSlot(const void* rom, size_t size, int kind);
 // Datel's Action Replay for the next game loaded, its program these bytes (NULL for none); the game
 // loaded is the one on top, or with game false a stand-in for nothing on top.
 void libretroGbSetActionReplay(const void* program, size_t size, bool game);
+// Another game on top of the selected console's cheat cartridge (with game false, a stand-in for
+// none): the console starts again with it, the cartridge's chip as it was. States keep their size
+// unless the game needs more. Returns false, with a message, if the game can't run, the one before
+// going back in.
+bool libretroGbSwapGame(const void* rom, size_t size, bool game, char* error, size_t errorSize);
 // The codes the Game Genie puts in its empty slots: nine digits each (0x10 past the end), and 6, 9 or 0
 void libretroGbSetGameGenieCodes(const uint8_t digits[27], const uint8_t counts[3]);
 // Its button and switch (on: codes on)

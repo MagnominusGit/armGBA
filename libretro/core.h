@@ -171,6 +171,8 @@ void copyFirstSave(void);
 // them; writeKeptSaves checks every few seconds.
 void writeCoreSaves(bool closing);
 void forgetSaves(void);
+// Forgets one player's kept save, which isn't written after.
+void forgetSave(int player);
 void forgetOtherSaves(void);
 void writeKeptSaves(void);
 // The Saves options: found as the frontend sets up, their choices filled and offered, and their

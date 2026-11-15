@@ -431,6 +431,10 @@ static bool savesKept(void) {
 	return false;
 }
 
+void forgetSave(int player) {
+	keptSaves[player].kept = false;
+}
+
 void forgetSaves(void) {
 	for (int player = 0; player < MAX_PLAYERS; ++player) {
 		keptSaves[player].kept = false;

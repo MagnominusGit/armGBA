@@ -974,6 +974,32 @@ void libretroGbSetGameGenieCodes(const uint8_t digits[27], const uint8_t counts[
 	}
 }
 
+bool libretroGbSwapGame(const void* rom, size_t size, bool game, char* error, size_t errorSize) {
+	if (!s->gb || replayProgram.empty()) {
+		return false;
+	}
+	keepReplayFlash();
+	std::vector<unsigned char> const before(s->game);
+	bool const hadGame = replayGame;
+	delete s->gb;
+	s->gb = 0;
+	s->game.assign(static_cast<const unsigned char*>(rom), static_cast<const unsigned char*>(rom) + size);
+	replayGame = game;
+	bool ok = start(s->wanted, error, errorSize);
+	if (!ok) {
+		// The game before goes back in
+		delete s->gb;
+		s->gb = 0;
+		s->game = before;
+		replayGame = hadGame;
+		char ignored[256];
+		start(s->wanted, ignored, sizeof(ignored));
+	}
+	std::memset(s->rtcFile, 0, sizeof(s->rtcFile));
+	s->rtcPending = rtcSize();
+	return ok;
+}
+
 void libretroGbSetActionReplay(const void* program, size_t size, bool game) {
 	const unsigned char* const bytes = static_cast<const unsigned char*>(program);
 	replayProgram.assign(bytes, bytes + (program ? size : 0));

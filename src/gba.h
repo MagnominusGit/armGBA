@@ -1127,6 +1127,7 @@ bool fcdDetect(const void* data, size_t size);
 bool fcdActive(const struct GBA*);
 bool fcdAttach(struct GBA*, const void* game, size_t size);
 void fcdDetach(struct GBA*);
+bool fcdSetGame(struct GBA*, const void* game, size_t size);
 void fcdReset(struct GBA*);
 void fcdTrap(struct GBA*);
 bool fcdRead(struct GBA*, uint32_t address, int size, uint32_t* value);
@@ -1142,6 +1143,9 @@ void fcdLoadState(struct GBA*, const void* state);
 bool actionReplayActive(const struct GBA*);
 bool actionReplayAttach(struct GBA*, const void* game, size_t size);
 void actionReplayDetach(struct GBA*);
+// Another game on top (or none, with NULL), the cartridge's chip kept as it is (and its copy as it
+// came, which states hold the chip against): it shows from the console's next reset.
+bool actionReplaySetGame(struct GBA*, const void* game, size_t size);
 void actionReplayReset(struct GBA*);
 bool actionReplayRead(struct GBA*, uint32_t address, int size, uint32_t* value);
 const uint8_t* actionReplayCode(struct GBA*, uint32_t address);

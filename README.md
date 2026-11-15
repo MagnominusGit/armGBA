@@ -81,7 +81,7 @@ standalone frontend shows as one page with headers.
 | | Mega Duck Laptop Printer (applies on restart) | Mega Duck | Two Pass, One Pass, None |
 | | Mega Duck Laptop Speech (applies on restart) | Mega Duck | Spanish (Super QuiQue), German (Super Junior) |
 | | Mega Duck Laptop Cartridge (applies on restart) | Mega Duck | None, or a Mega Duck game in the laptop program's folder |
-| | Game on Top (applies on restart) | Both (a cheat cartridge loaded: an Action Replay, Game Genie, Xploder or CodeBreaker) | None (the default), Most Recently Played (the game with the newest save, named in the list), or a game for the cartridge's console in its folder, those played last first (up to 125) |
+| | Game on Top (goes in as you go back to the game, which starts again) | Both (a cheat cartridge loaded: an Action Replay, Game Genie, Xploder or CodeBreaker) | None (the default), Most Recently Played (the game with the newest save, named in the list), or a game for the cartridge's console in its folder, those played last first (up to 125) |
 | | Game Genie Code 1, 2 and 3 | Game Boy (the Game Genie loaded, with a game on top that RetroArch's cheat database has Game Genie cheats for) | None, or a cheat from the database, by name (shown in an empty slot of the code screen, as if typed in) |
 | | Import Cheats from RetroArch | Both (an Action Replay, Xploder or CodeBreaker loaded, with a game on top) | Off, Import (adds the database's cheats for the game the cartridge doesn't have, then restarts; goes back to Off) |
 | | Restore Factory Cheats | Both (an Action Replay, Xploder or CodeBreaker loaded) | Off, Restore (puts the cartridge's chip back as its ROM has it, keeping the game on top, then restarts; goes back to Off) |
@@ -548,8 +548,10 @@ a strip at a time. A card waits until the e-Reader scans.
 armGBA runs cheat cartridges as the cartridge itself, with a game plugged in on top: Datel's Action
 Replays (the GameShark ones among them), Galoob's Game Genie, Blaze's Xploder GB and Xploder
 Advance, and Pelican's CodeBreaker. Load the cheat cartridge's ROM and pick the game with Game on
-Top (the games beside it, those played last first, other cheat cartridges after them), or load both
-with the "Cheat Cartridge (Game on Top)" subsystem. As it starts, a notification says how to use the
+Top (the games beside it, those played last first, other cheat cartridges after them, or Most
+Recently Played), or load both with the "Cheat Cartridge (Game on Top)" subsystem. A game picked goes
+in as you go back to it: the cartridge starts again with it, its old game's save written first, and
+Restart does the same (not in netplay, where the host's game on top stays). As it starts, a notification says how to use the
 one loaded. Each cheat cartridge has one save file, named as its ROM is: what its chip keeps (its
 codes and settings; the Game Genie keeps none), then a line naming the game on top, `ROM Inserted:`
 and the game's file name, which Game on Top starts with next time (and for the Game Genie, a line

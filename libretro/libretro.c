@@ -1616,6 +1616,9 @@ static void replayMemoryFile(char* out, size_t outSize) {
 	snprintf(slash ? slash + 1 : out, outSize - (slash ? (size_t) (slash + 1 - out) : 0), "armGBA action replay games.txt");
 }
 
+// The Game on Top choice last put in, or tried and unreadable: another goes in as the game runs again
+static char replayTried[PATH_SIZE];
+
 // Most Recently Played: the game with the newest save, first in the list, when one has a save
 static bool replayRecent;
 static char replayRecentLabel[300];
@@ -2584,6 +2587,7 @@ static bool attachActionReplay(const struct retro_game_info* game) {
 	}
 	offerReplayGames(game->path);
 	const char* const chosen = chosenReplayGame();
+	snprintf(replayTried, sizeof(replayTried), "%s", chosen ? chosen : "");
 	if (!chosen) {
 		return actionReplayAttach(gba, NULL, 0);
 	}
@@ -2600,6 +2604,77 @@ static bool attachActionReplay(const struct retro_game_info* game) {
 	bool const attached = actionReplayAttach(gba, data, size);
 	free(data);
 	return attached;
+}
+
+// The cheat cartridge's notice for what it has on top.
+static enum ReplayHint replayHintNow(void) {
+	if (!actionReplayLoaded) {
+		return HINT_NONE;
+	}
+	if (!replayHasGame) {
+		return HINT_NO_GAME;
+	}
+	if (!gameBoy) {
+		return fcdLoaded ? HINT_FCD : HINT_ADVANCE;
+	}
+	return gameGenieLoaded ? HINT_GAME_GENIE : xploderLoaded ? HINT_XPLODER : replayFirstKind ? HINT_GAME_BOY_FIRST : HINT_GAME_BOY;
+}
+
+// Restart with another game on top than the one in: the cartridge stays in as it is (its chip, and
+// its copy as it came), the old game's save is written, and the new game goes in, its save read once
+// the console has restarted (gameOnTopIn). Not in netplay, where the game on top is the host's, nor
+// with the game given by the subsystem.
+static bool swapGameOnTop(void) {
+	if (!actionReplayLoaded || replayGameGiven || netplaySeen || playersHere > 1) {
+		return false;
+	}
+	const char* const chosen = chosenReplayGame();
+	if (!strcmp(chosen ? chosen : "", replayGamePath)) {
+		return false;
+	}
+	snprintf(replayTried, sizeof(replayTried), "%s", chosen ? chosen : "");
+	writeCoreSaves(false);
+	forgetSave(0);
+	size_t size = 0;
+	void* const data = chosen ? gameRead(chosen, &size) : NULL;
+	if (chosen && !data) {
+		char message[300];
+		snprintf(message, sizeof(message), "armGBA can't read %.250s", chosen);
+		showMessage(message);
+	}
+	bool in;
+	if (gameBoy) {
+		static const uint8_t none[0x8000];
+		char error[256];
+		in = libretroGbSwapGame(data ? data : none, data ? size : sizeof(none), data != NULL, error, sizeof(error));
+		if (in) {
+			tiltCartridge = data && size > 0x147 && ((const uint8_t*) data)[0x147] == 0x22;
+		} else {
+			showMessage(error);
+		}
+	} else {
+		// The new game's save memory starts empty, its kind found again from the game
+		savedataInit(gba);
+		in = actionReplaySetGame(gba, data, size);
+	}
+	if (in) {
+		snprintf(replayGamePath, sizeof(replayGamePath), "%s", data ? chosen : "");
+		replayHasGame = data != NULL;
+	}
+	free(data);
+	return true;
+}
+
+static void gameOnTopIn(void) {
+	if (*replayGamePath) {
+		readSave(0, replayGamePath);
+	}
+	replayHint = replayHintNow();
+	if (gameGenieLoaded) {
+		offerGenieCheats();
+	}
+	showOptions();
+	showButtons();
 }
 
 static bool isPairFile(const char* path) {
@@ -2677,6 +2752,7 @@ static bool prepareGameBoyReplay(const struct retro_game_info* game, struct retr
 	} else {
 		offerReplayGames(game->path);
 		chosen = chosenReplayGame();
+		snprintf(replayTried, sizeof(replayTried), "%s", chosen ? chosen : "");
 	}
 	if (chosen && top->data == none) {
 		size_t size = 0;
@@ -2751,9 +2827,7 @@ static bool loadGameBoy(const struct retro_game_info* game, const struct retro_g
 		readReplayFlashInto(game->path ? game->path : firstPath, kept, size);
 		libretroGbActionReplayFlashChanged();
 	}
-	replayHint = !actionReplayLoaded ? HINT_NONE : !replayHasGame ? HINT_NO_GAME : gameGenieLoaded ? HINT_GAME_GENIE
-	                                                                             : xploderLoaded ? HINT_XPLODER
-	                                                                             : replayFirstKind ? HINT_GAME_BOY_FIRST : HINT_GAME_BOY;
+	replayHint = replayHintNow();
 	if (gameGenieLoaded) {
 		offerGenieCheats();
 	}
@@ -2857,7 +2931,7 @@ static bool loadAdvance(const struct retro_game_info* game, const struct retro_g
 	applyCartridge();
 	cartridgeSaveUnread = cartridgeOut && !noGame;
 	resetAdvance(gba);
-	replayHint = !actionReplayLoaded ? HINT_NONE : !replayHasGame ? HINT_NO_GAME : fcdLoaded ? HINT_FCD : HINT_ADVANCE;
+	replayHint = replayHintNow();
 	if (actionReplayLoaded && *replayGamePath) {
 		// The game on top keeps its own save, where it is when the game runs by itself; the
 		// frontend keeps the Action Replay's flash.
@@ -3122,6 +3196,8 @@ void retro_reset(void) {
 	memset(&passed, 0, sizeof(passed));
 	applyLinkOptions();
 	offerLinkNetplay();
+	// Game on Top takes effect on Restart
+	bool const swapped = swapGameOnTop();
 	if (gameBoy) {
 		booting = true;
 		applyCpuClock(false);
@@ -3130,6 +3206,9 @@ void retro_reset(void) {
 			libretroGbReset(gbModel);
 		}
 		libretroGbSetPlayers(playersHere, gbAdapter);
+		if (swapped) {
+			gameOnTopIn();
+		}
 		checkGameBoyMemory();
 		return;
 	}
@@ -3141,6 +3220,9 @@ void retro_reset(void) {
 	}
 	if (putBack) {
 		readCartridgeSave();
+	}
+	if (swapped) {
+		gameOnTopIn();
 	}
 	setAdvanceOffsets();
 }
@@ -4462,7 +4544,7 @@ static void showReplayHint(void) {
 	char message[300];
 	switch (replayHint) {
 	case HINT_NO_GAME:
-		snprintf(message, sizeof(message), "%s with no game on top: pick one%s in Core Options > System > Game on Top, then Restart", cartridgeName(),
+		snprintf(message, sizeof(message), "%s with no game on top: pick one%s in Core Options > System > Game on Top", cartridgeName(),
 		         replayRecent ? " (or Most Recently Played)" : "");
 		break;
 	case HINT_GAME_BOY:
@@ -4506,6 +4588,12 @@ void retro_run(void) {
 		readCheatImport(true);
 		readCheatRestore(true);
 		applyCpuClock(false);
+		// A new Game on Top goes in as the game runs again: the frontend runs none while its menu is
+		// open, so stepping through the list doesn't start the console again at each game
+		const char* const top = actionReplayLoaded && !replayGameGiven && !netplaySeen && playersHere == 1 ? chosenReplayGame() : NULL;
+		if (actionReplayLoaded && !replayGameGiven && !netplaySeen && playersHere == 1 && strcmp(top ? top : "", replayTried)) {
+			cheatRestartDue = true;
+		}
 	}
 	// An import waiting for the app's download of RetroArch's cheat database
 	static unsigned importPoll;
