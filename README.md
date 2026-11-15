@@ -167,6 +167,8 @@ as 3D ones, run smoother. A faster clock uses more of the host's CPU while a gam
   game reads STAT or LY, so code timed against the picture still lines up.
 - A few games depend on the CPU's speed in their own logic and misbehave above 100%, as they would
   on an overclocked console. Set CPU Clock back to 100% for those.
+- In netplay, CPU Clock and CPU Clock During Boot are the host's, so every device runs the game alike;
+  a device's own settings apply again when it loads a game.
 
 ### Low Memory
 
@@ -410,9 +412,9 @@ devices as Link Mode says:
 
 In Off and Together, each controller on a device is a player, in order, up to the session's number
 of players. In Separate, each device is one player. What the stick clicks and combos do (L3 Button,
-Restart Combo, and a cheat cartridge's Cheat Cartridge Button and Cheat Cartridge Button Press) is
-the host's during a session, so every device runs them alike; a device's own settings apply again
-when it loads a game.
+Restart Combo, and a cheat cartridge's Cheat Cartridge Button and Cheat Cartridge Button Press) and
+the CPU Clock are the host's during a session, so every device runs them alike; a device's own
+settings apply again when it loads a game.
 
 Off and Together need no game loaded to join. The host's game loads from your folders by its file
 name, if your file is the same as the host's. armgba looks beside your game, in the game list's

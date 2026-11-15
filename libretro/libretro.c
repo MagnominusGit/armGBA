@@ -807,8 +807,11 @@ static void readOptions(void) {
 	skipBios = optionIs("armgba_skip_bios", "enabled");
 	const char* clock = option("armgba_cpu_clock");
 	int percent = clock ? atoi(clock) : 100;
-	cpuOverclock = percent >= 25 && percent <= 400 && percent % 25 == 0 ? percent / 25 - 4 : 0;
-	stockDuringBoot = !optionIs("armgba_cpu_clock_boot", "clock");
+	// In netplay, the host's, which its states bring (see retro_unserialize)
+	if (!netplaySeen) {
+		cpuOverclock = percent >= 25 && percent <= 400 && percent % 25 == 0 ? percent / 25 - 4 : 0;
+		stockDuringBoot = !optionIs("armgba_cpu_clock_boot", "clock");
+	}
 	const char* address = option("armgba_gamecube_address");
 	dolphinSetHost(gamecubeWanted() && !gameBoy ? (address ? address : "auto") : NULL);
 	int threaded = optionChoice("armgba_threaded_video", threadedChoices, COUNT(threadedChoices), THREADED_OFF);
@@ -4648,11 +4651,15 @@ static size_t stateBeforeRestarts(void) {
 }
 
 // What the stick clicks and combos do, after the restart buttons: Cheat Cartridge Button (its stick,
-// or 0xFF for none), Cheat Cartridge Button Press (whether it toggles), L3 Button and Restart Combo.
+// or 0xFF for none), Cheat Cartridge Button Press (whether it toggles), L3 Button and Restart Combo;
+// and the CPU Clock.
 // Each device's own options set them, but in netplay they shape what the state holds, so a state that
 // netplay loads brings the host's.
 struct SharedControls {
 	uint8_t replayButton, replayToggles, l3Button, restartButtons;
+	// The CPU Clock (cpuOverclock) and CPU Clock During Boot, which each device's emulation must share
+	int8_t cpuOverclock;
+	uint8_t stockDuringBoot;
 };
 
 // Last, the CRC-32 of the cheat cartridge's file (replayCartCrc). A state holds the cartridge's chip as
@@ -4683,6 +4690,7 @@ bool retro_serialize(void* data, size_t size) {
 	memcpy((uint8_t*) data + stateBeforeRestarts(), restartHeld, sizeof(restartHeld));
 	struct SharedControls const shared = {
 		replayButton == REPLAY_BUTTON_OFF ? 0xFF : (uint8_t) replayButton, replayToggles, (uint8_t) l3Button, (uint8_t) restartButtons,
+		cpuOverclock, stockDuringBoot,
 	};
 	memcpy((uint8_t*) data + stateBeforeRestarts() + sizeof(restartHeld), &shared, sizeof(shared));
 	memcpy((uint8_t*) data + stateBeforeRestarts() + sizeof(restartHeld) + sizeof(shared), &replayCartCrc, sizeof(replayCartCrc));
@@ -4716,6 +4724,15 @@ bool retro_unserialize(const void* data, size_t size) {
 	}
 	if (!(tagged || (size == consolesStateSize() && !togetherRunning())) || !loadConsoles(data, consolesStateSize())) {
 		return false;
+	}
+	// In netplay the CPU Clock is the host's, as every device must run the same machine
+	if (byNetplay && size >= controlled + sizeof(restartHeld) + sizeof(struct SharedControls)) {
+		struct SharedControls shared;
+		memcpy(&shared, (const uint8_t*) data + controlled + sizeof(restartHeld), sizeof(shared));
+		if (shared.cpuOverclock >= -3 && shared.cpuOverclock <= 12 && shared.stockDuringBoot <= 1) {
+			cpuOverclock = shared.cpuOverclock;
+			stockDuringBoot = shared.stockDuringBoot;
+		}
 	}
 	// Whether the console is still booting, for CPU Clock During Boot, is the state's, not this run's:
 	// a frame run again from before the game started runs at the boot's clock, as it did. A Game Boy
