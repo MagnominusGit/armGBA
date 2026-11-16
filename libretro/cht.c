@@ -188,11 +188,42 @@ bool chtFileFits(const char* chtName, const char* gamePath) {
 	return !strcasecmp(cht.title, game.title) && regionsMeet(cht.regions, game.regions);
 }
 
+// An XX, YY, ZZ or ?? in a code's value (a CodeBreaker code's 4 digits, a GameShark code's second
+// byte), what a database template leaves to fill, as 0; true if there was one. Anywhere else (an
+// address), the code is left as it is, which accepts doesn't take.
+static bool fillValue(char* code, bool (*accepts)(const char* code)) {
+	size_t const length = strlen(code);
+	size_t from, to;
+	if (accepts == chtCodeBreakerPart && length == 4) {
+		from = 0, to = 4;
+	} else if (accepts == chtGameSharkCode && length == 8) {
+		from = 2, to = 4;
+	} else {
+		return false;
+	}
+	bool mark = false;
+	for (size_t i = 0; i < length; ++i) {
+		bool const placeholder = strchr("XxYyZz?", code[i]) != NULL;
+		if (placeholder && (i < from || i >= to)) {
+			return false;
+		}
+		if (!placeholder && !isxdigit((unsigned char) code[i])) {
+			return false;
+		}
+		mark |= placeholder;
+	}
+	for (size_t i = from; mark && i < to; ++i) {
+		code[i] = strchr("XxYyZz?", code[i]) ? '0' : code[i];
+	}
+	return mark;
+}
+
 // Adds the cheats in one .cht file whose every code accepts takes, leaving out those already there; a
-// CodeBreaker code written as 12 digits without its + is split in two. *rejected counts the others
-// with a code, Game Genie codes for a Game Boy GameShark's aside (the same cheats in its form).
+// CodeBreaker code written as 12 digits without its + is split in two, and a value left to fill is 0
+// (*zeroed counts those cheats). *rejected counts the others with a code, Game Genie codes for a Game
+// Boy GameShark's aside (the same cheats in its form).
 static size_t readCheats(const char* path, unsigned file, bool (*accepts)(const char* code), struct ChtCheat* cheats, size_t count, size_t most,
-                         size_t* rejected) {
+                         size_t* rejected, size_t* zeroed) {
 	FILE* f = fopen(path, "r");
 	if (!f) {
 		return count;
@@ -225,8 +256,10 @@ static size_t readCheats(const char* path, unsigned file, bool (*accepts)(const 
 		char codes[1024];
 		snprintf(codes, sizeof(codes), "%s", value);
 		bool genie = true;
+		bool filled = false;
 		for (char* code = strtok(codes, "+ "); fits && code; code = strtok(NULL, "+ ")) {
 			genie &= chtGameGenieCode(code);
+			filled |= fillValue(code, accepts);
 			bool twelve = accepts == chtCodeBreakerPart && strlen(code) == 12;
 			for (size_t i = 0; twelve && i < 12; ++i) {
 				twelve = isxdigit((unsigned char) code[i]);
@@ -261,6 +294,9 @@ static size_t readCheats(const char* path, unsigned file, bool (*accepts)(const 
 		         describedAs == index && *description ? description : value);
 		cheats[count].file = file;
 		++count;
+		if (filled && zeroed) {
+			++*zeroed;
+		}
 	}
 	fclose(f);
 	return count;
@@ -295,12 +331,15 @@ static int masterId(const char* path) {
 }
 
 size_t chtCheats(const char* database, bool advance, const char* gamePath, int gameId, int* otherId, bool (*accepts)(const char* code),
-                 struct ChtCheat* cheats, size_t most, size_t* rejected) {
+                 struct ChtCheat* cheats, size_t most, size_t* rejected, size_t* zeroed) {
 	if (otherId) {
 		*otherId = -1;
 	}
 	if (rejected) {
 		*rejected = 0;
+	}
+	if (zeroed) {
+		*zeroed = 0;
 	}
 	if (!database || !gamePath || !most) {
 		return 0;
@@ -371,7 +410,7 @@ size_t chtCheats(const char* database, bool advance, const char* gamePath, int g
 				}
 				char path[PATH_SIZE + 260];
 				snprintf(path, sizeof(path), "%.*s/%s", PATH_SIZE - 1, folder, names[i]);
-				count = readCheats(path, files++, accepts, cheats, count, most, rejected);
+				count = readCheats(path, files++, accepts, cheats, count, most, rejected, zeroed);
 			}
 		}
 		free(ids);

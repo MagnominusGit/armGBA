@@ -121,7 +121,8 @@ void ereaderForget(void);
 // and regions it reads those whose CodeBreaker master code names that build, when there are any;
 // otherwise all of them, and *otherId (when given) is the build theirs names, else -1. *rejected
 // (when given) counts the cheats there with codes accepts doesn't take (Game Genie codes aside, for
-// chtGameSharkCode).
+// chtGameSharkCode); a value a template leaves to fill (XX in a code's value) is read as 0, and
+// *zeroed (when given) counts the cheats taken so.
 struct ChtCheat {
 	char description[96];
 	char code[160];
@@ -130,7 +131,7 @@ struct ChtCheat {
 };
 bool chtDatabase(const char* systemFolder, char* out, size_t outSize);
 size_t chtCheats(const char* database, bool advance, const char* gamePath, int gameId, int* otherId, bool (*accepts)(const char* code),
-                 struct ChtCheat* cheats, size_t most, size_t* rejected);
+                 struct ChtCheat* cheats, size_t most, size_t* rejected, size_t* zeroed);
 // gbacheats.c: the ID the Future Console Design cartridges and CodeBreaker master codes know a Game
 // Boy Advance game by, a CRC-16 of its first 64 KiB.
 int gbaGameId(const uint8_t* game, size_t size);

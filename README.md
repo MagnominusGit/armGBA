@@ -586,8 +586,11 @@ others and notes they were written for another version (both IDs), as Cheats for
 the standalone app does. Codes usually carry over between versions that keep the same memory, as
 RetroArch's own cheats do (neither it nor armGBA's cheat engine checks the build); one that does
 nothing on another version may be why. The save keeps its size whatever the cartridge holds,
-and an import adds only the cheats it doesn't have, and says how many can't go in the cartridge: those
-with an XX or ?? to fill, in a form the import doesn't read (the Action Replay's and GameShark's own
+and an import adds only the cheats it doesn't have, and says how many can't go in the cartridge. A
+cheat whose value RetroArch leaves to fill (an XX, YY or ?? in a CodeBreaker code's 4 digits or a
+GameShark code's second byte, such as a Level Modifier) goes in with 0 there, which the cartridge's own
+menus can change, and the message says how many did; those that can't go in have one in an address,
+or are in a form the import doesn't read (the Action Replay's and GameShark's own
 codes, the Xploder GB's $ codes) or, on the Action Replays and the MAX, of a kind beyond their writes of
 8 and 16 bits (conditions, slides, fills), which the CodeBreaker, Xploder Advance and X-Terminator take
 whole; Cheats for the Game on Top in the standalone app counts them too, and a CodeBreaker code written as

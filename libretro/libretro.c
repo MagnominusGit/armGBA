@@ -1864,7 +1864,7 @@ static void offerGenieCheats(void) {
 	if (gameGenieLoaded && *replayGamePath &&
 	    (chtDatabase(system, database, sizeof(database)) ||
 	     (cheatFetch && cheatFetch(replayGamePath, false, false, database, sizeof(database)) == CHEAT_FETCH_READY))) {
-		genieCount = chtCheats(database, false, replayGamePath, -1, NULL, chtGameGenieCode, genieCheats, COUNT(genieCheats), NULL);
+		genieCount = chtCheats(database, false, replayGamePath, -1, NULL, chtGameGenieCode, genieCheats, COUNT(genieCheats), NULL, NULL);
 	}
 	for (int i = 0; coreOptions && i < GENIE_SLOTS; ++i) {
 		struct retro_core_option_v2_definition* const definition = genieOptions[i];
@@ -2509,7 +2509,7 @@ size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], size_t
 	*gameId = replayGameId();
 	size_t rejected = 0;
 	size_t const count = chtCheats(folder, !gameBoy, replayGamePath, *gameId, otherId, gameBoy ? chtGameSharkCode : chtCodeBreakerPart,
-	                               cheats, most < COUNT(cheats) ? most : COUNT(cheats), &rejected);
+	                               cheats, most < COUNT(cheats) ? most : COUNT(cheats), &rejected, NULL);
 	// What an import would leave out, from one into a copy of the chip
 	size_t size;
 	const uint8_t* const flash = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayFlash(&size);
@@ -2560,8 +2560,9 @@ static void importCheats(void) {
 	int otherId = -1;
 	int const gameId = replayGameId();
 	size_t rejected = 0;
+	size_t zeroed = 0;
 	size_t const count = chtCheats(database, !gameBoy, replayGamePath, gameId, &otherId, gameBoy ? chtGameSharkCode : chtCodeBreakerPart,
-	                               cheats, COUNT(cheats), &rejected);
+	                               cheats, COUNT(cheats), &rejected, &zeroed);
 	char title[256];
 	replayTitle(title, sizeof(title));
 	char message[300];
@@ -2610,9 +2611,13 @@ static void importCheats(void) {
 	if (left) {
 		n += snprintf(message + n, sizeof(message) - (size_t) n, ", %zu didn't fit", left);
 	}
-	// Those whose codes it can't hold: of a kind it doesn't take, or with an XX to fill
+	// Those whose codes it can't hold: of a kind it doesn't take, or with an XX left in an address
 	if (rejected + unfit && n < (int) sizeof(message)) {
 		n += snprintf(message + n, sizeof(message) - (size_t) n, ", %zu can't go in this cartridge", rejected + unfit);
+	}
+	// A database template's value to fill, read as 0, which the cartridge's own menus can change
+	if (added > 0 && zeroed && n < (int) sizeof(message)) {
+		n += snprintf(message + n, sizeof(message) - (size_t) n, " (%zu with an XX to fill, as 0)", zeroed);
 	}
 	// RetroArch's file for the title holds codes for another build than the one on top
 	if (added > 0 && otherId >= 0 && n < (int) sizeof(message)) {
