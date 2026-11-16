@@ -186,6 +186,10 @@ static uint16_t crc16(const uint8_t* data, size_t size) {
 	return crc;
 }
 
+int gbaGameId(const uint8_t* game, size_t size) {
+	return game && size ? crc16(game, size < 0x10000 ? size : 0x10000) : -1;
+}
+
 // The end of the string at at, before end, or 0.
 static size_t skipName(const uint8_t* db, size_t at, size_t end) {
 	while (at < end && db[at]) {
@@ -475,6 +479,9 @@ bool fcdCipherWorks(void) {
 // each, encrypted with the GameShark's key (TEA). A game's master code has a line xxxxxxxx 001DC0DE
 // whose first word is the 4-letter code in the game's header (at AC), which the Action Replay finds
 // the game on top by. CodeBreaker writes of 8 and 16 bits go in as the GameShark's (types 0 and 1).
+// The Action Replay v3.3 keeps the same list with Action Replay v3 codes instead, as the MAX's are:
+// encrypted with the Action Replay's own key, writes of 8 and 16 bits as types 0 and 2 to a packed
+// address. Which a list holds, its master codes' ID lines tell.
 // After the last game the program leaves an empty one (a name left erased and no cheats), which
 // stays after the list; the header's word at 21010 (4000) is taken for the most the list may take.
 enum {
@@ -545,6 +552,8 @@ int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSiz
 	size_t countAt = 0;
 	size_t ours = 0;
 	size_t oursFirst = 0;
+	// The key the game's master code reads with: the Action Replay v3's on the v3.3
+	const uint32_t* keys = gameSharkSeeds;
 	for (uint32_t g = 0; g < games; ++g) {
 		if (at + AR_NAME + 4 > size) {
 			return -1;
@@ -554,6 +563,7 @@ int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSiz
 		at = cheatsAt + 4;
 		size_t const first = at;
 		bool matches = false;
+		const uint32_t* matchedKeys = gameSharkSeeds;
 		for (uint32_t c = 0; c < cheatsThere; ++c) {
 			if (at + 4 + AR_NAME > size) {
 				return -1;
@@ -563,10 +573,16 @@ int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSiz
 				return -1;
 			}
 			for (size_t w = 0; w + 1 < words; w += 2) {
-				uint32_t op1 = read32(&flash[at + 4 + AR_NAME + w * 4]);
-				uint32_t op2 = read32(&flash[at + 4 + AR_NAME + w * 4 + 4]);
-				teaDecrypt(&op1, &op2);
-				matches |= op2 == AR_ID && op1 == id;
+				for (int k = 0; k < 2 && !matches; ++k) {
+					const uint32_t* const seeds = k ? actionReplaySeeds : gameSharkSeeds;
+					uint32_t op1 = read32(&flash[at + 4 + AR_NAME + w * 4]);
+					uint32_t op2 = read32(&flash[at + 4 + AR_NAME + w * 4 + 4]);
+					teaDecryptWith(seeds, &op1, &op2);
+					if (op2 == AR_ID && op1 == id) {
+						matches = true;
+						matchedKeys = seeds;
+					}
+				}
 			}
 			at += 4 + AR_NAME + words * 4;
 		}
@@ -574,6 +590,7 @@ int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSiz
 			countAt = cheatsAt;
 			ours = at;
 			oursFirst = first;
+			keys = matchedKeys;
 		}
 	}
 	if (!countAt) {
@@ -590,8 +607,9 @@ int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSiz
 		listEnd += AR_END_MARK;
 	}
 	// Room: the erased flash after it, up to the most the list may take
+	// (on the v3.3 that word is something else, the list already past it: then the chip's end)
 	uint32_t const most = read32(&flash[AR_SIZE_AT]);
-	size_t const limit = most >= 0x1000 && AR_MARK + most <= size ? AR_MARK + most : size;
+	size_t const limit = most >= 0x1000 && AR_MARK + most <= size && AR_MARK + most >= listEnd ? AR_MARK + most : size;
 	size_t room = listEnd;
 	while (room < limit && flash[room] == 0xFF) {
 		++room;
@@ -615,14 +633,17 @@ int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSiz
 		if (!n) {
 			continue;
 		}
-		// As the GameShark's codes: 8 and 16-bit writes only
+		// As the list's codes: 8 and 16-bit writes only, as the GameShark's or the Action Replay v3's (to
+		// an address it can hold)
+		bool const actionReplay = keys == actionReplaySeeds;
 		uint32_t codes[64][2];
 		bool converts = true;
 		for (size_t c = 0; c < n && converts; ++c) {
 			uint32_t const type = lines[c][0] >> 28;
 			uint32_t const address = lines[c][0] & 0x0FFFFFFF;
-			converts = type == 3 || type == 8;
-			codes[c][0] = (type == 3 ? 0x00000000u : 0x10000000u) | address;
+			converts = (type == 3 || type == 8) && !(actionReplay && (address & 0x00F00000));
+			uint32_t const packed = (address & 0xFFFFF) | ((address >> 4) & 0x00F00000);
+			codes[c][0] = actionReplay ? (type == 3 ? 0x00000000u : 0x02000000u) | packed : (type == 3 ? 0x00000000u : 0x10000000u) | address;
 			codes[c][1] = type == 3 ? (lines[c][1] & 0xFF) : (lines[c][1] & 0xFFFF);
 		}
 		if (!converts) {
@@ -637,7 +658,7 @@ int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSiz
 				for (size_t w = 0; w + 1 < words && !found; w += 2) {
 					uint32_t op1 = read32(&out[p + 4 + AR_NAME + w * 4]);
 					uint32_t op2 = read32(&out[p + 4 + AR_NAME + w * 4 + 4]);
-					teaDecrypt(&op1, &op2);
+					teaDecryptWith(keys, &op1, &op2);
 					found = op1 == codes[c][0] && op2 == codes[c][1];
 				}
 				p += 4 + AR_NAME + words * 4;
@@ -662,7 +683,7 @@ int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSiz
 		for (size_t c = 0; c < n; ++c) {
 			uint32_t op1 = codes[c][0];
 			uint32_t op2 = codes[c][1];
-			teaEncrypt(&op1, &op2);
+			teaEncryptWith(keys, &op1, &op2);
 			write32(&out[used + 4 + AR_NAME + c * 8], op1);
 			write32(&out[used + 4 + AR_NAME + c * 8 + 4], op2);
 		}

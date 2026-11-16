@@ -578,7 +578,12 @@ standalone app downloads it for Import Cheats from RetroArch as RetroArch's Onli
 in ~/.local/share/armgba/cheat-database, and downloads it again once it's a month old (or with
 Download Cheat Database Again, in Extras > Cheats or Game > Cheats > RetroArch Cheats); if
 libretro's server can't be reached, it takes just the game's files from libretro-database on GitHub.
-The Game Genie's codes use that copy once it's there. The save keeps its size whatever the cartridge holds,
+The Game Genie's codes use that copy once it's there. RetroArch names its Game Boy Advance files by title
+and regions, but their codes are for one build of the game, which their master code names (its ID, a
+checksum of the game's first 64 KiB): "Advance Wars (USA, Europe)" is for USA Rev 1. So of the files
+for the game on top, the import takes those for its build when there are any; otherwise it takes the
+others and says they're for another version (both IDs), as they may not work, and Cheats for the Game
+on Top in the standalone app says so too. The save keeps its size whatever the cartridge holds,
 and an import adds only the cheats it doesn't have; the cartridge's list holds what its chip has room
 for, and its own menus delete games and codes. Cheat Cartridge Reset clears what a cartridge keeps, though
 never its program, then restarts with the game on top. Its first two start from the chip as the dump
@@ -643,7 +648,8 @@ Import Cheats from RetroArch, on the Action Replay v3, GBX and MAX, adds the Cod
 RetroArch's cheat database has for the game on top to a game its list has a master code for: on the
 v3 and GBX, the game whose master code's ID line (xxxxxxxx 001DC0DE) names the game's 4-letter code,
 in its list as LibreShark's sharkdumps documents it, as the GameShark's codes encrypted with its
-key; on the MAX, the code list file named by that code in the small file system its program keeps
+key (the GBX's), or as the Action Replay v3's encrypted with its own key (the v3.3's, whose list
+holds 174 games; which, its master codes tell); on the MAX, the code list file named by that code in the small file system its program keeps
 (two copies of a cluster table at 30000 and 32000 and of a directory at 34000 and 3A000, each with a
 generation and two sums of its halfwords; the list in 128-byte clusters from 40000, chained in the
 table), as the Action Replay v3's codes encrypted with its key. The file is written again in free
