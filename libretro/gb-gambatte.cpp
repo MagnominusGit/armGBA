@@ -153,6 +153,10 @@ struct Console {
 	long sumLeft;
 	long sumRight;
 	unsigned summed;
+	// The output capacitor's charge per side, in samples x 0x10000, and how much of it it keeps each
+	// frontend sample, out of 0x10000 (0: none, the Game Boy Audio Filter off). Saved with states.
+	int64_t capacitor[2];
+	int32_t charge;
 	size_t stateSize;
 	// The game, kept so it can be restarted as another model.
 	std::vector<unsigned char> game;
@@ -179,6 +183,22 @@ struct Console {
 };
 Console consoles[MAX_PLAYERS];
 Console* s = &consoles[0];
+
+// The Game Boy Audio Filter, and the output capacitor's charge factor a 4 MiHz cycle (Pan Docs, Audio
+// Details): the original Game Boy's 0.999958 (about 28 Hz), the Pocket's and the Color's 0.998943
+// (about 700 Hz). The GBA's is stronger still, but unmeasured: the Color's is the nearest known. A
+// Mega Duck is taken as an original Game Boy.
+enum LibretroGbFilter audioFilter = LIBRETRO_GB_FILTER_ACCURATE;
+
+int32_t chargeFor(unsigned flags) {
+	if (audioFilter == LIBRETRO_GB_FILTER_OFF) {
+		return 0;
+	}
+	bool const pocketOrLater = flags & (gambatte::GB::MGB_FLAG | gambatte::GB::CGB_MODE | gambatte::GB::GBA_FLAG);
+	double const perCycle = audioFilter == LIBRETRO_GB_FILTER_ACCURATE && pocketOrLater ? 0.998943 : 0.999958;
+	// Per frontend sample: 4194304 / (2097152 / ratio) cycles
+	return static_cast<int32_t>(std::lround(std::pow(perCycle, 2.0 * ratio) * 0x10000));
+}
 // The CPU Clock, in quarters of the console's own clock.
 static unsigned cpuQuarters = 4;
 // The Clock options: Game Time, the speed in percent and the offset in seconds.
@@ -820,6 +840,8 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	setColors();
 	s->sumLeft = s->sumRight = 0;
 	s->summed = 0;
+	s->capacitor[0] = s->capacitor[1] = 0;
+	s->charge = chargeFor(s->loadFlags);
 	s->pressed = 0;
 	std::memset(s->pixels, 0, sizeof(s->pixels));
 	size_t const needed = std::max(s->gb->saveState(0, 0, static_cast<char*>(0)), s->gb->exactStateSize()) + sizeof(gambatte::uint_least32_t);
@@ -956,6 +978,13 @@ void libretroGbSetBootRom(enum LibretroGbBoot boot) {
 	bootWanted = boot;
 }
 
+void libretroGbSetAudioFilter(enum LibretroGbFilter filter) {
+	audioFilter = filter;
+	for (int i = 0; i < MAX_PLAYERS; ++i) {
+		consoles[i].charge = chargeFor(consoles[i].loadFlags);
+	}
+}
+
 void libretroGbSetMegaDuck(int kind) {
 	megaDuckKind = kind;
 }
@@ -1080,9 +1109,33 @@ uint32_t libretroGbBootCrc(void) {
 
 namespace {
 
+// The console's sound leaves through a capacitor that keeps DC out of it, connected only while a
+// channel's DAC is on (Pan Docs, Audio Details): each frontend sample out is what's in less the
+// charge, which then keeps charge out of 0x10000 of the difference. Where the DACs go from all off
+// to any on, or back, comes from Gambatte, sample by sample. Fixed-point, so every CPU makes the same
+// sound and the same state.
+int16_t throughCapacitor(int side, long in, bool connected) {
+	if (!s->charge) {
+		return static_cast<int16_t>(in);
+	}
+	if (!connected) {
+		return 0;
+	}
+	int64_t const scaled = static_cast<int64_t>(in) * 0x10000;
+	int64_t const out = scaled - s->capacitor[side];
+	s->capacitor[side] = scaled - out * s->charge / 0x10000;
+	int64_t const sample = out / 0x10000;
+	return static_cast<int16_t>(sample < -32768 ? -32768 : sample > 32767 ? 32767 : sample);
+}
+
 // Averages a run's 2 MHz stereo samples down to the frontend's rate: each frontend sample is the
-// mean of the native samples it covers.
+// mean of the native samples it covers, then goes through the capacitor.
 void mixDown(std::size_t count) {
+	std::size_t const* edgeAt;
+	bool const* edgeOn;
+	std::size_t const edges = s->gb->soundDacEdges(&edgeAt, &edgeOn);
+	bool dacs = s->gb->soundDacsAtStart();
+	std::size_t edge = 0;
 	for (std::size_t i = 0; i < count;) {
 		std::size_t const run = ratio - s->summed < count - i ? ratio - s->summed : count - i;
 		int left = 0;
@@ -1095,10 +1148,14 @@ void mixDown(std::size_t count) {
 		s->sumRight += right;
 		s->summed += run;
 		i += run;
+		// The DACs as the frontend sample ends
+		while (edge < edges && edgeAt[edge] < i) {
+			dacs = edgeOn[edge++];
+		}
 		if (s->summed == ratio) {
 			if (s->sampleCount + 2 <= sizeof(s->samples) / sizeof(s->samples[0])) {
-				s->samples[s->sampleCount++] = s->sumLeft / static_cast<long>(ratio);
-				s->samples[s->sampleCount++] = s->sumRight / static_cast<long>(ratio);
+				s->samples[s->sampleCount++] = throughCapacitor(0, s->sumLeft / static_cast<long>(ratio), dacs);
+				s->samples[s->sampleCount++] = throughCapacitor(1, s->sumRight / static_cast<long>(ratio), dacs);
 			}
 			s->sumLeft = s->sumRight = 0;
 			s->summed = 0;
@@ -1643,6 +1700,29 @@ void loadLaptop(const void* data, size_t size) {
 	}
 }
 
+// The output capacitor's charge, just before the laptop's controller. Older states have zeros there:
+// an uncharged capacitor.
+size_t capacitorAt() {
+	return laptopAt() - sizeof(s->capacitor);
+}
+
+void saveCapacitor(void* data, size_t length) {
+	if (sizeof(gambatte::uint_least32_t) + length <= capacitorAt()) {
+		std::memcpy(static_cast<char*>(data) + capacitorAt(), s->capacitor, sizeof(s->capacitor));
+	}
+}
+
+void loadCapacitor(const void* data, size_t size) {
+	gambatte::uint_least32_t length;
+	std::memcpy(&length, data, sizeof(length));
+	length &= ~0x80000000u;
+	if (size >= s->stateSize && sizeof(length) + length <= capacitorAt()) {
+		std::memcpy(s->capacitor, static_cast<const char*>(data) + capacitorAt(), sizeof(s->capacitor));
+	} else {
+		s->capacitor[0] = s->capacitor[1] = 0;
+	}
+}
+
 void savePrinter(void* data, size_t length) {
 	if (s == &consoles[0] && sizeof(gambatte::uint_least32_t) + length <= printerAt()) {
 		std::memcpy(static_cast<char*>(data) + printerAt(), &printer, sizeof(printer));
@@ -1676,6 +1756,7 @@ bool saveExact(void* data) {
 		s->gb->saveExactState(static_cast<char*>(data) + sizeof(length));
 		std::memset(static_cast<char*>(data) + sizeof(length) + length, 0, s->stateSize - sizeof(length) - length);
 		saveMix(data, length);
+		saveCapacitor(data, length);
 		saveLaptop(data, length);
 		savePrinter(data, length);
 	}
@@ -1700,6 +1781,7 @@ bool saveOne(void* data, size_t size) {
 	// The room left for the state to grow is zero, so the same machine always makes the same state.
 	std::memset(static_cast<char*>(data) + sizeof(length) + length, 0, s->stateSize - sizeof(length) - length);
 	saveMix(data, length);
+	saveCapacitor(data, length);
 	saveLaptop(data, length);
 	savePrinter(data, length);
 	return true;
@@ -1777,6 +1859,7 @@ bool loadOne(const void* data, size_t size) {
 		return false;
 	}
 	loadMix(data, size);
+	loadCapacitor(data, size);
 	loadLaptop(data, size);
 	loadPrinter(data, size);
 	if (keepClock) {

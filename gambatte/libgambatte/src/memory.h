@@ -366,6 +366,8 @@ public:
 	std::size_t callbackCycleOffset(gb_ulong const cc) { return psg_.callbackCycleOffset(cc, isDoubleSpeed()); }
 
 	void setSoundBuffer(uint_least32_t *buf) { psg_.setBuffer(buf); }
+	bool soundDacsAtStart() const { return psg_.dacsAtStart(); }
+	std::size_t soundDacEdges(std::size_t const **positions, bool const **on) const { return psg_.dacEdges(positions, on); }
 	std::size_t fillSoundBuffer(gb_ulong cc);
 
 	void setVideoBuffer(uint_least32_t *videoBuf, std::ptrdiff_t pitch) {

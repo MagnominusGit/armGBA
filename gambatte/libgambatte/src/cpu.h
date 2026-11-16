@@ -127,6 +127,8 @@ public:
 	PakInfo const pakInfo() const { return mem_.pakInfo(); }
 	void setSoundBuffer(uint_least32_t *buf) { mem_.setSoundBuffer(buf); }
 	std::size_t fillSoundBuffer() { return mem_.fillSoundBuffer(cycleCounter_); }
+	bool soundDacsAtStart() const { return mem_.soundDacsAtStart(); }
+	std::size_t soundDacEdges(std::size_t const **positions, bool const **on) const { return mem_.soundDacEdges(positions, on); }
 	void stall(gb_ulong cycles) { mem_.stall(cycleCounter_, cycles); }
 	bool isCgb() const { return mem_.isCgb(); }
 	bool inBootRom() const { return mem_.inBootRom(); }

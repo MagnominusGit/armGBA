@@ -131,6 +131,14 @@ unsigned GB::updateScreenBorder(uint_least32_t *videoBuf, std::ptrdiff_t pitch) 
 	return p_->cpu.updateScreenBorder(videoBuf, pitch);
 }
 
+bool GB::soundDacsAtStart() const {
+	return p_->cpu.soundDacsAtStart();
+}
+
+std::size_t GB::soundDacEdges(std::size_t const **positions, bool const **on) const {
+	return p_->cpu.soundDacEdges(positions, on);
+}
+
 unsigned GB::generateSgbSamples(short *soundBuf, std::size_t &samples) {
 	return p_->cpu.generateSgbSamples(soundBuf, samples);
 }

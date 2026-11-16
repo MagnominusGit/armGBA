@@ -436,6 +436,18 @@ public:
 	unsigned char externalRead(unsigned short addr);
 
 	/**
+	  * armGBA: whether any of the four channels' DACs was on as the last runFor's sound began, and
+	  * where in that sound (sample positions) they went from all off to any on or back. The console's
+	  * output capacitor is connected only while one is on.
+	  *
+	  * @param positions set to the positions, in order
+	  * @param on set to the state from each position on
+	  * @return how many
+	  */
+	bool soundDacsAtStart() const;
+	std::size_t soundDacEdges(std::size_t const **positions, bool const **on) const;
+
+	/**
 	  * Write a single byte to the CPU bus. While there is no cycle cost to these
 	  * writes, there can be quite a few side effects. Use at your own risk.
 	  *

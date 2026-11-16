@@ -42,6 +42,14 @@ bool libretroGbLoad(const void* rom, size_t size, const char* systemDirectory, e
 void libretroGbUnload(void);
 // Takes effect when a game is loaded or reset.
 void libretroGbSetBootRom(enum LibretroGbBoot);
+// The Game Boy's output capacitor, which keeps DC out of its sound: as each model has it, the
+// original Game Boy's on every model (removing the offset, keeping the bass), or none.
+enum LibretroGbFilter {
+	LIBRETRO_GB_FILTER_ACCURATE,
+	LIBRETRO_GB_FILTER_OFFSET,
+	LIBRETRO_GB_FILTER_OFF,
+};
+void libretroGbSetAudioFilter(enum LibretroGbFilter);
 // Whether the next game loaded is a Mega Duck's: an original Game Boy with the Mega Duck's registers
 // and cartridges, starting without a boot ROM, as it has none. -1 for a Game Boy game, else the kind of
 // cartridge: 0 either handheld kind (a .bin), 1 none (.duck), 2 MD0, 3 MD1, 4 MD2, 5 MD20S, 6 MD25S.

@@ -57,6 +57,9 @@ PSG::PSG()
 , rsum_(0x8000) // initialize to 0x8000 to prevent borrows from high word, xor away later
 , enabled_(false)
 , speedupFlags_(0)
+, dacsLast_(false)
+, dacsAtStart_(false)
+, dacEdgeCount_(0)
 {
 }
 
@@ -75,6 +78,7 @@ void PSG::reset(bool ds) {
 	ch2_.reset();
 	ch3_.reset();
 	ch4_.reset(cycleCounter_);
+	noteDacs();
 }
 
 void PSG::divReset(bool ds) {
@@ -131,6 +135,8 @@ void PSG::loadState(SaveState const &state) {
 	ch1_.restoreEvents(state);
 	ch2_.restoreEvents(state);
 	ch4_.restoreCounting(state);
+	dacsLast_ = dacsAtStart_ = dacsOn();
+	dacEdgeCount_ = 0;
 }
 
 inline void PSG::accumulateChannels(gb_ulong const cycles) {

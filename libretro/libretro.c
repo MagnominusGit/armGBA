@@ -792,6 +792,9 @@ static void readOptions(void) {
 		{ "Game Boy Advance", LIBRETRO_GB_AGB },
 	};
 	static const struct Choice bootChoices[] = { { "disabled", LIBRETRO_GB_BOOT_OFF }, { "open-source", LIBRETRO_GB_BOOT_ARMGBA } };
+	static const struct Choice audioFilterChoices[] = {
+		{ "accurate", LIBRETRO_GB_FILTER_ACCURATE }, { "offset", LIBRETRO_GB_FILTER_OFFSET }, { "disabled", LIBRETRO_GB_FILTER_OFF },
+	};
 	// Before the measured screens, "original" and "pocket" were brighter greens; they get the measured ones.
 	static const struct Choice shadeChoices[] = {
 		{ "grayscale", 0 }, { "measured", 1 }, { "original", 1 }, { "pocket measured", 2 }, { "pocket", 2 }, { "light", 3 },
@@ -883,6 +886,7 @@ static void readOptions(void) {
 	lowPass = filter ? atoi(filter) * 0x10000 / 100 : 0;
 	gbModel = optionChoice("armgba_gb_model", modelChoices, COUNT(modelChoices), LIBRETRO_GB_AUTO);
 	libretroGbSetBootRom(optionChoice("armgba_gb_boot_rom", bootChoices, COUNT(bootChoices), LIBRETRO_GB_BOOT_NINTENDO));
+	libretroGbSetAudioFilter(optionChoice("armgba_gb_audio_filter", audioFilterChoices, COUNT(audioFilterChoices), LIBRETRO_GB_FILTER_ACCURATE));
 	int const shades = optionChoice("armgba_gb_screen", shadeChoices, COUNT(shadeChoices), 0);
 	gbShades = shades;
 	const char* const contrast = option("armgba_gb_contrast");
