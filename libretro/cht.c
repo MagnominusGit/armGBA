@@ -188,8 +188,11 @@ bool chtFileFits(const char* chtName, const char* gamePath) {
 	return !strcasecmp(cht.title, game.title) && regionsMeet(cht.regions, game.regions);
 }
 
-// Adds the cheats in one .cht file whose every code accepts takes, leaving out those already there.
-static size_t readCheats(const char* path, unsigned file, bool (*accepts)(const char* code), struct ChtCheat* cheats, size_t count, size_t most) {
+// Adds the cheats in one .cht file whose every code accepts takes, leaving out those already there; a
+// CodeBreaker code written as 12 digits without its + is split in two. *rejected counts the others
+// with a code, Game Genie codes for a Game Boy GameShark's aside (the same cheats in its form).
+static size_t readCheats(const char* path, unsigned file, bool (*accepts)(const char* code), struct ChtCheat* cheats, size_t count, size_t most,
+                         size_t* rejected) {
 	FILE* f = fopen(path, "r");
 	if (!f) {
 		return count;
@@ -212,16 +215,40 @@ static size_t readCheats(const char* path, unsigned file, bool (*accepts)(const 
 			describedAs = index;
 			continue;
 		}
-		if (strcmp(key, "code") || !*value || strlen(value) >= sizeof(cheats->code)) {
+		if (strcmp(key, "code") || !*value) {
 			continue;
 		}
-		char codes[sizeof(cheats->code)];
+		// Codes are joined by +, and a CodeBreaker code's two parts sometimes by a space, or by nothing
+		char normal[sizeof(cheats->code)];
+		size_t used = 0;
+		bool fits = strlen(value) < sizeof(normal);
+		char codes[1024];
 		snprintf(codes, sizeof(codes), "%s", value);
-		bool fits = true;
-		// Codes are joined by +, and a CodeBreaker code's two parts sometimes by a space
+		bool genie = true;
 		for (char* code = strtok(codes, "+ "); fits && code; code = strtok(NULL, "+ ")) {
-			fits = accepts(code);
+			genie &= chtGameGenieCode(code);
+			bool twelve = accepts == chtCodeBreakerPart && strlen(code) == 12;
+			for (size_t i = 0; twelve && i < 12; ++i) {
+				twelve = isxdigit((unsigned char) code[i]);
+			}
+			if (twelve) {
+				used += (size_t) snprintf(normal + used, sizeof(normal) - used, "%s%.8s+%s", used ? "+" : "", code, code + 8);
+			} else {
+				fits = accepts(code);
+				used += (size_t) snprintf(normal + used, sizeof(normal) - used, "%s%s", used ? "+" : "", code);
+			}
+			fits &= used < sizeof(normal);
 		}
+		if (!used) {
+			continue;
+		}
+		if (!fits) {
+			if (rejected && !(genie && accepts == chtGameSharkCode)) {
+				++*rejected;
+			}
+			continue;
+		}
+		value = normal;
 		bool known = false;
 		for (size_t i = 0; i < count && !known; ++i) {
 			known = !strcasecmp(cheats[i].code, value);
@@ -230,7 +257,7 @@ static size_t readCheats(const char* path, unsigned file, bool (*accepts)(const 
 			continue;
 		}
 		snprintf(cheats[count].code, sizeof(cheats[count].code), "%s", value);
-		snprintf(cheats[count].description, sizeof(cheats[count].description), "%s",
+		snprintf(cheats[count].description, sizeof(cheats[count].description), "%.*s", (int) sizeof(cheats[count].description) - 1,
 		         describedAs == index && *description ? description : value);
 		cheats[count].file = file;
 		++count;
@@ -268,9 +295,12 @@ static int masterId(const char* path) {
 }
 
 size_t chtCheats(const char* database, bool advance, const char* gamePath, int gameId, int* otherId, bool (*accepts)(const char* code),
-                 struct ChtCheat* cheats, size_t most) {
+                 struct ChtCheat* cheats, size_t most, size_t* rejected) {
 	if (otherId) {
 		*otherId = -1;
+	}
+	if (rejected) {
+		*rejected = 0;
 	}
 	if (!database || !gamePath || !most) {
 		return 0;
@@ -341,7 +371,7 @@ size_t chtCheats(const char* database, bool advance, const char* gamePath, int g
 				}
 				char path[PATH_SIZE + 260];
 				snprintf(path, sizeof(path), "%.*s/%s", PATH_SIZE - 1, folder, names[i]);
-				count = readCheats(path, files++, accepts, cheats, count, most);
+				count = readCheats(path, files++, accepts, cheats, count, most, rejected);
 			}
 		}
 		free(ids);

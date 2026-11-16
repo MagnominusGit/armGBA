@@ -119,7 +119,9 @@ void ereaderForget(void);
 // accepts takes, the file named as the game first, leaving out cheats already read; returns how many.
 // With gameId (a Game Boy Advance game's, gbaGameId; -1 for none), of the files for the game's title
 // and regions it reads those whose CodeBreaker master code names that build, when there are any;
-// otherwise all of them, and *otherId (when given) is the build theirs names, else -1.
+// otherwise all of them, and *otherId (when given) is the build theirs names, else -1. *rejected
+// (when given) counts the cheats there with codes accepts doesn't take (Game Genie codes aside, for
+// chtGameSharkCode).
 struct ChtCheat {
 	char description[96];
 	char code[160];
@@ -128,7 +130,7 @@ struct ChtCheat {
 };
 bool chtDatabase(const char* systemFolder, char* out, size_t outSize);
 size_t chtCheats(const char* database, bool advance, const char* gamePath, int gameId, int* otherId, bool (*accepts)(const char* code),
-                 struct ChtCheat* cheats, size_t most);
+                 struct ChtCheat* cheats, size_t most, size_t* rejected);
 // gbacheats.c: the ID the Future Console Design cartridges and CodeBreaker master codes know a Game
 // Boy Advance game by, a CRC-16 of its first 64 KiB.
 int gbaGameId(const uint8_t* game, size_t size);
@@ -139,16 +141,16 @@ bool chtCodeBreakerPart(const char* code);
 // the game (gameSize bytes at game) its master code knows; returns how many, -3 when it has no
 // master code for the game, or -1 when the database can't be read. fcdCipherWorks checks the cipher.
 int fcdImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize, const struct ChtCheat* cheats, size_t count,
-              size_t* already, size_t* left);
+              size_t* already, size_t* left, size_t* unfit);
 bool fcdCipherWorks(void);
 // arGbaImport adds them to the Action Replay v3's or GBX's list in its flash chip, likewise (and -4
 // for the Action Replay MAX's, which it doesn't know)
 int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize, const struct ChtCheat* cheats, size_t count,
-                size_t* already, size_t* left);
+                size_t* already, size_t* left, size_t* unfit);
 bool arGbaCipherWorks(void);
 // maxImport adds them to the Action Replay MAX's code list file for the game, likewise
 int maxImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize, const struct ChtCheat* cheats, size_t count,
-              size_t* already, size_t* left);
+              size_t* already, size_t* left, size_t* unfit);
 // Factory Reset (keepMasters: each game keeps its master code, which runs and finds it) and Full Wipe
 // (the list emptied) of the Xploder Advance's or CodeBreaker's database, the Action Replay v3's or
 // GBX's list (-4 for the MAX's) and the MAX's files (its code lists, and the other files, such as DS

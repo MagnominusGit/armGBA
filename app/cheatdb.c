@@ -724,6 +724,8 @@ static size_t cartNameCount;
 static bool cartListed;
 // The build RetroArch's codes are for, when not the game on top's, else -1; and the game's.
 static int cartOtherId = -1, cartGameId = -1;
+// How many of them an import would leave out, their codes not ones the cartridge can hold
+static size_t cartCantGo;
 
 static void cartCheatsPage(void) {
 	const char* game;
@@ -742,12 +744,18 @@ static void cartCheatsPage(void) {
 		if (!cartNames) {
 			cartNames = malloc(MOST * sizeof(*cartNames));
 		}
-		cartNameCount = cartNames ? libretroCartridgeCheatNames(folder, cartNames, MOST, &cartOtherId, &cartGameId) : 0;
+		cartNameCount = cartNames ? libretroCartridgeCheatNames(folder, cartNames, MOST, &cartOtherId, &cartGameId, &cartCantGo) : 0;
 		cartListed = true;
 	}
 	if (!cartNameCount) {
 		addInfo("RetroArch has no cheats this cartridge takes for the game", "");
 		return;
+	}
+	if (cartCantGo) {
+		static char cant[96];
+		snprintf(cant, sizeof(cant), cartCantGo == 1 ? "1 of them can't go in this cartridge" : "%zu of them can't go in this cartridge", cartCantGo);
+		addInfo(cant, "");
+		helpFor("Their codes are of a kind this cartridge doesn't run, or have an XX to fill in; the import leaves them out.");
 	}
 	addItem("Import Cheats from RetroArch", importRow, 0);
 	helpFor("Adds those the cartridge doesn't have yet (not their master codes, which it has), switched off.");

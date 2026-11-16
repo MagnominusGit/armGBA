@@ -586,7 +586,13 @@ others and notes they were written for another version (both IDs), as Cheats for
 the standalone app does. Codes usually carry over between versions that keep the same memory, as
 RetroArch's own cheats do (neither it nor armGBA's cheat engine checks the build); one that does
 nothing on another version may be why. The save keeps its size whatever the cartridge holds,
-and an import adds only the cheats it doesn't have; the cartridge's list holds what its chip has room
+and an import adds only the cheats it doesn't have, and says how many can't go in the cartridge: those
+with an XX or ?? to fill, in a form the import doesn't read (the Action Replay's and GameShark's own
+codes, the Xploder GB's $ codes) or, on the Action Replays and the MAX, of a kind beyond their writes of
+8 and 16 bits (conditions, slides, fills), which the CodeBreaker, Xploder Advance and X-Terminator take
+whole; Cheats for the Game on Top in the standalone app counts them too, and a CodeBreaker code written as
+12 digits without its + goes in as its two halves. RetroArch's database also names many Game Boy cheats
+with no code at all, which nothing can use. The cartridge's list holds what its chip has room
 for, and its own menus delete games and codes. Cheat Cartridge Reset clears what a cartridge keeps, though
 never its program, then restarts with the game on top. Its first two start from the chip as the dump
 has it, so the settings someone changed, such as the Action Replay MAX's user name, go too:

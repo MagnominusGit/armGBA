@@ -201,13 +201,16 @@ static size_t skipName(const uint8_t* db, size_t at, size_t end) {
 // A cheat's codes from RetroArch's database: pairs of 8 and 4 digits joined by + (or a space). As the
 // CodeBreaker's own engine reads them, a line after a seed is decrypted with its key first, and a seed
 // (type 9) then sets the key for the lines after it. A cheat with a master code (types 0 and 1),
-// whose seed it may hold, isn't taken, nor anything else not a code.
-static size_t plainCodes(const char* text, struct Key* seed, bool* seeded, uint32_t (*w0s)[2], size_t most) {
+// whose seed it may hold, isn't taken (*master then set), nor anything else not a code. The lines
+// after a slide (type 4: one) or a fill list (type 5: one for each three halfwords of its count) are
+// its data, as the engine reads them, not codes.
+static size_t plainCodes(const char* text, struct Key* seed, bool* seeded, uint32_t (*w0s)[2], size_t most, bool* master) {
 	char copy[sizeof(((struct ChtCheat*) 0)->code)];
 	snprintf(copy, sizeof(copy), "%s", text);
 	size_t n = 0;
-	bool master = false;
+	*master = false;
 	char* first = NULL;
+	unsigned data = 0;
 	for (char* part = strtok(copy, "+ "); part; part = strtok(NULL, "+ ")) {
 		if (!first) {
 			first = part;
@@ -225,6 +228,16 @@ static size_t plainCodes(const char* text, struct Key* seed, bool* seeded, uint3
 		if (*seeded) {
 			decrypt(seed, &word, &value);
 		}
+		if (data) {
+			--data;
+			if (n >= most) {
+				return 0;
+			}
+			w0s[n][0] = word;
+			w0s[n][1] = value;
+			++n;
+			continue;
+		}
 		uint32_t const type = word >> 28;
 		if (type == 9) {
 			keyFor(word, value, seed);
@@ -232,7 +245,7 @@ static size_t plainCodes(const char* text, struct Key* seed, bool* seeded, uint3
 			continue;
 		}
 		if (type == 0 || type == 1) {
-			master = true;
+			*master = true;
 			continue;
 		}
 		if (n >= most) {
@@ -241,13 +254,14 @@ static size_t plainCodes(const char* text, struct Key* seed, bool* seeded, uint3
 		w0s[n][0] = word;
 		w0s[n][1] = value;
 		++n;
+		data = type == 4 ? 1 : type == 5 ? (value + 2u) / 3u : 0;
 	}
-	return first || master ? 0 : n;
+	return first || *master || data ? 0 : n;
 }
 
 int fcdImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize, const struct ChtCheat* cheats, size_t count,
-              size_t* already, size_t* left) {
-	*already = *left = 0;
+              size_t* already, size_t* left, size_t* unfit) {
+	*already = *left = *unfit = 0;
 	if (size < RESOURCES + 4 || gameSize < 0x10000) {
 		return -1;
 	}
@@ -334,8 +348,10 @@ int fcdImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize,
 		// A seed holds for the cheats after it in its own file
 		seeded &= i && cheats[i].file == cheats[i - 1].file;
 		uint32_t codes[64][2];
-		size_t const n = plainCodes(cheats[i].code, &seed, &seeded, codes, 64);
+		bool master;
+		size_t const n = plainCodes(cheats[i].code, &seed, &seeded, codes, 64, &master);
 		if (!n) {
+			*unfit += !master;
 			continue;
 		}
 		// Already the game's, if each of its codes is, in any item
@@ -533,8 +549,8 @@ static void write32(uint8_t* p, uint32_t value) {
 }
 
 int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize, const struct ChtCheat* cheats, size_t count,
-                size_t* already, size_t* left) {
-	*already = *left = 0;
+                size_t* already, size_t* left, size_t* unfit) {
+	*already = *left = *unfit = 0;
 	if (size < AR_GAMES + 4 || gameSize < 0xB0) {
 		return -1;
 	}
@@ -629,8 +645,10 @@ int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSiz
 		// A seed holds for the cheats after it in its own file
 		seeded &= i && cheats[i].file == cheats[i - 1].file;
 		uint32_t lines[64][2];
-		size_t const n = plainCodes(cheats[i].code, &seed, &seeded, lines, 64);
+		bool master;
+		size_t const n = plainCodes(cheats[i].code, &seed, &seeded, lines, 64, &master);
 		if (!n) {
+			*unfit += !master;
 			continue;
 		}
 		// As the list's codes: 8 and 16-bit writes only, as the GameShark's or the Action Replay v3's (to
@@ -647,6 +665,7 @@ int arGbaImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSiz
 			codes[c][1] = type == 3 ? (lines[c][1] & 0xFF) : (lines[c][1] & 0xFFFF);
 		}
 		if (!converts) {
+			++*unfit;
 			continue;
 		}
 		// Already the game's, if each of its codes is
@@ -852,8 +871,8 @@ static unsigned maxLink(const uint8_t* table, unsigned cluster) {
 }
 
 int maxImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize, const struct ChtCheat* cheats, size_t count,
-              size_t* already, size_t* left) {
-	*already = *left = 0;
+              size_t* already, size_t* left, size_t* unfit) {
+	*already = *left = *unfit = 0;
 	// Up to the last cluster
 	if (size < (size_t) MAX_TABLES + (size_t) MAX_END * MAX_CLUSTER || gameSize < 0xB0) {
 		return -1;
@@ -969,8 +988,10 @@ int maxImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize,
 		// A seed holds for the cheats after it in its own file
 		seeded &= i && cheats[i].file == cheats[i - 1].file;
 		uint32_t lines[64][2];
-		size_t const n = plainCodes(cheats[i].code, &seed, &seeded, lines, 64);
+		bool master;
+		size_t const n = plainCodes(cheats[i].code, &seed, &seeded, lines, 64, &master);
 		if (!n) {
+			*unfit += !master;
 			continue;
 		}
 		// As the Action Replay v3's: writes of 8 and 16 bits, to an address it can hold
@@ -985,6 +1006,7 @@ int maxImport(uint8_t* flash, size_t size, const uint8_t* game, size_t gameSize,
 			codes[c][1] = type == 3 ? (lines[c][1] & 0xFF) : (lines[c][1] & 0xFFFF);
 		}
 		if (!converts) {
+			++*unfit;
 			continue;
 		}
 		size_t have = 0;
