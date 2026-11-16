@@ -239,7 +239,39 @@ static size_t readCheats(const char* path, unsigned file, bool (*accepts)(const 
 	return count;
 }
 
-size_t chtCheats(const char* database, bool advance, const char* gamePath, bool (*accepts)(const char* code), struct ChtCheat* cheats, size_t most) {
+// The build a .cht file's codes are for: the game ID in its first CodeBreaker master code (type 0,
+// 0000XXXX), or -1 without one, or with 0000 there, which many of RetroArch's files have in place of
+// an ID.
+static int masterId(const char* path) {
+	FILE* f = fopen(path, "r");
+	if (!f) {
+		return -1;
+	}
+	int id = -1;
+	char line[1024];
+	while (id < 0 && fgets(line, sizeof(line), f)) {
+		int index;
+		char key[16];
+		char* value;
+		if (sscanf(line, "cheat%d_%15[a-z]", &index, key) != 2 || strcmp(key, "code") || !quoted(line, &value)) {
+			continue;
+		}
+		for (char* code = strtok(value, "+ "); code && id < 0; code = strtok(NULL, "+ ")) {
+			if (strlen(code) == 8 && !strncmp(code, "0000", 4) && chtCodeBreakerPart(code)) {
+				id = (int) strtol(code + 4, NULL, 16);
+				id = id ? id : -2;
+			}
+		}
+	}
+	fclose(f);
+	return id < 0 ? -1 : id;
+}
+
+size_t chtCheats(const char* database, bool advance, const char* gamePath, int gameId, int* otherId, bool (*accepts)(const char* code),
+                 struct ChtCheat* cheats, size_t most) {
+	if (otherId) {
+		*otherId = -1;
+	}
 	if (!database || !gamePath || !most) {
 		return 0;
 	}
@@ -276,8 +308,26 @@ size_t chtCheats(const char* database, bool advance, const char* gamePath, bool 
 		closedir(d);
 		// In a fixed order, the file named as the game first
 		qsort(names, found, sizeof(*names), (int (*)(const void*, const void*)) strcmp);
+		// The files whose master code names another build than the game's go when one names the game's:
+		// a file's name covers the releases, its codes are for one build ("(USA, Europe)" for USA Rev 1)
+		int* const ids = found ? malloc(found * sizeof(int)) : NULL;
+		bool matched = false;
+		for (size_t i = 0; ids && i < found; ++i) {
+			char path[PATH_SIZE + 260];
+			snprintf(path, sizeof(path), "%.*s/%s", PATH_SIZE - 1, folder, names[i]);
+			ids[i] = gameId >= 0 ? masterId(path) : -1;
+			matched |= gameId >= 0 && ids[i] == gameId;
+		}
 		for (size_t pass = 0; pass < 2; ++pass) {
 			for (size_t i = 0; i < found; ++i) {
+				if (ids && ids[i] >= 0 && ids[i] != gameId) {
+					if (matched) {
+						continue;
+					}
+					if (otherId && *otherId < 0) {
+						*otherId = ids[i];
+					}
+				}
 				char base[300];
 				snprintf(base, sizeof(base), "%s", own);
 				char* const dot = strrchr(base, '.');
@@ -294,6 +344,7 @@ size_t chtCheats(const char* database, bool advance, const char* gamePath, bool 
 				count = readCheats(path, files++, accepts, cheats, count, most);
 			}
 		}
+		free(ids);
 		free(names);
 	}
 	return count;

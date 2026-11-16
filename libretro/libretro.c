@@ -1864,7 +1864,7 @@ static void offerGenieCheats(void) {
 	if (gameGenieLoaded && *replayGamePath &&
 	    (chtDatabase(system, database, sizeof(database)) ||
 	     (cheatFetch && cheatFetch(replayGamePath, false, false, database, sizeof(database)) == CHEAT_FETCH_READY))) {
-		genieCount = chtCheats(database, false, replayGamePath, chtGameGenieCode, genieCheats, COUNT(genieCheats));
+		genieCount = chtCheats(database, false, replayGamePath, -1, NULL, chtGameGenieCode, genieCheats, COUNT(genieCheats));
 	}
 	for (int i = 0; coreOptions && i < GENIE_SLOTS; ++i) {
 		struct retro_core_option_v2_definition* const definition = genieOptions[i];
@@ -2440,13 +2440,27 @@ bool libretroRetroArchCheats(char* out, size_t outSize) {
 	return chtDatabase(system, out, outSize);
 }
 
-size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], size_t most) {
+// The game on top's build, as a Game Boy Advance cartridge's master codes know it, or -1.
+static int replayGameId(void) {
+	if (gameBoy || !*replayGamePath) {
+		return -1;
+	}
+	size_t size = 0;
+	uint8_t* const game = gameRead(replayGamePath, &size);
+	int const id = gbaGameId(game, size);
+	free(game);
+	return id;
+}
+
+size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], size_t most, int* otherId, int* gameId) {
+	*otherId = *gameId = -1;
 	if (!cheatImportOn()) {
 		return 0;
 	}
 	static struct ChtCheat cheats[1024];
-	size_t const count = chtCheats(folder, !gameBoy, replayGamePath, gameBoy ? chtGameSharkCode : chtCodeBreakerPart, cheats,
-	                               most < COUNT(cheats) ? most : COUNT(cheats));
+	*gameId = replayGameId();
+	size_t const count = chtCheats(folder, !gameBoy, replayGamePath, *gameId, otherId, gameBoy ? chtGameSharkCode : chtCodeBreakerPart,
+	                               cheats, most < COUNT(cheats) ? most : COUNT(cheats));
 	for (size_t i = 0; i < count; ++i) {
 		memcpy(names[i], cheats[i].description, sizeof(cheats[i].description));
 		names[i][sizeof(cheats[i].description) - 1] = '\0';
@@ -2480,7 +2494,10 @@ static void importCheats(void) {
 	}
 	importWaiting = false;
 	static struct ChtCheat cheats[1024];
-	size_t const count = chtCheats(database, !gameBoy, replayGamePath, gameBoy ? chtGameSharkCode : chtCodeBreakerPart, cheats, COUNT(cheats));
+	int otherId = -1;
+	int const gameId = replayGameId();
+	size_t const count = chtCheats(database, !gameBoy, replayGamePath, gameId, &otherId, gameBoy ? chtGameSharkCode : chtCodeBreakerPart,
+	                               cheats, COUNT(cheats));
 	char title[256];
 	snprintf(title, sizeof(title), "%.255s", fileName(replayGamePath));
 	char* const dot = strrchr(title, '.');
@@ -2546,7 +2563,12 @@ static void importCheats(void) {
 		n += snprintf(message + n, sizeof(message) - (size_t) n, ", %zu already there", already);
 	}
 	if (left) {
-		snprintf(message + n, sizeof(message) - (size_t) n, ", %zu didn't fit", left);
+		n += snprintf(message + n, sizeof(message) - (size_t) n, ", %zu didn't fit", left);
+	}
+	// RetroArch's file for the title holds codes for another build than the one on top
+	if (added > 0 && otherId >= 0 && n < (int) sizeof(message)) {
+		snprintf(message + n, sizeof(message) - (size_t) n, ". They're for another version of the game (%04X; this one is %04X), so they may not work",
+		         otherId, gameId);
 	}
 	notify(message, 300);
 	logMessage(RETRO_LOG_INFO, message);

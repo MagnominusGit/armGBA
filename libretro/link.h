@@ -108,7 +108,8 @@ bool libretroCheatGame(const char** gamePath, bool* advance);
 bool libretroRetroArchCheats(char* out, size_t outSize);
 // The names of the cheats Import Cheats from RetroArch would take into the cheat cartridge from the
 // database at folder, for its game on top: those whose codes it can hold. Returns how many, up to most.
-size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], size_t most);
+// *otherId is the build RetroArch's codes are for when it isn't the game on top's (*gameId), else -1.
+size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], size_t most, int* otherId, int* gameId);
 // Whether the .cht file named chtName in RetroArch's cheat database is for the game at gamePath: the
 // same title, and a region of its (cht.c).
 bool chtFileFits(const char* chtName, const char* gamePath);

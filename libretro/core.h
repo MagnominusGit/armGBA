@@ -117,6 +117,9 @@ void ereaderForget(void);
 // cht.c: RetroArch's cheat database. chtDatabase finds its folder (systemFolder is the frontend's
 // system folder); chtCheats reads the cheats it has for the game at gamePath, those whose every code
 // accepts takes, the file named as the game first, leaving out cheats already read; returns how many.
+// With gameId (a Game Boy Advance game's, gbaGameId; -1 for none), of the files for the game's title
+// and regions it reads those whose CodeBreaker master code names that build, when there are any;
+// otherwise all of them, and *otherId (when given) is the build theirs names, else -1.
 struct ChtCheat {
 	char description[96];
 	char code[160];
@@ -124,7 +127,11 @@ struct ChtCheat {
 	unsigned file;
 };
 bool chtDatabase(const char* systemFolder, char* out, size_t outSize);
-size_t chtCheats(const char* database, bool advance, const char* gamePath, bool (*accepts)(const char* code), struct ChtCheat* cheats, size_t most);
+size_t chtCheats(const char* database, bool advance, const char* gamePath, int gameId, int* otherId, bool (*accepts)(const char* code),
+                 struct ChtCheat* cheats, size_t most);
+// gbacheats.c: the ID the Future Console Design cartridges and CodeBreaker master codes know a Game
+// Boy Advance game by, a CRC-16 of its first 64 KiB.
+int gbaGameId(const uint8_t* game, size_t size);
 bool chtGameGenieCode(const char* code);
 bool chtGameSharkCode(const char* code);
 bool chtCodeBreakerPart(const char* code);

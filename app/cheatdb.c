@@ -722,6 +722,8 @@ void cheatGameRows(void) {
 static char (*cartNames)[96];
 static size_t cartNameCount;
 static bool cartListed;
+// The build RetroArch's codes are for, when not the game on top's, else -1; and the game's.
+static int cartOtherId = -1, cartGameId = -1;
 
 static void cartCheatsPage(void) {
 	const char* game;
@@ -740,7 +742,7 @@ static void cartCheatsPage(void) {
 		if (!cartNames) {
 			cartNames = malloc(MOST * sizeof(*cartNames));
 		}
-		cartNameCount = cartNames ? libretroCartridgeCheatNames(folder, cartNames, MOST) : 0;
+		cartNameCount = cartNames ? libretroCartridgeCheatNames(folder, cartNames, MOST, &cartOtherId, &cartGameId) : 0;
 		cartListed = true;
 	}
 	if (!cartNameCount) {
@@ -749,6 +751,12 @@ static void cartCheatsPage(void) {
 	}
 	addItem("Import Cheats from RetroArch", importRow, 0);
 	helpFor("Adds those the cartridge doesn't have yet (not their master codes, which it has), switched off.");
+	if (cartOtherId >= 0) {
+		static char other[96];
+		snprintf(other, sizeof(other), "For another version of the game (%04X; this one is %04X)", cartOtherId, cartGameId);
+		addInfo(other, "");
+		helpFor("RetroArch's codes for this title were made for another build of it, so they may not work on this one.");
+	}
 	static char heading[64];
 	snprintf(heading, sizeof(heading), "In RetroArch's Cheat Database (%zu)", cartNameCount);
 	addHeader(heading);
