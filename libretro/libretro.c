@@ -2886,6 +2886,8 @@ static bool isGameBoyRom(const void* data, size_t size) {
 // Whether the last Game Boy Action Replay seen is the first one (the Pro Action Replay, without a
 // button or in-game menu).
 static bool replayFirstKind;
+// A later one's dump cut short: its size, and what its program's banks (7FE1) need, in bytes; equal when whole.
+static size_t replayDumpSize, replayDumpNeeds;
 
 // Galoob's Game Genie for the Game Boy: its own program of 8 KiB, with no logo for the boot ROM (the
 // game's shows), and its name in it (see GameGenieGb).
@@ -2917,8 +2919,14 @@ static bool isGameBoyActionReplay(const void* data, size_t size) {
 	unsigned stores = 0;
 	bool showGame = false;
 	bool start = false;
+	replayDumpSize = replayDumpNeeds = size;
 	for (size_t i = 0; i + 2 < size; ++i) {
 		stores += bytes[i] == 0xEA && bytes[i + 1] >= 0xE0 && bytes[i + 1] <= 0xE7 && bytes[i + 2] == 0x7F;
+		// ld a,bank; ld (7FE1),a: the 8 KiB bank of its flash chip it shows at 4000-5FFF
+		if (i + 4 < size && bytes[i] == 0x3E && bytes[i + 2] == 0xEA && bytes[i + 3] == 0xE1 && bytes[i + 4] == 0x7F &&
+		    (bytes[i + 1] + 1u) * 0x2000u > replayDumpNeeds) {
+			replayDumpNeeds = (bytes[i + 1] + 1u) * 0x2000u;
+		}
 		showGame |= bytes[i] == 0xEA && bytes[i + 1] == 0x00 && bytes[i + 2] == 0xA8;
 		start |= bytes[i] == 0xEA && bytes[i + 1] == 0x00 && bytes[i + 2] == 0xA9;
 	}
@@ -4740,6 +4748,13 @@ static void showReplayHint(void) {
 		         replayRecent ? " (or Most Recently Played)" : "");
 		break;
 	case HINT_GAME_BOY:
+		if (replayDumpNeeds > replayDumpSize) {
+			snprintf(message, sizeof(message), "%s: this dump is cut short, %zu KiB of a program that needs at least %zu KiB, so its menus can't show. A whole dump of the cartridge is needed",
+			         cartridgeName(), replayDumpSize / 1024, replayDumpNeeds / 1024);
+			replayHint = HINT_NONE;
+			showMessage(message);
+			return;
+		}
 		snprintf(message, sizeof(message), "%s: switch codes on in its menu, then start the game. In the game, Core Options > System > Open Cheat Cartridge Menu%s opens its menu", cartridgeName(), stick);
 		break;
 	case HINT_GAME_GENIE:

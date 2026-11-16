@@ -677,8 +677,9 @@ sharkdumps documents for them (games at 8000, codes at A000, C000 and E000, 18 b
 Action Replay takes them in its empty code slots, as many as its four hold; it does once its menu
 has shown, as its program clears its codes the first time it starts.
 
-Not covered: the Action Replay Pro (World) dump is 16 KiB of a bigger chip and stops at its start-up,
-and the GameShark (USA) for Game Boy is a bad dump (one bank repeated). The PC link (codes
+Not covered: the Action Replay Pro (World) dump is the first 16 KiB of a chip of at least 56 KiB.
+Its program calls code and takes pictures from the rest, so its screens can't show; armGBA says so as
+it loads. The GameShark (USA) for Game Boy is a bad dump (one bank repeated). The PC link (codes
 from a computer, and game-save backups to it) isn't emulated.
 
 ### Game Genie
