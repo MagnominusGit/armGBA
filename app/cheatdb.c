@@ -735,6 +735,8 @@ static int cartOtherId = -1, cartGameId = -1;
 // How many of them an import would leave out, their codes not ones the cartridge can hold
 static size_t cartCantGo;
 
+static void openCodeGuide(int unused, int delta);
+
 static void cartCheatsPage(void) {
 	const char* game;
 	bool advance, retroArchs;
@@ -770,8 +772,9 @@ static void cartCheatsPage(void) {
 	helpFor("Adds those the cartridge doesn't have yet (not their master codes, which it has), switched off.");
 	const char* const layout = libretroCartridgeCodeLayout();
 	if (layout) {
-		addInfo(layout, "");
-		helpFor("How this cartridge's codes are written. A code below with XX, YY or ?? in its value goes in with 0 there; change it in the cartridge's own code list.");
+		int const kind = libretroCartridgeCodeKind();
+		addChoice("Code Layout...", kind == 1 ? "01 VV AAAA" : kind == 2 ? "TAAAAAAA VVVV" : "Encrypted", openCodeGuide, 0);
+		helpFor(layout);
 	}
 	if (cartOtherId >= 0) {
 		static char other[96];
@@ -785,6 +788,158 @@ static void cartCheatsPage(void) {
 	for (size_t i = 0; i < cartNameCount; ++i) {
 		addChoice(cartNames[i], cartCodes[i], cheatRow, 0);
 		helpFor("Its code as RetroArch's database writes it.");
+	}
+}
+
+// Code Layout: what each part of the cartridge's codes is, the values a part takes, and one of the
+// game's cheats taken apart, so a value an import put in as 0 can be changed in the cartridge's list.
+static bool isHexDigit(char c) {
+	return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
+}
+
+static bool isPlaceholder(char c) {
+	return c == 'X' || c == 'x' || c == 'Y' || c == 'y' || c == 'Z' || c == 'z' || c == '?';
+}
+
+// The first code of the given length in a cheat's codes, those with placeholders first: its cheat's
+// index and the code, or false without one. kind 2 takes CodeBreaker writes (types 3 and 8) and their
+// values, as "3AAAAAAA VVVV".
+static bool exampleCode(int kind, size_t* cheat, char* out, size_t size) {
+	for (int pass = 0; pass < 2; ++pass) {
+		for (size_t i = 0; i < cartNameCount; ++i) {
+			const char* p = cartCodes[i];
+			while (*p) {
+				while (*p == '+' || *p == ' ') {
+					++p;
+				}
+				size_t n = strcspn(p, "+ ");
+				const char* value = p + n;
+				while (*value == '+' || *value == ' ') {
+					++value;
+				}
+				size_t valueLength = strcspn(value, "+ ");
+				bool fits = false, holds = false;
+				if (kind == 1 && n == 8) {
+					fits = true;
+					for (size_t c = 0; c < 8; ++c) {
+						fits = fits && (isHexDigit(p[c]) || isPlaceholder(p[c]));
+						holds = holds || isPlaceholder(p[c]);
+					}
+					holds = holds && !isPlaceholder(p[4]) && !isPlaceholder(p[5]) && !isPlaceholder(p[6]) && !isPlaceholder(p[7]);
+				} else if (kind == 2 && n == 8 && valueLength == 4 && (p[0] == '3' || p[0] == '8')) {
+					fits = true;
+					for (size_t c = 1; c < 8; ++c) {
+						fits = fits && isHexDigit(p[c]);
+					}
+					for (size_t c = 0; c < 4; ++c) {
+						fits = fits && (isHexDigit(value[c]) || isPlaceholder(value[c]));
+						holds = holds || isPlaceholder(value[c]);
+					}
+				}
+				if (fits && (holds || pass)) {
+					*cheat = i;
+					if (kind == 1) {
+						snprintf(out, size, "%.2s %.2s %.4s", p, p + 2, p + 4);
+					} else {
+						snprintf(out, size, "%.8s %.4s", p, value);
+					}
+					return true;
+				}
+				p += n;
+				if (kind == 2 && n == 8 && valueLength) {
+					p = value + valueLength;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+// A value's hex digits, followed by what they are in decimal when none is left to pick.
+static void withDecimal(char* digits, size_t size) {
+	unsigned long value = 0;
+	for (const char* p = digits; *p; ++p) {
+		if (!isHexDigit(*p)) {
+			return;
+		}
+		value = value * 16 + (unsigned long) (*p <= '9' ? *p - '0' : (*p | 0x20) - 'a' + 10);
+	}
+	size_t const n = strlen(digits);
+	snprintf(digits + n, size - n, " = %lu", value);
+}
+
+static void codeGuidePage(void) {
+	int const kind = libretroCartridgeCodeKind();
+	if (kind == 1) {
+		addHeader("GameShark Code: 01 VV AAAA");
+		addChoice("01", "Type", cheatRow, 0);
+		helpFor("01 writes the value every frame; 8n and 9n write it in RAM bank n.");
+		addChoice("VV", "Value, 00 to FF (0 to 255)", cheatRow, 0);
+		helpFor("Two hex digits. RetroArch leaves XX, YY or ?? here for a value to pick; the import puts 00.");
+		addChoice("AAAA", "Address, low byte first", cheatRow, 0);
+		helpFor("Its two bytes swapped: 59A8 is address A859.");
+	} else if (kind == 2) {
+		addHeader("CodeBreaker Code: TAAAAAAA VVVV");
+		addChoice("3AAAAAAA VVVV", "8 bits: 0000 to 00FF (0 to 255)", cheatRow, 0);
+		helpFor("Type 3 writes a byte, VVVV's last two digits.");
+		addChoice("8AAAAAAA VVVV", "16 bits: 0000 to FFFF (0 to 65535)", cheatRow, 0);
+		helpFor("Type 8 writes VVVV whole.");
+		addChoice("AAAAAAA", "Address", cheatRow, 0);
+		helpFor("The seven digits after the type: 2xxxxxx is work RAM, 3xxxxxx internal RAM.");
+		addChoice("VVVV", "Value", cheatRow, 0);
+		helpFor("Four hex digits. RetroArch leaves XX, YY or ?? here for a value to pick; the import puts 0.");
+		addChoice("0AAAAAAA and 1AAAAAAA", "Master code", cheatRow, 0);
+		helpFor("Names the game and hooks the cheats in; the cartridge keeps its own, so the import leaves them out.");
+	} else if (kind == 3) {
+		addHeader("Encrypted Codes: 8 + 8 Digits");
+		addChoice("Its codes", "Kept encrypted", cheatRow, 0);
+		helpFor("Each code is scrambled, so its value and address can't be read or changed in place.");
+		addChoice("XX, YY or ?? in RetroArch's code", "Goes in as 0", cheatRow, 0);
+		helpFor("The import encrypts the code with 0 there.");
+		addChoice("Another value", "RetroArch Cheats...", cheatRow, 0);
+		helpFor("Game > Cheats > RetroArch Cheats... adds the same cheat to armGBA's own list, and asks for its Value as you switch it on.");
+	} else {
+		addInfo("No cheat cartridge that imports is loaded", "");
+		return;
+	}
+	addHeader("Values Are Hex");
+	addChoice("Digits 0 to 9, then A to F", "0A = 10, 10 = 16, 63 = 99, FF = 255", cheatRow, 0);
+	helpFor("Each digit is worth 16 of the one to its right. 16 bits: 03E7 = 999, 270F = 9999.");
+	static char name[160], code[32];
+	size_t cheat;
+	if (kind != 3 && exampleCode(kind, &cheat, code, sizeof(code))) {
+		snprintf(name, sizeof(name), "Example: %s", cartNames[cheat]);
+		addHeader(name);
+		addChoice(code, "", cheatRow, 0);
+		helpFor("One of the game's cheats, as RetroArch writes it.");
+		char part[32];
+		if (kind == 1) {
+			snprintf(part, sizeof(part), "%.2s", code);
+			addChoice("Type", part, cheatRow, 0);
+			snprintf(part, sizeof(part), "%.2s", code + 3);
+			withDecimal(part, sizeof(part));
+			addChoice("Value", part, cheatRow, 0);
+			helpFor(isPlaceholder(code[3]) || isPlaceholder(code[4]) ? "Left to pick: the import puts 00; type the one you want in its place in the cartridge's code list." : "The value it writes.");
+			snprintf(part, sizeof(part), "%.2s%.2s", code + 8, code + 6);
+			addChoice("Address", part, cheatRow, 0);
+			helpFor("The code's last four digits, their bytes swapped.");
+		} else {
+			snprintf(part, sizeof(part), "%s", code[0] == '3' ? "3 (8 bits)" : "8 (16 bits)");
+			addChoice("Type", part, cheatRow, 0);
+			snprintf(part, sizeof(part), "%.7s", code + 1);
+			addChoice("Address", part, cheatRow, 0);
+			snprintf(part, sizeof(part), "%.4s", code + 9);
+			withDecimal(part, sizeof(part));
+			addChoice("Value", part, cheatRow, 0);
+			helpFor(strpbrk(code + 9, "XxYyZz?") ? "Left to pick: the import puts 0; type the one you want in its place in the cartridge's code list." : "The value it writes.");
+		}
+	}
+}
+
+static void openCodeGuide(int unused, int delta) {
+	(void) unused;
+	if (!delta) {
+		pushMenu(codeGuidePage, "Code Layout");
 	}
 }
 

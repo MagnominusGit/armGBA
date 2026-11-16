@@ -115,6 +115,10 @@ size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], char (
                                    size_t* cantGo);
 // How the loaded cheat cartridge's codes are written, where a value is, or NULL without one that imports.
 const char* libretroCartridgeCodeLayout(void);
+// The kind of codes the loaded cheat cartridge's list holds: 0 without one that imports, 1 GameShark
+// codes (the Game Boy's), 2 CodeBreaker codes (the Future Console Design cartridges'), 3 encrypted
+// Action Replay or GameShark codes (the other Game Boy Advance cartridges').
+int libretroCartridgeCodeKind(void);
 // Whether the .cht file named chtName in RetroArch's cheat database is for the game at gamePath: the
 // same title, and a region of its (cht.c).
 bool chtFileFits(const char* chtName, const char* gamePath);

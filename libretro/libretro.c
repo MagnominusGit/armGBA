@@ -2430,6 +2430,10 @@ const char* libretroCartridgeCodeLayout(void) {
 	return "Action Replay codes, kept encrypted (8 + 8 digits): a value changes by typing the whole code again";
 }
 
+int libretroCartridgeCodeKind(void) {
+	return !actionReplayLoaded || gameGenieLoaded ? 0 : gameBoy ? 1 : fcdLoaded ? 2 : 3;
+}
+
 // Where a value goes, for the import's message
 static const char* cartridgeValueAt(void) {
 	return gameBoy ? "VV in 01 VV AAAA" : fcdLoaded ? "VVVV in 8AAAAAAA VVVV" : "the encrypted code typed again";

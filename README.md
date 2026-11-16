@@ -395,8 +395,9 @@ also work on a row without a value). It opens again where it was left.
   Video in place of the core's LCD Effects.
 - **Extras:** netplay and RetroAchievements, and with a cheat cartridge, Cheats: Import Cheats from
   RetroArch (its download's progress shown as it goes), Cheats for the Game on Top (the cheats the
-  import would add, by name, each with its code as RetroArch writes it, XX and all, under a line
-  saying how the cartridge's codes are laid out), the cartridge's resets and Download Cheat Database Again.
+  import would add, by name, each with its code as RetroArch writes it, XX and all; its Code Layout...
+  page says what each part of the cartridge's codes is, the values a part takes, how hex digits count,
+  and takes one of the game's cheats apart), the cartridge's resets and Download Cheat Database Again.
 
 Rows ending in "..." open a page. Rows with a value step through it, except Back Up Save, Load Save
 and Send Save, which act once something is chosen from their list. The line under the menu says what
@@ -615,8 +616,8 @@ has it, so the settings someone changed, such as the Action Replay MAX's user na
 
 Many dumps were made from used cartridges, their lists holding someone's games and codes; Factory
 Reset makes such a cartridge clean, with Import Cheats from RetroArch to fill it. In the standalone
-app, Extras > Cheats has the import, the list of what it would add with each cheat's code and the
-cartridge's code layout (Cheats for the Game on Top) and
+app, Extras > Cheats has the import, the list of what it would add with each cheat's code and a
+guide to the cartridge's codes and their values (Cheats for the Game on Top) and
 Cheat Cartridge Reset.
 
 ### Action Replay
