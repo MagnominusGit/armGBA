@@ -312,6 +312,13 @@ bool gameGenieLoaded;
 bool xploderLoaded;
 const char* fcdLoaded;
 
+// GameTech's X-Terminator Advance, the Xploder Advance in Japanese: the same cartridge, told apart by
+// its program (16 bytes of it at C1C, below its code list).
+static bool isXTerminator(const void* rom, size_t size) {
+	static const uint8_t mark[16] = { 0xFF, 0xEF, 0xBE, 0x01, 0x70, 0xB5, 0x2D, 0x4C, 0xA5, 0x44, 0x03, 0xF0, 0x81, 0xF9, 0x00, 0xF0 };
+	return size >= 0xC1C + sizeof(mark) && !memcmp((const uint8_t*) rom + 0xC1C, mark, sizeof(mark));
+}
+
 // Whether the cheat cartridge loaded has a button, which a stick click can be: the Action Replays and
 // the Xploder GB.
 bool replayHasButton(void) {
@@ -3118,7 +3125,9 @@ static bool loadAdvance(const struct retro_game_info* game, const struct retro_g
 	actionReplayLoaded = actionReplayDetect(gba->rom, gba->romSize);
 	// Before the cartridge fixes its image (the Xploder Advance (Europe) dump's byte)
 	replayCartCrc = actionReplayLoaded ? (uint32_t) crc32(0, gba->rom, gba->romSize) : 0;
-	fcdLoaded = !fcdDetect(gba->rom, gba->romSize) ? NULL : gba->romSize > 0x10000 ? "Xploder Advance" : "CodeBreaker";
+	fcdLoaded = !fcdDetect(gba->rom, gba->romSize) ? NULL
+	          : isXTerminator(gba->rom, gba->romSize) ? "X-Terminator Advance"
+	          : gba->romSize > 0x10000 ? "Xploder Advance" : "CodeBreaker";
 	if (actionReplayLoaded && !startActionReplay(game)) {
 		actionReplayLoaded = false;
 		fcdLoaded = NULL;

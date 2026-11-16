@@ -553,7 +553,8 @@ a strip at a time. A card waits until the e-Reader scans.
 
 armGBA runs cheat cartridges as the cartridge itself, with a game plugged in on top: Datel's Action
 Replays (the GameShark ones among them), Galoob's Game Genie, Blaze's Xploder GB and Xploder
-Advance, and Pelican's CodeBreaker. Load the cheat cartridge's ROM and pick the game with Game on
+Advance (and GameTech's X-Terminator Advance, the Xploder Advance in Japanese), and Pelican's
+CodeBreaker. Load the cheat cartridge's ROM and pick the game with Game on
 Top (the games beside it, those played last first, other cheat cartridges after them, or Most
 Recently Played), or load both with the "Cheat Cartridge (Game on Top)" subsystem. A game picked goes
 in as you go back to it: the cartridge starts again with it, its old game's save written first, and
@@ -735,7 +736,9 @@ Cartridge (Game on Top)" subsystem. Each game in their lists is known by a check
 64 KiB, and the CodeBreaker opens the codes of the game on top by itself; Right opens a game's codes,
 A switches them on (on the game's name, all of them), and Start starts the game with them. They have no button, switch or in-game menu. Their
 codes are for the USA and European releases they list; the Xploder Advance holds 26 games (21 on
-the Alt dump), the CodeBreaker 45.
+the Alt dump), the CodeBreaker 45. GameTech's X-Terminator Advance (Japan) is the Xploder Advance in
+Japanese and runs the same way, its 31 games Japanese releases (its Akumajou Dracula - Circle of the
+Moon code, Ex-Potions to 99, tested); its title screen takes no button for its first 13 seconds or so.
 
 As their programs use the cartridge: its flash chip (the Xploder's 128 KiB, the CodeBreaker's
 64 KiB) shows in one 4 MiB page of the cartridge space and the game everywhere else; two registers
