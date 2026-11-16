@@ -481,6 +481,12 @@ static struct ChtFile* chtFiles;
 static int chtFileCount;
 static bool chtListed;
 
+// A row that only shows a cheat, selectable so a list longer than the screen scrolls to it.
+static void cheatRow(int unused, int delta) {
+	(void) unused;
+	(void) delta;
+}
+
 static void forgetChtFiles(void) {
 	for (int i = 0; i < chtFileCount; ++i) {
 		free(chtFiles[i].names);
@@ -690,7 +696,7 @@ static void gameCheatsPage(void) {
 			helpFor("Adds them to this game's cheats, switched off, for you to switch on.");
 		}
 		for (int c = 0; c < chtFiles[i].count; ++c) {
-			addInfo(chtFiles[i].names[c], "");
+			addChoice(chtFiles[i].names[c], "", cheatRow, 0);
 		}
 	}
 	char retroArchs[PATH_SIZE];
@@ -720,6 +726,8 @@ void cheatGameRows(void) {
 
 // Extras > Cheats > Cheats for the game on top: those Import would take into the cartridge.
 static char (*cartNames)[96];
+// Each one's code as RetroArch writes it, a template's XX still there
+static char (*cartCodes)[160];
 static size_t cartNameCount;
 static bool cartListed;
 // The build RetroArch's codes are for, when not the game on top's, else -1; and the game's.
@@ -743,8 +751,9 @@ static void cartCheatsPage(void) {
 		enum { MOST = 1024 };
 		if (!cartNames) {
 			cartNames = malloc(MOST * sizeof(*cartNames));
+			cartCodes = malloc(MOST * sizeof(*cartCodes));
 		}
-		cartNameCount = cartNames ? libretroCartridgeCheatNames(folder, cartNames, MOST, &cartOtherId, &cartGameId, &cartCantGo) : 0;
+		cartNameCount = cartNames && cartCodes ? libretroCartridgeCheatNames(folder, cartNames, cartCodes, MOST, &cartOtherId, &cartGameId, &cartCantGo) : 0;
 		cartListed = true;
 	}
 	if (!cartNameCount) {
@@ -755,10 +764,15 @@ static void cartCheatsPage(void) {
 		static char cant[96];
 		snprintf(cant, sizeof(cant), cartCantGo == 1 ? "1 of them can't go in this cartridge" : "%zu of them can't go in this cartridge", cartCantGo);
 		addInfo(cant, "");
-		helpFor("Their codes are of a kind this cartridge doesn't run, or have an XX to fill in; the import leaves them out.");
+		helpFor("Their codes are of a kind this cartridge doesn't run, or have an XX in an address; the import leaves them out.");
 	}
 	addItem("Import Cheats from RetroArch", importRow, 0);
 	helpFor("Adds those the cartridge doesn't have yet (not their master codes, which it has), switched off.");
+	const char* const layout = libretroCartridgeCodeLayout();
+	if (layout) {
+		addInfo(layout, "");
+		helpFor("How this cartridge's codes are written. A code below with XX, YY or ?? in its value goes in with 0 there; change it in the cartridge's own code list.");
+	}
 	if (cartOtherId >= 0) {
 		static char other[96];
 		snprintf(other, sizeof(other), "Written for another version (%04X; this one is %04X)", cartOtherId, cartGameId);
@@ -769,7 +783,8 @@ static void cartCheatsPage(void) {
 	snprintf(heading, sizeof(heading), "In RetroArch's Cheat Database (%zu)", cartNameCount);
 	addHeader(heading);
 	for (size_t i = 0; i < cartNameCount; ++i) {
-		addInfo(cartNames[i], "");
+		addChoice(cartNames[i], cartCodes[i], cheatRow, 0);
+		helpFor("Its code as RetroArch's database writes it.");
 	}
 }
 

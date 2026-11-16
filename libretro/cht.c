@@ -281,6 +281,7 @@ static size_t readCheats(const char* path, unsigned file, bool (*accepts)(const 
 			}
 			continue;
 		}
+		const char* const written = value;
 		value = normal;
 		bool known = false;
 		for (size_t i = 0; i < count && !known; ++i) {
@@ -290,6 +291,7 @@ static size_t readCheats(const char* path, unsigned file, bool (*accepts)(const 
 			continue;
 		}
 		snprintf(cheats[count].code, sizeof(cheats[count].code), "%s", value);
+		snprintf(cheats[count].written, sizeof(cheats[count].written), "%.*s", (int) sizeof(cheats[count].written) - 1, written);
 		snprintf(cheats[count].description, sizeof(cheats[count].description), "%.*s", (int) sizeof(cheats[count].description) - 1,
 		         describedAs == index && *description ? description : value);
 		cheats[count].file = file;

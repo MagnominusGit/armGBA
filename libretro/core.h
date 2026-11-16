@@ -126,6 +126,8 @@ void ereaderForget(void);
 struct ChtCheat {
 	char description[96];
 	char code[160];
+	// The code as RetroArch writes it, a template's XX still there (code has 0 in its place)
+	char written[160];
 	// Which of the database's files it came from, in the order read
 	unsigned file;
 };

@@ -2414,6 +2414,27 @@ static const char* cartridgeName(void) {
 	return gameGenieLoaded ? "Game Genie" : fcdLoaded ? fcdLoaded : xploderLoaded ? "Xploder" : replayFirstKind ? "Pro Action Replay" : replayGameShark ? "GameShark" : "Action Replay";
 }
 
+// How the cheat cartridge's codes are written, so a player can change a value an import put in as 0:
+// the Game Boy cartridges' GameShark codes and the Future Console Design cartridges' CodeBreaker codes
+// show it, the Action Replays and GameShark for the Game Boy Advance keep their codes encrypted.
+const char* libretroCartridgeCodeLayout(void) {
+	if (!actionReplayLoaded || gameGenieLoaded) {
+		return NULL;
+	}
+	if (gameBoy) {
+		return "GameShark codes: 01 VV AAAA, VV the value and AAAA the address, low byte first";
+	}
+	if (fcdLoaded) {
+		return "CodeBreaker codes: 3AAAAAAA VVVV (8 bits) or 8AAAAAAA VVVV (16 bits), VVVV the value";
+	}
+	return "Action Replay codes, kept encrypted (8 + 8 digits): a value changes by typing the whole code again";
+}
+
+// Where a value goes, for the import's message
+static const char* cartridgeValueAt(void) {
+	return gameBoy ? "VV in 01 VV AAAA" : fcdLoaded ? "VVVV in 8AAAAAAA VVVV" : "the encrypted code typed again";
+}
+
 bool libretroCheatImportFor(const char** gamePath, bool* advance, bool* retroArchs) {
 	if (!cheatImportOn() || netplaySeen) {
 		return false;
@@ -2499,7 +2520,8 @@ static int importTo(uint8_t* flash, size_t size, const char* title, const struct
 	return added;
 }
 
-size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], size_t most, int* otherId, int* gameId, size_t* cantGo) {
+size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], char (*codes)[160], size_t most, int* otherId, int* gameId,
+                                   size_t* cantGo) {
 	*otherId = *gameId = -1;
 	*cantGo = 0;
 	if (!cheatImportOn()) {
@@ -2527,6 +2549,8 @@ size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], size_t
 	for (size_t i = 0; i < count; ++i) {
 		memcpy(names[i], cheats[i].description, sizeof(cheats[i].description));
 		names[i][sizeof(cheats[i].description) - 1] = '\0';
+		memcpy(codes[i], cheats[i].written, sizeof(cheats[i].written));
+		codes[i][sizeof(cheats[i].written) - 1] = '\0';
 	}
 	return count;
 }
@@ -2565,7 +2589,7 @@ static void importCheats(void) {
 	                               cheats, COUNT(cheats), &rejected, &zeroed);
 	char title[256];
 	replayTitle(title, sizeof(title));
-	char message[300];
+	char message[400];
 	if (!count) {
 		if (rejected) {
 			snprintf(message, sizeof(message), "RetroArch's cheat database has %zu cheat%s for %.150s, but none this cartridge can hold", rejected,
@@ -2605,6 +2629,10 @@ static void importCheats(void) {
 		cheatRestartDue = true;
 	}
 	int n = snprintf(message, sizeof(message), "%s: %d cheat%s for %.150s imported", cartridge, added, added == 1 ? "" : "s", title);
+	// A database template's value to fill, read as 0, which the cartridge's own menus can change
+	if (added > 0 && zeroed && n < (int) sizeof(message)) {
+		n += snprintf(message + n, sizeof(message) - (size_t) n, " (%zu with an XX to fill, put in as 0: the value is %s)", zeroed, cartridgeValueAt());
+	}
 	if (already) {
 		n += snprintf(message + n, sizeof(message) - (size_t) n, ", %zu already there", already);
 	}
@@ -2614,10 +2642,6 @@ static void importCheats(void) {
 	// Those whose codes it can't hold: of a kind it doesn't take, or with an XX left in an address
 	if (rejected + unfit && n < (int) sizeof(message)) {
 		n += snprintf(message + n, sizeof(message) - (size_t) n, ", %zu can't go in this cartridge", rejected + unfit);
-	}
-	// A database template's value to fill, read as 0, which the cartridge's own menus can change
-	if (added > 0 && zeroed && n < (int) sizeof(message)) {
-		n += snprintf(message + n, sizeof(message) - (size_t) n, " (%zu with an XX to fill, as 0)", zeroed);
 	}
 	// RetroArch's file for the title holds codes for another build than the one on top
 	if (added > 0 && otherId >= 0 && n < (int) sizeof(message)) {

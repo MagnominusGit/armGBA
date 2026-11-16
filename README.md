@@ -395,7 +395,8 @@ also work on a row without a value). It opens again where it was left.
   Video in place of the core's LCD Effects.
 - **Extras:** netplay and RetroAchievements, and with a cheat cartridge, Cheats: Import Cheats from
   RetroArch (its download's progress shown as it goes), Cheats for the Game on Top (the cheats the
-  import would add, by name), the cartridge's resets and Download Cheat Database Again.
+  import would add, by name, each with its code as RetroArch writes it, XX and all, under a line
+  saying how the cartridge's codes are laid out), the cartridge's resets and Download Cheat Database Again.
 
 Rows ending in "..." open a page. Rows with a value step through it, except Back Up Save, Load Save
 and Send Save, which act once something is chosen from their list. The line under the menu says what
@@ -589,7 +590,9 @@ nothing on another version may be why. The save keeps its size whatever the cart
 and an import adds only the cheats it doesn't have, and says how many can't go in the cartridge. A
 cheat whose value RetroArch leaves to fill (an XX, YY or ?? in a CodeBreaker code's 4 digits or a
 GameShark code's second byte, such as a Level Modifier) goes in with 0 there, which the cartridge's own
-menus can change, and the message says how many did; those that can't go in have one in an address,
+menus can change, and the message says how many did and where the value goes (VV in a GameShark
+code's 01 VV AAAA, VVVV in a CodeBreaker code's 8AAAAAAA VVVV; the Action Replays keep their codes
+encrypted, so a value there changes by typing the code again); those that can't go in have one in an address,
 or are in a form the import doesn't read (the Action Replay's and GameShark's own
 codes, the Xploder GB's $ codes) or, on the Action Replays and the MAX, of a kind beyond their writes of
 8 and 16 bits (conditions, slides, fills), which the CodeBreaker, Xploder Advance and X-Terminator take
@@ -612,7 +615,8 @@ has it, so the settings someone changed, such as the Action Replay MAX's user na
 
 Many dumps were made from used cartridges, their lists holding someone's games and codes; Factory
 Reset makes such a cartridge clean, with Import Cheats from RetroArch to fill it. In the standalone
-app, Extras > Cheats has the import, the list of what it would add (Cheats for the Game on Top) and
+app, Extras > Cheats has the import, the list of what it would add with each cheat's code and the
+cartridge's code layout (Cheats for the Game on Top) and
 Cheat Cartridge Reset.
 
 ### Action Replay
