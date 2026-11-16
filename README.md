@@ -582,8 +582,10 @@ The Game Genie's codes use that copy once it's there. RetroArch names its Game B
 and regions, but their codes are for one build of the game, which their master code names (its ID, a
 checksum of the game's first 64 KiB): "Advance Wars (USA, Europe)" is for USA Rev 1. So of the files
 for the game on top, the import takes those for its build when there are any; otherwise it takes the
-others and says they're for another version (both IDs), as they may not work, and Cheats for the Game
-on Top in the standalone app says so too. The save keeps its size whatever the cartridge holds,
+others and notes they were written for another version (both IDs), as Cheats for the Game on Top in
+the standalone app does. Codes usually carry over between versions that keep the same memory, as
+RetroArch's own cheats do (neither it nor armGBA's cheat engine checks the build); one that does
+nothing on another version may be why. The save keeps its size whatever the cartridge holds,
 and an import adds only the cheats it doesn't have; the cartridge's list holds what its chip has room
 for, and its own menus delete games and codes. Cheat Cartridge Reset clears what a cartridge keeps, though
 never its program, then restarts with the game on top. Its first two start from the chip as the dump

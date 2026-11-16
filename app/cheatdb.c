@@ -753,9 +753,9 @@ static void cartCheatsPage(void) {
 	helpFor("Adds those the cartridge doesn't have yet (not their master codes, which it has), switched off.");
 	if (cartOtherId >= 0) {
 		static char other[96];
-		snprintf(other, sizeof(other), "For another version of the game (%04X; this one is %04X)", cartOtherId, cartGameId);
+		snprintf(other, sizeof(other), "Written for another version (%04X; this one is %04X)", cartOtherId, cartGameId);
 		addInfo(other, "");
-		helpFor("RetroArch's codes for this title were made for another build of it, so they may not work on this one.");
+		helpFor("RetroArch's codes for this title were written for another build of it. Codes usually carry over when the versions keep the same memory; if one does nothing, this may be why.");
 	}
 	static char heading[64];
 	snprintf(heading, sizeof(heading), "In RetroArch's Cheat Database (%zu)", cartNameCount);

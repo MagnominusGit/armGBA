@@ -2567,7 +2567,7 @@ static void importCheats(void) {
 	}
 	// RetroArch's file for the title holds codes for another build than the one on top
 	if (added > 0 && otherId >= 0 && n < (int) sizeof(message)) {
-		snprintf(message + n, sizeof(message) - (size_t) n, ". They're for another version of the game (%04X; this one is %04X), so they may not work",
+		snprintf(message + n, sizeof(message) - (size_t) n, ". RetroArch's codes were written for another version (%04X; this one is %04X): if one does nothing, that may be why",
 		         otherId, gameId);
 	}
 	notify(message, 300);
