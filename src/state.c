@@ -213,10 +213,10 @@ void gbaSaveState(struct GBA* gba, void* state) {
 	memcpy(state, &header, sizeof(header));
 	memcpy(saved, gba, sizeof(*gba));
 	takeRenderer(gba, &saved->renderer);
-	// What the renderer keeps from the lines it drew isn't the machine's: with render threads it
-	// depends on which copy drew which line. The state has none of it, however it was drawn, and
-	// whoever loads it draws every line again.
-	renderForget(&saved->renderer);
+	// What the renderer keeps from the lines it drew depends on which copy drew which line only
+	// with two render workers, and their merged renderer has none of it already
+	// (renderThreadRenderer). Drawn by one renderer it is whole and the same for the same machine,
+	// so it stays: a state loaded every frame (run-ahead) doesn't draw every line again.
 	saved->renderer.copyCycle = 0;
 	leaveOutHost(gba, saved);
 }
