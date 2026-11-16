@@ -2585,7 +2585,11 @@ static void restoreCheats(void) {
 		showMessage(message);
 		return;
 	}
-	if (!memcmp(flash, replayFactory, size)) {
+	// As the save keeps it: without what shows over the chip while the program starts or reads its ID
+	// (the game's logo, on Future Console Design's)
+	size_t keptSize = size;
+	const uint8_t* const kept = gameBoy ? flash : actionReplayKept(&keptSize);
+	if (kept && keptSize == size && !memcmp(kept, replayFactory, size)) {
 		snprintf(message, sizeof(message), "%s: its cheats are as they came already", cartridgeName());
 		notify(message, 300);
 		logMessage(RETRO_LOG_INFO, message);
