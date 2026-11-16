@@ -1,8 +1,8 @@
 #!/bin/bash
 # Checks that the core is deterministic however it is run: for every game in a list, the recompiler
 # against the exact CPU every frame (gamecmp PAIR=ref-armgba), with the renderer's threads as well as
-# without; every frame's picture and sound the same with the renderer's two threads as without them
-# (bench BENCH_FRAMES); and, given a second build, the same as that build's.
+# without; every frame's picture and sound the same with the renderer's two threads and the mixer's
+# thread as without them (bench BENCH_FRAMES); and, given a second build, the same as that build's.
 #
 # usage: determinism.sh build bios.bin games.txt romdir frames [other-build] [jobs]
 #   build        a build folder with gamecmp and bench (cmake -DMGBA_DIR=... -DMGBA_LIB=..., see README)
@@ -39,7 +39,7 @@ check() {
 	done
 	# Every frame's picture and sound: alone, with the threads, and in the other build.
 	BENCH_HASH=1 BENCH_FRAMES="$out/$n.a" "$build/bench" armgba "$bios" "$rom" "$frames" > /dev/null 2>&1
-	BENCH_HASH=1 BENCH_FRAMES="$out/$n.t" ARMGBA_THREADED=1 ARMGBA_WORKERS2=1 \
+	BENCH_HASH=1 BENCH_FRAMES="$out/$n.t" ARMGBA_THREADED=1 ARMGBA_WORKERS2=1 ARMGBA_AUDIO_THREAD=1 \
 		"$build/bench" armgba "$bios" "$rom" "$frames" > /dev/null 2>&1
 	same() {
 		if [ ! -s "$out/$n.a" ]; then

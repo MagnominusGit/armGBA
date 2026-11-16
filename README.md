@@ -117,7 +117,8 @@ standalone frontend shows as one page with headers.
 | | Game Boy Pixel Shadow | Game Boy | Off, Up, Up Right, Right, Down Right, Down, Down Left, Left, Up Left (with LCD Scale); in the app's GPU mode also Tilt (Android: follows the device's tilt) |
 | | Game Boy Pixel Shadow Distance | Game Boy | 0.5 to 2.5 dots in halves, 1.5 by default; how far Tilt reaches in the app |
 | | LCD Effect Threads | Both | Auto, 1, 2, 3, 4 |
-| Audio | Low-Pass Filter | Both | Off, 20%, 40%, 60%, 80% |
+| Audio | Threaded Audio | Game Boy Advance | Off, On (the sound mixed on another CPU core; the same samples) |
+| | Low-Pass Filter | Both | Off, 20%, 40%, 60%, 80% |
 | Input | Left Stick as D-Pad | Both | Off, On |
 | | Turbo Button Period | Both | 4 to 120 frames, 4 by default |
 | | L2 and R2 | Both | Fast-Forward (held), Fast-Forward Toggle (a press until the next, for handhelds without stick clicks; L3's toggle turns the same fast-forward on and off), Turbo L and R (Game Boy Advance; for handhelds without stick clicks; L2 and R2 then don't fast-forward or change screen layouts) |
@@ -152,6 +153,7 @@ standalone frontend shows as one page with headers.
 | | Backups Kept | Both | 10, 5, 20, All |
 | | Backups Listed | Both | 10, 20, 40, 80, 126 |
 | | Safe Saves | Both | Off, On; On by default |
+| | Fast Flash Saves (from the next time the game is loaded) | Game Boy Advance | Off (default), On: Pokémon Ruby, Sapphire, FireRed, LeafGreen and Emerald save without their per-byte timer (the bytes saved are the same) |
 
 ### CPU Clock
 

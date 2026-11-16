@@ -19,7 +19,7 @@
 
 struct retro_core_options_v2* coreOptions;
 // Which options were last shown, once set.
-static bool optionsShown[80];
+static bool optionsShown[96];
 static bool optionsShownSet;
 
 static void fillTurboPeriods(struct retro_core_option_v2_definition* definitions) {
@@ -227,6 +227,9 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_threaded_video", "Threaded Video", NULL,
 	  "Draws on a second CPU core for speed. One Frame Late is faster but a frame behind.", NULL, "video",
 	  { { "disabled", "Off" }, { "enabled", "On" }, { "one frame late", "One Frame Late" }, { NULL, NULL } }, "disabled" },
+	{ "armgba_threaded_audio", "Threaded Audio", NULL,
+	  "Mixes the sound on another CPU core for speed. The sound is the same.", NULL, "audio",
+	  { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
 	{ "armgba_video_threads", "Video Threads", NULL,
 	  "Threads that draw with Threaded Video. Two share the lines: faster in most games, slower in a few, and they take another CPU core.",
 	  NULL, "video", { { "1", NULL }, { "2", NULL }, { NULL, NULL } }, "1" },
@@ -255,6 +258,9 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_fast_forward_skip", "Fast-Forward Skip", NULL,
 	  "While fast-forwarding, frames the frontend won't show aren't drawn, for speed. GBA only. Not in netplay.",
 	  NULL, "video", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "enabled" },
+	{ "armgba_fast_flash_saves", "Fast Flash Saves", NULL,
+	  "Skips the timeout timer that Pokemon Ruby, Sapphire, FireRed, LeafGreen and Emerald start for every byte they save, so saving doesn't slow the game. The save is the same. From the next time the game is loaded.",
+	  NULL, "saves", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
 	{ "armgba_lcd_effects", "LCD Effects", NULL,
 	  "Turns the effects below on or off together. Each one keeps its setting.",
 	  NULL, "video_lcd", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
@@ -544,7 +550,9 @@ bool showOptions(void) {
 		{ "armgba_clock_reset_allowed", gbClock == LIBRETRO_GB_MBC3_CLOCK || devices & HW_RTC },
 		{ "armgba_clock_reset", (gbClock == LIBRETRO_GB_MBC3_CLOCK || devices & HW_RTC) && optionIs("armgba_clock_reset_allowed", "enabled") },
 		{ "armgba_threaded_video", !gameBoy },
+		{ "armgba_threaded_audio", !gameBoy },
 		{ "armgba_fast_forward_skip", !gameBoy },
+		{ "armgba_fast_flash_saves", !gameBoy },
 		{ "armgba_video_threads", !gameBoy && !optionIs("armgba_threaded_video", "disabled") },
 		{ "armgba_lcd_ghosting", effects },
 		{ "armgba_lcd_grid", effects },

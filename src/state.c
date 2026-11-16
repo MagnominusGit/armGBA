@@ -190,6 +190,8 @@ static void leaveOutHost(const struct GBA* gba, struct GBA* saved) {
 }
 
 void gbaSaveState(struct GBA* gba, void* state) {
+	// With a sound thread, the sound so far is in its copy.
+	audioThreadSync(gba);
 	struct StateHeader header = { .magic = STATE_MAGIC, .size = sizeof(struct GBA), .base = 0 };
 	struct Event* all[EVENTS];
 	events(gba, all);
@@ -211,6 +213,11 @@ void gbaSaveState(struct GBA* gba, void* state) {
 	memcpy(state, &header, sizeof(header));
 	memcpy(saved, gba, sizeof(*gba));
 	takeRenderer(gba, &saved->renderer);
+	// What the renderer keeps from the lines it drew isn't the machine's: with render threads it
+	// depends on which copy drew which line. The state has none of it, however it was drawn, and
+	// whoever loads it draws every line again.
+	renderForget(&saved->renderer);
+	saved->renderer.copyCycle = 0;
 	leaveOutHost(gba, saved);
 }
 
@@ -342,5 +349,7 @@ bool gbaLoadState(struct GBA* gba, const void* state, size_t size) {
 	if (gba->renderThread) {
 		renderThreadClone(gba);
 	}
+	renderHooksResync(gba);
+	audioThreadClone(gba);
 	return true;
 }

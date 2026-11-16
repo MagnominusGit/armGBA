@@ -278,6 +278,63 @@
 		x = 0; \
 	}
 
+// Without SIMD (the 3DS's ARMv6), a whole tile's eight row pixels are looked at together first,
+// and two common cases skip the pixel-by-pixel compositing, with the same result:
+// - Nothing has drawn any of the eight (all have FLAG_UNWRITTEN's bits): the tile's pixels are in
+//   front of them, so each is stored as it is (less its second-target bit where it could blend).
+// - All eight are in front of this background (their bits together are no higher than its flags)
+//   and none is a first target: a pixel of the tile only marks the one over it as final, and where
+//   every one is final already the tile changes nothing.
+// The object window's variants draw pixel by pixel as before.
+#if defined(__ARM_NEON)
+#define TILE_16_FAST_NO_OBJWIN(BLEND)
+#else
+#define TILE_16_PUT_NoBlend(F) (F)
+#define TILE_16_PUT_Blend(F) ((F) & ~FLAG_TARGET_2)
+#define TILE_16_FAST_PIXEL_PUT(I) \
+	if (tileData & (0xFu << (4 * (I)))) { \
+		row8[I] = palette[paletteData | ((tileData >> (4 * (I))) & 0xF)] | put; \
+	}
+#define TILE_16_FAST_PIXEL_FINAL(I) \
+	if (tileData & (0xFu << (4 * (I)))) { \
+		row8[I] &= 0x00FFFFFF | FLAG_REBLEND | FLAG_OBJWIN; \
+	}
+#define TILE_16_FAST_NO_OBJWIN(BLEND) \
+	{ \
+		uint32_t* row8 = &renderer->row[pixel]; \
+		uint32_t const all = row8[0] & row8[1] & row8[2] & row8[3] & row8[4] & row8[5] & row8[6] & row8[7]; \
+		uint32_t const any = row8[0] | row8[1] | row8[2] | row8[3] | row8[4] | row8[5] | row8[6] | row8[7]; \
+		if (all >= FLAG_UNWRITTEN && (flags | 0xFFFF) < FLAG_UNWRITTEN) { \
+			uint32_t const put = TILE_16_PUT_##BLEND(flags); \
+			TILE_16_FAST_PIXEL_PUT(0) \
+			TILE_16_FAST_PIXEL_PUT(1) \
+			TILE_16_FAST_PIXEL_PUT(2) \
+			TILE_16_FAST_PIXEL_PUT(3) \
+			TILE_16_FAST_PIXEL_PUT(4) \
+			TILE_16_FAST_PIXEL_PUT(5) \
+			TILE_16_FAST_PIXEL_PUT(6) \
+			TILE_16_FAST_PIXEL_PUT(7) \
+			pixel += 8; \
+			continue; \
+		} \
+		if (any <= flags && !(any & FLAG_TARGET_1)) { \
+			if (any & ~(0x00FFFFFF | FLAG_REBLEND | FLAG_OBJWIN)) { \
+				TILE_16_FAST_PIXEL_FINAL(0) \
+				TILE_16_FAST_PIXEL_FINAL(1) \
+				TILE_16_FAST_PIXEL_FINAL(2) \
+				TILE_16_FAST_PIXEL_FINAL(3) \
+				TILE_16_FAST_PIXEL_FINAL(4) \
+				TILE_16_FAST_PIXEL_FINAL(5) \
+				TILE_16_FAST_PIXEL_FINAL(6) \
+				TILE_16_FAST_PIXEL_FINAL(7) \
+			} \
+			pixel += 8; \
+			continue; \
+		} \
+	}
+#endif
+#define TILE_16_FAST_OBJWIN(BLEND)
+
 // The whole tiles in between, eight pixels at a time; a flipped tile is read from its other end.
 #define DRAW_BACKGROUND_MODE_0_TILES_16(BLEND, OBJWIN) \
 	for (; tileX < tileEnd; ++tileX) { \
@@ -300,6 +357,7 @@
 			tileData = ((tileData & 0xF0F0F0F0) >> 4) | ((tileData & 0x0F0F0F0F) << 4); \
 		} \
 		if (tileData) { \
+			TILE_16_FAST_##OBJWIN(BLEND) \
 			BACKGROUND_DRAW_PIXEL_16(BLEND, OBJWIN, 0); \
 			BACKGROUND_DRAW_PIXEL_16(BLEND, OBJWIN, 1); \
 			BACKGROUND_DRAW_PIXEL_16(BLEND, OBJWIN, 2); \
@@ -1607,9 +1665,127 @@ static uint64_t spritePages(uint16_t a, uint16_t b, uint16_t c) {
 	return pageRange(BASE_TILE + from, to - from);
 }
 
+// Hooks are kept beside the machines, not in them, so that states stay the same.
+static struct HookSlot {
+	const struct GBA* gba;
+	struct RenderHooks* hooks;
+	uint32_t seen;
+	// The second picture's machine: only its renderer, VRAM, OAM and palette are used. Stale: to
+	// take on the first's state before it draws again.
+	struct GBA* twin;
+	bool twinStale;
+	uint32_t twinSeen;
+	// Frames the second picture's renderer has finished (hooks->secondEvery), and on a render
+	// thread's copy, the ones it copied to secondFrame (made secondCount by renderHooksPublish).
+	uint32_t twinFrames;
+	uint32_t drawn;
+} hookSlots[16];
+static int hooksInUse;
+
+// What the renderer drawing on this thread leaves out.
+struct Drawing {
+	uint8_t hideLayers;
+	bool (*hideSprite)(void* context, uint16_t a, uint16_t b, uint16_t c);
+	void* context;
+	bool changed;
+	void (*spriteTable)(void* context, const uint8_t* oam);
+};
+static _Thread_local const struct Drawing* drawing;
+
+static struct HookSlot* findHooks(const struct GBA* gba) {
+	if (!hooksInUse) {
+		return NULL;
+	}
+	for (int i = 0; i < 16; ++i) {
+		if (hookSlots[i].gba == gba) {
+			return &hookSlots[i];
+		}
+	}
+	return NULL;
+}
+
+static void setHooks(struct GBA* gba, struct RenderHooks* hooks) {
+	struct HookSlot* slot = NULL;
+	for (int i = 0; i < 16; ++i) {
+		if (hookSlots[i].gba == gba) {
+			slot = &hookSlots[i];
+			break;
+		}
+		if (!slot && !hookSlots[i].gba) {
+			slot = &hookSlots[i];
+		}
+	}
+	if (!slot || !hooks) {
+		return;
+	}
+	slot->hooks = hooks;
+	slot->seen = hooks->generation - 1;
+	if (!slot->gba) {
+		slot->twin = NULL;
+		slot->twinStale = true;
+		slot->twinFrames = 0;
+		slot->drawn = 0;
+		slot->gba = gba;
+		++hooksInUse;
+	}
+}
+
+void renderSetHooks(struct GBA* gba, struct RenderHooks* hooks) {
+	if (!hooks) {
+		// Every machine drawing with this one's hooks: its render thread's copies too.
+		struct HookSlot* own = findHooks(gba);
+		struct RenderHooks* gone = own ? own->hooks : NULL;
+		for (int i = 0; gone && i < 16; ++i) {
+			if (hookSlots[i].gba && hookSlots[i].hooks == gone) {
+				free(hookSlots[i].twin);
+				hookSlots[i].twin = NULL;
+				hookSlots[i].gba = NULL;
+				--hooksInUse;
+			}
+		}
+		return;
+	}
+	struct GBA* copies[2];
+	int n = renderThreadCopies(gba, copies);
+	for (int i = 0; i < n; ++i) {
+		setHooks(copies[i], hooks);
+	}
+	setHooks(gba, hooks);
+}
+
+bool renderHooksActive(void) {
+	return hooksInUse != 0;
+}
+
+// Called by the emulation thread with the render thread's copies done up to a frame's end: the
+// second pictures they have copied to secondFrame so far are counted in secondCount, so a frontend
+// that sees it change finds the whole picture there (with late, the next frame's is drawn while the
+// frontend reads this one: with secondEvery 2 or more, never into the same frame).
+void renderHooksPublish(struct GBA* gba) {
+	struct GBA* copies[2];
+	if (!hooksInUse || renderThreadCopies(gba, copies) < 1) {
+		return;
+	}
+	struct HookSlot* slot = findHooks(copies[0]);
+	if (slot && slot->hooks) {
+		slot->hooks->secondCount = slot->drawn;
+	}
+}
+
+void renderHooksResync(struct GBA* gba) {
+	struct HookSlot* slot = findHooks(gba);
+	if (slot) {
+		slot->twinStale = true;
+	}
+}
+
 // Lists the sprites that are switched on, in OAM order, with the lines each covers.
 static int cleanOam(struct GBA* gba, struct RenderSprite* sprites) {
 	int oamMax = 0;
+	const struct Drawing* hooks = drawing && drawing->hideSprite ? drawing : NULL;
+	if (hooks && hooks->spriteTable) {
+		hooks->spriteTable(hooks->context, gba->renderer.oamSeen);
+	}
 	for (int i = 0; i < 128; ++i) {
 		uint16_t a = load16(gba->renderer.oamSeen, i * 8);
 		uint16_t b = load16(gba->renderer.oamSeen, i * 8 + 2);
@@ -1640,6 +1816,9 @@ static int cleanOam(struct GBA* gba, struct RenderSprite* sprites) {
 				continue;
 			}
 			if (OBJ_B_X(b) >= SCREEN_WIDTH && OBJ_B_X(b) + width < 512) {
+				continue;
+			}
+			if (hooks && hooks->hideSprite(hooks->context, a, b, c)) {
 				continue;
 			}
 			int y = OBJ_A_Y(a);
@@ -2321,11 +2500,21 @@ static void takeOamChanges(struct GBA* gba, int y) {
 	}
 }
 
-void renderScanline(struct GBA* gba, int y) {
+// The line this thread's copy has taken and not yet handed in (shared lines, render-thread.c).
+static _Thread_local int claimedLine = -1;
+
+static void oneScanlineInner(struct GBA* gba, int y) {
 	struct Renderer* renderer = &gba->renderer;
 	renderer->nextY = y == SCREEN_HEIGHT - 1 ? 0 : y + 1;
 	uint16_t latched = renderer->dispcntLatch[0];
 	renderer->lineDispcnt = (renderer->dispcnt & ~0x1F80) | (renderer->dispcnt & latched & 0x1F00) | ((renderer->dispcnt | latched) & 0x0080);
+	if (drawing) {
+		renderer->lineDispcnt &= ~((drawing->hideLayers & 0x1F) << 8);
+		if (drawing->changed) {
+			memset(renderer->scanlineDirty, 0xFF, sizeof(renderer->scanlineDirty));
+			renderer->oamDirty = true;
+		}
+	}
 	// What changed since the last line: any of it makes the lines that read it dirty.
 	uint64_t vramChanged = takeVramChanges(renderer);
 	if (vramChanged) {
@@ -2373,11 +2562,20 @@ void renderScanline(struct GBA* gba, int y) {
 	renderer->cache[y].windowOn[0] = renderer->winN[0].on;
 	renderer->cache[y].windowOn[1] = renderer->winN[1].on;
 
-	if (!dirty && !renderer->stereoChanges) {
-		return;
+	// One of the copies sharing the frame: by halves, the other draws this line; line by line
+	// (render-thread.c), whichever copy takes it, which draws it though nothing changed if its
+	// frame doesn't hold the line as last drawn.
+	if (renderer->copy > 1) {
+		int const claim = renderThreadClaim(gba, y);
+		if (claim < 0 ? (y & 1) != (renderer->copy & 1) : !claim) {
+			return;
+		}
+		if (claim > 0) {
+			claimedLine = y;
+			dirty = dirty || claim == 2;
+		}
 	}
-	// One of two copies sharing the frame: the other draws this line.
-	if (renderer->copy > 1 && (y & 1) != (renderer->copy & 1)) {
+	if (!dirty && !renderer->stereoChanges) {
 		return;
 	}
 	CLEAN_SCANLINE(renderer, y);
@@ -2496,7 +2694,15 @@ void renderScanline(struct GBA* gba, int y) {
 
 // At the end of the frame, a window whose top or bottom lies below the screen is switched as if the
 // lines down there had been stepped through.
-void renderFinishFrame(struct GBA* gba) {
+static void oneScanline(struct GBA* gba, int y) {
+	oneScanlineInner(gba, y);
+	if (claimedLine >= 0) {
+		renderThreadLineDone(gba, claimedLine);
+		claimedLine = -1;
+	}
+}
+
+static void oneFinishFrame(struct GBA* gba) {
 	struct Renderer* renderer = &gba->renderer;
 	renderer->nextY = 0;
 	for (int i = 0; i < 2; ++i) {
@@ -2574,7 +2780,7 @@ static void writeWindowH(struct RenderWindowN* win, uint16_t value) {
 
 // Handles a write to a video register, and returns the value as it reads back. The cases are the
 // registers by their offset in the I/O space.
-uint16_t renderWriteRegister(struct GBA* gba, uint32_t address, uint16_t value) {
+static uint16_t oneWriteRegister(struct GBA* gba, uint32_t address, uint16_t value) {
 	struct Renderer* renderer = &gba->renderer;
 	switch (address) {
 	// DISPCNT: the mode, which layers are on, and the window switches.
@@ -2752,7 +2958,7 @@ uint16_t renderWriteRegister(struct GBA* gba, uint32_t address, uint16_t value) 
 // A line left undrawn by Frame Skip: the windows and the delayed OAM move on as they would had it
 // been drawn, writes from now on count for the next line, and the line is drawn again the next time
 // it is drawn at all.
-void renderSkipScanline(struct GBA* gba, int y) {
+static void oneSkipScanline(struct GBA* gba, int y) {
 	struct Renderer* renderer = &gba->renderer;
 	renderer->nextY = y == SCREEN_HEIGHT - 1 ? 0 : y + 1;
 	takeOamChanges(gba, y);
@@ -2761,7 +2967,7 @@ void renderSkipScanline(struct GBA* gba, int y) {
 }
 
 // The start of line y, where the hardware latches what it uses for the line.
-void renderStartLine(struct GBA* gba, int y) {
+static void oneStartLine(struct GBA* gba, int y) {
 	struct Renderer* renderer = &gba->renderer;
 	int last = y ? y - 1 : TOTAL_LINES_ - 1;
 	int mode = DISPCNT_MODE(renderer->dispcnt);
@@ -2796,7 +3002,7 @@ void renderStartLine(struct GBA* gba, int y) {
 
 // A layer switched on in DISPCNT shows only a few lines later: the values at the last three latches
 // are kept, and a line shows a layer that is on now and was on at the oldest of them.
-void renderLatchDispcnt(struct GBA* gba) {
+static void oneLatchDispcnt(struct GBA* gba) {
 	struct Renderer* renderer = &gba->renderer;
 	renderer->dispcntLatch[0] = renderer->dispcntLatch[1];
 	renderer->dispcntLatch[1] = renderer->dispcntLatch[2];
@@ -2804,7 +3010,7 @@ void renderLatchDispcnt(struct GBA* gba) {
 }
 
 // Sets a white screen, every line to be drawn, and the registers at their reset values.
-void renderReset(struct GBA* gba) {
+static void oneReset(struct GBA* gba) {
 	struct Renderer* renderer = &gba->renderer;
 	memset(renderer->dispcntLatch, 0, sizeof(renderer->dispcntLatch));
 	renderer->lineDispcnt = 0x0080;
@@ -2858,4 +3064,243 @@ void renderReset(struct GBA* gba) {
 		bg->yCache = -1;
 		bg->rowKey = -1;
 	}
+}
+
+// Leaves a renderer with nothing kept from the lines it drew: every line is drawn again, and what
+// drawing keeps for the next line (the sprite lists, the map rows, the palette copies, the pages
+// each line read) or only uses within a line is as if it had drawn none. With two render threads
+// sharing the lines, which copy drew which line differs from run to run, and a state taken from a
+// copy must not.
+void renderForget(struct Renderer* renderer) {
+	memset(renderer->scanlineDirty, 0xFF, sizeof(renderer->scanlineDirty));
+	// The first line clears the whole sprite layer.
+	memset(renderer->spriteLayer, 0, sizeof(renderer->spriteLayer));
+	renderer->spriteCyclesRemaining = 0;
+	renderer->spriteFrom = 0;
+	renderer->spriteTo = SCREEN_WIDTH;
+	renderer->spriteMosaic = false;
+	memset(renderer->spriteMosaicCover, 0, sizeof(renderer->spriteMosaicCover));
+	// Every bank of the brightened or darkened palette is made again.
+	renderer->blendDirty = true;
+	renderer->paletteDirty = true;
+	memset(renderer->variantPalette, 0, sizeof(renderer->variantPalette));
+	memset(renderer->paletteSeen, 0, sizeof(renderer->paletteSeen));
+	renderer->palette32Stale = 0xFFFFFFFF;
+	// Made for each line, and each span of it.
+	renderer->currentWindow = (struct RenderWindowControl) { 0 };
+	renderer->nWindows = 1;
+	memset(renderer->windows, 0, sizeof(renderer->windows));
+	renderer->forceTarget1 = false;
+	renderer->start = 0;
+	renderer->end = 0;
+	updateDispcnt(renderer);
+	for (int i = 0; i < 4; ++i) {
+		struct RenderBackground* bg = &renderer->bg[i];
+		bg->yCache = -1;
+		memset(bg->mapCache, 0, sizeof(bg->mapCache));
+		bg->rowPages = 0;
+		bg->mapPages = 0;
+		bg->rowKey = -1;
+		bg->objwinForceEnable = 0;
+		bg->objwinOnly = false;
+		updateFlags(renderer, bg);
+	}
+	renderer->oamDirty = true;
+	renderer->oamMax = 0;
+	memset(renderer->sprites, 0, sizeof(renderer->sprites));
+	memset(renderer->lineSpriteCount, 0, sizeof(renderer->lineSpriteCount));
+	memset(renderer->lineSprites, 0, sizeof(renderer->lineSprites));
+	memset(renderer->linePages, 0, sizeof(renderer->linePages));
+	memset(renderer->pageLines, 0, sizeof(renderer->pageLines));
+}
+
+// The calls the machine makes, each made on the second picture's renderer too when there is one.
+
+// The second picture's renderer as the first is now, to draw everything again.
+static void twinClone(struct HookSlot* slot, struct GBA* gba) {
+	struct GBA* twin = slot->twin;
+	memcpy(&twin->renderer, &gba->renderer, sizeof(twin->renderer));
+	memcpy(twin->vram, gba->vram, sizeof(twin->vram));
+	memcpy(twin->oam, gba->oam, sizeof(twin->oam));
+	memcpy(twin->palette, gba->palette, sizeof(twin->palette));
+	struct Renderer* renderer = &twin->renderer;
+	if (!renderer->copy) {
+		renderer->copy = 1;
+	}
+	renderer->rgb565 = false;
+	memset(renderer->scanlineDirty, 0xFF, sizeof(renderer->scanlineDirty));
+	memset(renderer->vramChanged, 1, sizeof(renderer->vramChanged));
+	renderer->memoryChanged = RENDER_VRAM | RENDER_OAM | RENDER_PALETTE;
+	renderer->oamDirty = true;
+	renderer->paletteDirty = true;
+	renderer->palette32Stale = 0xFFFFFFFF;
+	for (int i = 0; i < 4; ++i) {
+		renderer->bg[i].yCache = -1;
+		renderer->bg[i].rowKey = -1;
+	}
+	if (slot->hooks->secondBackdropSet) {
+		renderer->copyCycle = 0;
+		oneWriteRegister(twin, 0x050, renderer->nextIo[0x050 >> 1] & ~0x0020);
+	}
+	slot->twinStale = false;
+	slot->twinSeen = slot->hooks->generation - 1;
+}
+
+// Brings the second picture's video memory up to date with what changed since the last line.
+static void twinMemory(struct HookSlot* slot, struct GBA* gba) {
+	struct GBA* twin = slot->twin;
+	const struct Renderer* renderer = &gba->renderer;
+	for (int page = 0; page < (int) sizeof(renderer->vramChanged); ++page) {
+		if (renderer->vramChanged[page]) {
+			memcpy(&twin->vram[page << 11], &gba->vram[page << 11], 1 << 11);
+			twin->renderer.vramChanged[page] = 1;
+		}
+	}
+	if (renderer->memoryChanged & RENDER_OAM) {
+		memcpy(twin->oam, gba->oam, sizeof(twin->oam));
+	}
+	if (renderer->memoryChanged & RENDER_PALETTE) {
+		memcpy(twin->palette, gba->palette, sizeof(twin->palette));
+	}
+	twin->renderer.memoryChanged |= renderer->memoryChanged;
+}
+
+// Whether the second picture is drawn this frame (hooks->secondEvery).
+static bool twinDraws(const struct HookSlot* slot) {
+	uint8_t every = slot->hooks->secondEvery;
+	return every <= 1 || slot->twinFrames % every == 0;
+}
+
+// The slot whose second picture is being drawn, if it is.
+static struct HookSlot* twinOf(struct GBA* gba) {
+	struct HookSlot* slot = findHooks(gba);
+	return slot && slot->twin && !slot->twinStale && slot->hooks->second ? slot : NULL;
+}
+
+static void drawLine(struct GBA* gba, int y, bool skipped) {
+	struct HookSlot* slot = findHooks(gba);
+	if (!slot) {
+		if (skipped) {
+			oneSkipScanline(gba, y);
+		} else {
+			oneScanline(gba, y);
+		}
+		return;
+	}
+	struct RenderHooks* hooks = slot->hooks;
+	struct RenderLine line = { y, gba->renderer.nextIo, gba->vram, hooks->hideLayers, hooks->secondHideLayers };
+	if (hooks->line) {
+		hooks->line(hooks->context, &line);
+	}
+	if (hooks->second) {
+		if (!slot->twin) {
+			slot->twin = calloc(1, sizeof(struct GBA));
+			slot->twinStale = true;
+		}
+		if (slot->twin) {
+			if (slot->twinStale) {
+				twinClone(slot, gba);
+			} else {
+				twinMemory(slot, gba);
+			}
+			if (hooks->secondBackdropSet) {
+				slot->twin->palette[0] = (uint8_t) hooks->secondBackdrop;
+				slot->twin->palette[1] = (uint8_t) (hooks->secondBackdrop >> 8);
+			}
+			struct Drawing second = { line.secondHideLayers, hooks->secondHideSprite, hooks->context, slot->twinSeen != hooks->generation };
+			slot->twinSeen = hooks->generation;
+			drawing = &second;
+			if (skipped || !twinDraws(slot)) {
+				oneSkipScanline(slot->twin, y);
+			} else {
+				oneScanline(slot->twin, y);
+			}
+		}
+	} else {
+		slot->twinStale = true;
+	}
+	struct Drawing first = { line.hideLayers, hooks->hideSprite, hooks->context, slot->seen != hooks->generation, hooks->spriteTable };
+	slot->seen = hooks->generation;
+	drawing = &first;
+	if (skipped) {
+		oneSkipScanline(gba, y);
+	} else {
+		oneScanline(gba, y);
+	}
+	drawing = NULL;
+}
+
+void renderScanline(struct GBA* gba, int y) {
+	drawLine(gba, y, false);
+}
+
+void renderSkipScanline(struct GBA* gba, int y) {
+	drawLine(gba, y, true);
+}
+
+void renderStartLine(struct GBA* gba, int y) {
+	struct HookSlot* slot = twinOf(gba);
+	if (slot) {
+		oneStartLine(slot->twin, y);
+	}
+	oneStartLine(gba, y);
+}
+
+void renderLatchDispcnt(struct GBA* gba) {
+	struct HookSlot* slot = twinOf(gba);
+	if (slot) {
+		oneLatchDispcnt(slot->twin);
+	}
+	oneLatchDispcnt(gba);
+}
+
+void renderFinishFrame(struct GBA* gba) {
+	struct HookSlot* slot = twinOf(gba);
+	if (slot) {
+		oneFinishFrame(slot->twin);
+		// One of two copies sharing the frame has drawn every other line of it.
+		const struct Renderer* renderer = &slot->twin->renderer;
+		uint16_t* out = twinDraws(slot) ? slot->hooks->secondFrame : NULL;
+		for (int y = renderer->copy > 1 ? renderer->copy & 1 : 0; out && y < SCREEN_HEIGHT; y += renderer->copy > 1 ? 2 : 1) {
+			memcpy(&out[y * SCREEN_WIDTH], renderer->frame[y], sizeof(renderer->frame[y]));
+		}
+		if (out && !gba->renderer.copy) {
+			++slot->hooks->secondCount;
+		} else if (out && gba->renderer.copy <= 2) {
+			++slot->drawn; // (by the one copy, or the first of two)
+		}
+	}
+	// Every frame counts, with the second picture or without: two copies that share it, each
+	// going through the same frames, then draw it in the same ones (one whose twin had to start
+	// again partway through a frame would otherwise count one fewer, and its lines would come from
+	// another frame than the other's).
+	struct HookSlot* any = findHooks(gba);
+	if (any) {
+		++any->twinFrames;
+	}
+	oneFinishFrame(gba);
+}
+
+uint16_t renderWriteRegister(struct GBA* gba, uint32_t address, uint16_t value) {
+	struct HookSlot* any = findHooks(gba);
+	uint16_t kept = 0;
+	if (any && any->hooks->second && any->hooks->maskedBits && address == any->hooks->maskedRegister) {
+		kept = value & any->hooks->maskedBits;
+		value &= ~any->hooks->maskedBits;
+	}
+	struct HookSlot* slot = twinOf(gba);
+	if (slot) {
+		struct Renderer* renderer = &slot->twin->renderer;
+		renderer->copyCycle = gba->renderer.copy ? gba->renderer.copyCycle : (int32_t) (timingCurrentTime(gba) - gba->video.lineStart);
+		oneWriteRegister(slot->twin, address, address == 0x050 && slot->hooks->secondBackdropSet ? value & ~0x0020 : value);
+	}
+	return oneWriteRegister(gba, address, value) | kept;
+}
+
+void renderReset(struct GBA* gba) {
+	struct HookSlot* slot = findHooks(gba);
+	if (slot) {
+		slot->twinStale = true;
+	}
+	oneReset(gba);
 }

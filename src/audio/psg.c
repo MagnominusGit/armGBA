@@ -262,6 +262,12 @@ void psgRun(struct GBA* gba, int32_t timestamp, int channels) {
 		psg->nextChange = (uint32_t) timestamp + INT32_MAX;
 		return;
 	}
+	// With a sound thread, its copy makes the sound, and the game's reads of what the channels
+	// hold are answered from it (audioReadWaveRam): this console's channels are left as they are.
+	bool const heard = gba != audioThreaded;
+	if (!heard) {
+		channels = 0;
+	}
 	if ((channels & 0x1) && ((psg->playingCh1 && psg->ch1.envelope.dead != 2) || timestamp - psg->ch1.lastUpdate > 0x40000000 || channels == 0x1)) {
 		runSquare(&psg->ch1, timestamp);
 	}
@@ -345,6 +351,21 @@ void psgRun(struct GBA* gba, int32_t timestamp, int channels) {
 			int positiveSamples = 0;
 			int lsb = 0;
 			int coeff;
+			// At no volume only where the register ends up and how many steps it took are kept,
+			// and it comes round to the same value every 127 steps (7 bits) or 32767 (15): whole
+			// rounds are counted without being stepped, but for one, which also fills the bits
+			// above the 7 with the last outputs. A noise channel left on at no volume was stepped
+			// through 27 s of them at once when Mario Kart: Super Circuit next wrote to it: 20 to
+			// 40 ms on a New 3DS, an emptied sound queue each time (2026-11-12).
+			if (!ch4->envelope.currentVolume) {
+				int32_t const round = ch4->power ? 127 : 32767;
+				int32_t const steps = diff / cycles;
+				if (steps >= 2 * round) {
+					int32_t const skipped = (steps / round - 1) * round;
+					samples = skipped;
+					last = skipped * cycles;
+				}
+			}
 			if (ch4->power) {
 				coeff = 0x4040;
 				// Eight steps at a time: the low 7 bits are a 7-bit LFSR, the rest the last
@@ -386,6 +407,9 @@ void psgRun(struct GBA* gba, int32_t timestamp, int channels) {
 			ch4->lastEvent += last;
 		}
 	}
+	if (!heard) {
+		return;
+	}
 	// Returns the first time a sample's run would change what psgSample gives.
 	int32_t soonest = INT32_MAX;
 	uint32_t when = squareChange(&psg->ch1, psg->playingCh1);
@@ -416,6 +440,7 @@ void psgRun(struct GBA* gba, int32_t timestamp, int channels) {
 // every eighth.
 void psgUpdateFrame(struct GBA* gba, int32_t now) {
 	struct Psg* psg = &gba->audio.psg;
+	audioThreadLog(gba, AUDIO_LOG_FRAME, 0, 0, now, 0);
 	if (!psg->enable) {
 		return;
 	}
@@ -580,6 +605,7 @@ void psgWrite(struct GBA* gba, int nr, uint8_t value) {
 	struct Psg* psg = &gba->audio.psg;
 	int32_t now = timingCurrentTime(gba);
 	audioCatchUp(gba, now, true);
+	audioThreadLog(gba, AUDIO_LOG_PSG, nr, value, now, 0);
 	switch (nr) {
 	// Channel 1: sweep, duty and length, envelope, frequency, and control.
 	case 10:
