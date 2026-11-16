@@ -240,8 +240,8 @@ static size_t readCheats(const char* path, unsigned file, bool (*accepts)(const 
 }
 
 // The build a .cht file's codes are for: the game ID in its first CodeBreaker master code (type 0,
-// 0000XXXX), or -1 without one, or with 0000 there, which many of RetroArch's files have in place of
-// an ID.
+// 0000XXXX, a cheat's first code), or -1 without one, or with 0000 there, which many of RetroArch's
+// files have in place of an ID.
 static int masterId(const char* path) {
 	FILE* f = fopen(path, "r");
 	if (!f) {
@@ -256,11 +256,11 @@ static int masterId(const char* path) {
 		if (sscanf(line, "cheat%d_%15[a-z]", &index, key) != 2 || strcmp(key, "code") || !quoted(line, &value)) {
 			continue;
 		}
-		for (char* code = strtok(value, "+ "); code && id < 0; code = strtok(NULL, "+ ")) {
-			if (strlen(code) == 8 && !strncmp(code, "0000", 4) && chtCodeBreakerPart(code)) {
-				id = (int) strtol(code + 4, NULL, 16);
-				id = id ? id : -2;
-			}
+		// A cheat's first code only: a slide code's second line (type 4's) can read 0000xxxx too
+		char* const code = strtok(value, "+ ");
+		if (code && strlen(code) == 8 && !strncmp(code, "0000", 4) && chtCodeBreakerPart(code)) {
+			id = (int) strtol(code + 4, NULL, 16);
+			id = id ? id : -2;
 		}
 	}
 	fclose(f);
