@@ -407,6 +407,10 @@ struct Jit {
 	uint8_t* dispatchThumb;
 	uint8_t* dispatchBx;
 	uint8_t* dispatchKey;
+	// The dispatch routine's miss path, the key still where the routine takes it: an empty or dropped
+	// lookup entry points here, so a key equal to the empty mark (~0u, a Thumb branch to FFFFFFFF)
+	// leaves for the run loop rather than jumping through a stale or null pointer.
+	uint8_t* lookupMiss;
 	uint8_t* shiftRoutines[4];
 	uint8_t* multiplyCarryRoutine;
 	// The shared tail of the exit stubs, for backends that use one.

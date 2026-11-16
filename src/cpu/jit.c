@@ -266,6 +266,12 @@ static void removeOutgoing(struct Block* block) {
 
 // Makes a block unreachable: no jump leads to it and no lookup finds it. Its code stays in place
 // until the next flush, since the CPU may be inside it.
+// An empty lookup entry: no key a branch makes but ~0u, and that one reaches the miss path.
+static void emptyLookup(struct Jit* jit, struct LookupEntry* entry) {
+	entry->key = ~0u;
+	entry->entry = jit->lookupMiss;
+}
+
 static void removeBlock(struct Jit* jit, struct Block* block) {
 	if (!block->valid) {
 		return;
@@ -291,7 +297,7 @@ static void removeBlock(struct Jit* jit, struct Block* block) {
 		}
 		struct LookupEntry* entry = &jit->lookup[lookupHash(key)];
 		if (entry->key == key && entry->entry == block->entry) {
-			entry->key = ~0u;
+			emptyLookup(jit, entry);
 		}
 		if (block->bytes || block->setAside) {
 			uint32_t h = hashBlock(key);
@@ -504,7 +510,7 @@ void jitFlush(struct GBA* gba) {
 	jit->rangeCount = 0;
 	jit->coldRangeCount = 0;
 	for (int i = 0; i < LOOKUP_SIZE; ++i) {
-		jit->lookup[i].key = ~0u;
+		emptyLookup(jit, &jit->lookup[i]);
 	}
 	memset(gba->iwramCode, 0, sizeof(gba->iwramCode));
 	memset(gba->ewramCode, 0, sizeof(gba->ewramCode));
@@ -2612,6 +2618,10 @@ bool jitInit(struct GBA* gba) {
 		return false;
 	}
 	jit->codeStart = jit->codeNext;
+	// The miss path exists now
+	for (int i = 0; i < LOOKUP_SIZE; ++i) {
+		emptyLookup(jit, &jit->lookup[i]);
+	}
 	backendReset(jit);
 	return true;
 }

@@ -161,6 +161,7 @@ static void emitDispatchKey(struct Jit* jit, struct Emitter* e) {
 	uint8_t* miss = xJcc(e, CC_NE, NULL);
 	xJmpM(e, MI(RCX, RDX, 1, 8));
 	patchHere(e, miss);
+	jit->lookupMiss = e->p;
 	xStore(e, 4, M(R15, OFF(exitPc)), RAX);
 	xStoreI(e, 4, M(R15, OFF(exitReason)), EXIT_LOOKUP);
 	xJmp(e, jit->exitRoutine);

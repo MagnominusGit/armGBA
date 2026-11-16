@@ -220,6 +220,7 @@ static void emitDispatchKey(struct Jit* jit, struct Emitter* e) {
 	aLdr(e, R3, R2, 0);
 	aDpR(e, C_AL, D_CMP, true, 0, R3, R0, S_LSL, 0);
 	aMem(e, C_EQ, true, false, PC, R2, 8);
+	jit->lookupMiss = e->p;
 	strF(e, R0, OFF(exitPc));
 	strFImm(e, OFF(exitReason), EXIT_LOOKUP, 4, R1);
 	aB(e, C_AL, jit->exitRoutine);

@@ -214,6 +214,7 @@ static void emitDispatchKey(struct Jit* jit, struct Emitter* e) {
 	aLdrX(e, 3, 1, 8);
 	aBr(e, 3);
 	patchHere(e, miss);
+	jit->lookupMiss = e->p;
 	storeField(e, 0, OFF(exitPc), 4);
 	storeFieldImm(e, OFF(exitReason), EXIT_LOOKUP, 4);
 	aB(e, jit->exitRoutine);
