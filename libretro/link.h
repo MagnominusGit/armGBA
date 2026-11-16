@@ -106,13 +106,17 @@ bool libretroCheatImportFor(const char** gamePath, bool* advance, bool* retroArc
 bool libretroCheatGame(const char** gamePath, bool* advance);
 // RetroArch's own cheat database's folder, when it's found.
 bool libretroRetroArchCheats(char* out, size_t outSize);
-// The names of the cheats Import Cheats from RetroArch would take into the cheat cartridge from the
-// database at folder, for its game on top: those whose codes it can hold. Returns how many, up to most.
-// *otherId is the build RetroArch's codes are for when it isn't the game on top's (*gameId), else -1;
-// *cantGo how many of the game's cheats an import would leave out, their codes not ones it can hold.
-// codes[i] is each one's code as RetroArch writes it.
-size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], char (*codes)[160], size_t most, int* otherId, int* gameId,
-                                   size_t* cantGo);
+// What Import Cheats from RetroArch would do with a cheat: add it, find it there already, leave it out
+// (its codes of a kind the cartridge doesn't run, or with a value to pick in an address), find no room
+// for it, or skip it (only a master code, which the cartridge keeps its own of).
+enum { CART_CHEAT_IMPORT, CART_CHEAT_THERE, CART_CHEAT_CANT, CART_CHEAT_NO_ROOM, CART_CHEAT_SKIPPED };
+// The cheats RetroArch's cheat database at folder has for the cheat cartridge's game on top, in forms
+// the import reads: their names, their codes as RetroArch writes them and what the import would do with
+// each (states, a CART_CHEAT_). Returns how many, up to most. *otherId is the build RetroArch's codes
+// are for when it isn't the game on top's (*gameId), else -1; *unread how many more it has in forms the
+// import doesn't read.
+size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], char (*codes)[160], unsigned char* states, size_t most, int* otherId,
+                                   int* gameId, size_t* unread);
 // How the loaded cheat cartridge's codes are written, where a value is, or NULL without one that imports.
 const char* libretroCartridgeCodeLayout(void);
 // The kind of codes the loaded cheat cartridge's list holds: 0 without one that imports, 1 GameShark

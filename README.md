@@ -394,10 +394,12 @@ also work on a row without a value). It opens again where it was left.
 - **Core:** the core's options, in RetroArch's categories, with LCD Effects (Off, CPU, GPU or GPU Fast) in
   Video in place of the core's LCD Effects.
 - **Extras:** netplay and RetroAchievements, and with a cheat cartridge, Cheats: Import Cheats from
-  RetroArch (its download's progress shown as it goes), Cheats for the Game on Top (the cheats the
-  import would add, by name, each with its code as RetroArch writes it, XX and all; its Code Layout...
-  page says what each part of the cartridge's codes is, the values a part takes, how hex digits count,
-  and takes one of the game's cheats apart), the cartridge's resets and Download Cheat Database Again.
+  RetroArch (its download's progress shown as it goes), Cheats for the Game on Top (RetroArch's cheats
+  for the game, each with its code as RetroArch writes it, XX and all, under what the import would do
+  with it: To Import, Already in the Cartridge, No Room Left, Can't Go in This Cartridge; its Code
+  Layout... page says what each part of the cartridge's codes is, the values a part takes, how hex
+  digits count and how to change a value, and takes one of the game's cheats apart), the cartridge's
+  resets and Download Cheat Database Again.
 
 Rows ending in "..." open a page. Rows with a value step through it, except Back Up Save, Load Save
 and Send Save, which act once something is chosen from their list. The line under the menu says what
@@ -584,7 +586,7 @@ The Game Genie's codes use that copy once it's there. RetroArch names its Game B
 and regions, but their codes are for one build of the game, which their master code names (its ID, a
 checksum of the game's first 64 KiB): "Advance Wars (USA, Europe)" is for USA Rev 1. So of the files
 for the game on top, the import takes those for its build when there are any; otherwise it takes the
-others and notes they were written for another version (both IDs), as Cheats for the Game on Top in
+others and notes they were written for another version, as Cheats for the Game on Top in
 the standalone app does. Codes usually carry over between versions that keep the same memory, as
 RetroArch's own cheats do (neither it nor armGBA's cheat engine checks the build); one that does
 nothing on another version may be why. The save keeps its size whatever the cartridge holds,
@@ -592,12 +594,13 @@ and an import adds only the cheats it doesn't have, and says how many can't go i
 cheat whose value RetroArch leaves to fill (an XX, YY or ?? in a CodeBreaker code's 4 digits or a
 GameShark code's second byte, such as a Level Modifier) goes in with 0 there, which the cartridge's own
 menus can change, and the message says how many did and where the value goes (VV in a GameShark
-code's 01 VV AAAA, VVVV in a CodeBreaker code's 8AAAAAAA VVVV; the Action Replays keep their codes
-encrypted, so a value there changes by typing the code again); those that can't go in have one in an address,
+code's 01 VV AAAA, VVVV in a CodeBreaker code's 8AAAAAAA VVVV; the Game Boy Advance Action Replays
+and GameShark keep their codes encrypted, so there the value stays 0, and Game > Cheats > RetroArch
+Cheats in the standalone app adds the cheat to armGBA's own list, which asks for one); those that can't go in have one in an address,
 or are in a form the import doesn't read (the Action Replay's and GameShark's own
 codes, the Xploder GB's $ codes) or, on the Action Replays and the MAX, of a kind beyond their writes of
 8 and 16 bits (conditions, slides, fills), which the CodeBreaker, Xploder Advance and X-Terminator take
-whole; Cheats for the Game on Top in the standalone app counts them too, and a CodeBreaker code written as
+whole; Cheats for the Game on Top in the standalone app lists them apart, and a CodeBreaker code written as
 12 digits without its + goes in as its two halves. RetroArch's database also names many Game Boy cheats
 with no code at all, which nothing can use. The cartridge's list holds what its chip has room
 for, and its own menus delete games and codes. Cheat Cartridge Reset clears what a cartridge keeps, though

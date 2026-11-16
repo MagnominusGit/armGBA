@@ -189,8 +189,9 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_cheat_import", "Import Cheats from RetroArch", NULL,
 	  "Adds to the cheat cartridge's list the cheats RetroArch's cheat database has for the game on top, "
 	  "those it doesn't have yet (alike by their codes), switched off, then restarts so the cartridge "
-	  "reads them. Then goes back to Off. Not in netplay. Without the database, Online Updater > Update "
-	  "Cheats gets it.",
+	  "reads them. Then goes back to Off. Not in netplay. A cheat with a value to pick (XX, YY or ?? in "
+	  "RetroArch's code) goes in as 0, to change in the cartridge's own code list. Without the database, "
+	  "Online Updater > Update Cheats gets it.",
 	  NULL, "system", { { "off", "Off" }, { "import", "Import" }, { NULL, NULL } }, "off" },
 	{ "armgba_cheat_restore", "Cheat Cartridge Reset", NULL,
 	  "Factory Reset empties the cheat cartridge's lists but keeps each game's master code, which its "

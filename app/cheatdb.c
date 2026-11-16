@@ -728,12 +728,14 @@ void cheatGameRows(void) {
 static char (*cartNames)[96];
 // Each one's code as RetroArch writes it, a template's XX still there
 static char (*cartCodes)[160];
+// What the import would do with each (a CART_CHEAT_)
+static unsigned char* cartStates;
 static size_t cartNameCount;
 static bool cartListed;
 // The build RetroArch's codes are for, when not the game on top's, else -1; and the game's.
 static int cartOtherId = -1, cartGameId = -1;
-// How many of them an import would leave out, their codes not ones the cartridge can hold
-static size_t cartCantGo;
+// How many more RetroArch has for the game, in forms the import doesn't read
+static size_t cartUnread;
 
 static void openCodeGuide(int unused, int delta);
 
@@ -754,19 +756,16 @@ static void cartCheatsPage(void) {
 		if (!cartNames) {
 			cartNames = malloc(MOST * sizeof(*cartNames));
 			cartCodes = malloc(MOST * sizeof(*cartCodes));
+			cartStates = malloc(MOST);
 		}
-		cartNameCount = cartNames && cartCodes ? libretroCartridgeCheatNames(folder, cartNames, cartCodes, MOST, &cartOtherId, &cartGameId, &cartCantGo) : 0;
+		cartNameCount = cartNames && cartCodes && cartStates
+		                ? libretroCartridgeCheatNames(folder, cartNames, cartCodes, cartStates, MOST, &cartOtherId, &cartGameId, &cartUnread)
+		                : 0;
 		cartListed = true;
 	}
-	if (!cartNameCount) {
-		addInfo("RetroArch has no cheats this cartridge takes for the game", "");
+	if (!cartNameCount && !cartUnread) {
+		addInfo("RetroArch has no cheats for the game", "");
 		return;
-	}
-	if (cartCantGo) {
-		static char cant[96];
-		snprintf(cant, sizeof(cant), cartCantGo == 1 ? "1 of them can't go in this cartridge" : "%zu of them can't go in this cartridge", cartCantGo);
-		addInfo(cant, "");
-		helpFor("Their codes are of a kind this cartridge doesn't run, or have an XX in an address; the import leaves them out.");
 	}
 	addItem("Import Cheats from RetroArch", importRow, 0);
 	helpFor("Adds those the cartridge doesn't have yet (not their master codes, which it has), switched off.");
@@ -777,17 +776,44 @@ static void cartCheatsPage(void) {
 		helpFor(layout);
 	}
 	if (cartOtherId >= 0) {
-		static char other[96];
-		snprintf(other, sizeof(other), "Written for another version (%04X; this one is %04X)", cartOtherId, cartGameId);
-		addInfo(other, "");
+		addChoice("Written for another version of the game", "", cheatRow, 0);
 		helpFor("RetroArch's codes for this title were written for another build of it. Codes usually carry over when the versions keep the same memory; if one does nothing, this may be why.");
 	}
-	static char heading[64];
-	snprintf(heading, sizeof(heading), "In RetroArch's Cheat Database (%zu)", cartNameCount);
-	addHeader(heading);
-	for (size_t i = 0; i < cartNameCount; ++i) {
-		addChoice(cartNames[i], cartCodes[i], cheatRow, 0);
-		helpFor("Its code as RetroArch's database writes it.");
+	// The cheats as the import sorts them, each with its code as RetroArch writes it
+	static const struct {
+		unsigned char state;
+		const char* title;
+		const char* help;
+	} groups[] = {
+		{ CART_CHEAT_IMPORT, "To Import", "Its code as RetroArch writes it. A value to pick, such as XX, goes in as 0." },
+		{ CART_CHEAT_THERE, "Already in the Cartridge", "The cartridge has a cheat with these codes; the import leaves it." },
+		{ CART_CHEAT_NO_ROOM, "No Room Left", "The cartridge's list is full before these; delete some of its own to make room." },
+		{ CART_CHEAT_CANT, "Can't Go in This Cartridge", "Its codes are of a kind this cartridge doesn't run, or have a value to pick in an address." },
+	};
+	static char headings[sizeof(groups) / sizeof(*groups)][64];
+	for (size_t g = 0; g < sizeof(groups) / sizeof(*groups); ++g) {
+		size_t n = 0;
+		for (size_t i = 0; i < cartNameCount; ++i) {
+			n += cartStates[i] == groups[g].state;
+		}
+		size_t const unread = groups[g].state == CART_CHEAT_CANT ? cartUnread : 0;
+		if (!n && !unread) {
+			continue;
+		}
+		snprintf(headings[g], sizeof(headings[g]), "%s (%zu)", groups[g].title, n + unread);
+		addHeader(headings[g]);
+		for (size_t i = 0; i < cartNameCount; ++i) {
+			if (cartStates[i] == groups[g].state) {
+				addChoice(cartNames[i], cartCodes[i], cheatRow, 0);
+				helpFor(groups[g].help);
+			}
+		}
+		if (unread) {
+			static char more[64];
+			snprintf(more, sizeof(more), unread == 1 ? "1 more in a form it can't read" : "%zu more in a form it can't read", unread);
+			addChoice(more, "", cheatRow, 0);
+			helpFor("Codes written another way, such as the Action Replay's own 8 + 8 digits, or none at all.");
+		}
 	}
 }
 
@@ -873,7 +899,7 @@ static void codeGuidePage(void) {
 	if (kind == 1) {
 		addHeader("GameShark Code: 01 VV AAAA");
 		addChoice("01", "Type", cheatRow, 0);
-		helpFor("01 writes the value every frame; 8n and 9n write it in RAM bank n.");
+		helpFor("01 for most codes; other types pick a memory bank.");
 		addChoice("VV", "Value, 00 to FF (0 to 255)", cheatRow, 0);
 		helpFor("Two hex digits. RetroArch leaves XX, YY or ?? here for a value to pick; the import puts 00.");
 		addChoice("AAAA", "Address, low byte first", cheatRow, 0);
@@ -892,15 +918,19 @@ static void codeGuidePage(void) {
 		helpFor("Names the game and hooks the cheats in; the cartridge keeps its own, so the import leaves them out.");
 	} else if (kind == 3) {
 		addHeader("Encrypted Codes: 8 + 8 Digits");
-		addChoice("Its codes", "Kept encrypted", cheatRow, 0);
+		addChoice("This cartridge's codes", "Encrypted", cheatRow, 0);
 		helpFor("Each code is scrambled, so its value and address can't be read or changed in place.");
 		addChoice("XX, YY or ?? in RetroArch's code", "Goes in as 0", cheatRow, 0);
 		helpFor("The import encrypts the code with 0 there.");
-		addChoice("Another value", "RetroArch Cheats...", cheatRow, 0);
-		helpFor("Game > Cheats > RetroArch Cheats... adds the same cheat to armGBA's own list, and asks for its Value as you switch it on.");
+		addChoice("Another Value: RetroArch Cheats...", "", openGameCheats, 0);
+		helpFor("Adds the same cheat to armGBA's own list instead, which asks for its Value as you switch it on.");
 	} else {
 		addInfo("No cheat cartridge that imports is loaded", "");
 		return;
+	}
+	if (kind != 3) {
+		addChoice("Changing a value", "In the cartridge's menu", cheatRow, 0);
+		helpFor("Restart to reach the cartridge's own menu as it starts; edit the cheat in its code list and type the value over the 0.");
 	}
 	addHeader("Values Are Hex");
 	addChoice("Digits 0 to 9, then A to F", "0A = 10, 10 = 16, 63 = 99, FF = 255", cheatRow, 0);

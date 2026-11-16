@@ -2427,16 +2427,16 @@ const char* libretroCartridgeCodeLayout(void) {
 	if (fcdLoaded) {
 		return "CodeBreaker codes: 3AAAAAAA VVVV (8 bits) or 8AAAAAAA VVVV (16 bits), VVVV the value";
 	}
-	return "Action Replay codes, kept encrypted (8 + 8 digits): a value changes by typing the whole code again";
+	return "Action Replay codes, kept encrypted (8 + 8 digits): a cheat with a value to pick goes in as 0";
 }
 
 int libretroCartridgeCodeKind(void) {
 	return !actionReplayLoaded || gameGenieLoaded ? 0 : gameBoy ? 1 : fcdLoaded ? 2 : 3;
 }
 
-// Where a value goes, for the import's message
+// Where a value goes, for the import's message; NULL on the cartridges that keep their codes encrypted
 static const char* cartridgeValueAt(void) {
-	return gameBoy ? "VV in 01 VV AAAA" : fcdLoaded ? "VVVV in 8AAAAAAA VVVV" : "the encrypted code typed again";
+	return gameBoy ? "VV in 01 VV AAAA" : fcdLoaded ? "VVVV in 8AAAAAAA VVVV" : NULL;
 }
 
 bool libretroCheatImportFor(const char** gamePath, bool* advance, bool* retroArchs) {
@@ -2501,19 +2501,17 @@ static void replayTitle(char* title, size_t size) {
 // The cheats into the cartridge's chip at flash (or a copy of it), for the game on top: how many went
 // in, or the importers' -1 (unreadable), -2 (Pro Action Replay before its menu) or -3 (no master code).
 // *unfit counts those whose codes the cartridge can't hold.
-static int importTo(uint8_t* flash, size_t size, const char* title, const struct ChtCheat* cheats, size_t count, size_t* already, size_t* left,
-                    size_t* unfit) {
+// The import into flash, the Game Boy Advance's with its game on top read already (game, gameSize).
+static int importToGame(uint8_t* flash, size_t size, const char* title, const uint8_t* game, size_t gameSize, const struct ChtCheat* cheats,
+                        size_t count, size_t* already, size_t* left, size_t* unfit) {
 	*already = *left = *unfit = 0;
 	int added = -1;
 	if (!flash) {
 	} else if (!gameBoy) {
-		size_t gameSize = 0;
-		uint8_t* const game = gameRead(replayGamePath, &gameSize);
 		added = !game ? -1
 		        : fcdLoaded ? fcdImport(flash, size, game, gameSize, cheats, count, already, left, unfit)
 		        : (added = arGbaImport(flash, size, game, gameSize, cheats, count, already, left, unfit)) != -4 ? added
 		                    : maxImport(flash, size, game, gameSize, cheats, count, already, left, unfit);
-		free(game);
 	} else if (xploderLoaded) {
 		added = xploderImport(flash, size, title, cheats, count, already, left, unfit);
 	} else if (replayFirstKind) {
@@ -2524,10 +2522,19 @@ static int importTo(uint8_t* flash, size_t size, const char* title, const struct
 	return added;
 }
 
-size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], char (*codes)[160], size_t most, int* otherId, int* gameId,
-                                   size_t* cantGo) {
+static int importTo(uint8_t* flash, size_t size, const char* title, const struct ChtCheat* cheats, size_t count, size_t* already, size_t* left,
+                    size_t* unfit) {
+	size_t gameSize = 0;
+	uint8_t* const game = gameBoy ? NULL : gameRead(replayGamePath, &gameSize);
+	int const added = importToGame(flash, size, title, game, gameSize, cheats, count, already, left, unfit);
+	free(game);
+	return added;
+}
+
+size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], char (*codes)[160], unsigned char* states, size_t most, int* otherId,
+                                   int* gameId, size_t* unread) {
 	*otherId = *gameId = -1;
-	*cantGo = 0;
+	*unread = 0;
 	if (!cheatImportOn()) {
 		return 0;
 	}
@@ -2536,20 +2543,29 @@ size_t libretroCartridgeCheatNames(const char* folder, char (*names)[96], char (
 	size_t rejected = 0;
 	size_t const count = chtCheats(folder, !gameBoy, replayGamePath, *gameId, otherId, gameBoy ? chtGameSharkCode : chtCodeBreakerPart,
 	                               cheats, most < COUNT(cheats) ? most : COUNT(cheats), &rejected, NULL);
-	// What an import would leave out, from one into a copy of the chip
+	*unread = rejected;
+	// What an import would do with each, from one cheat at a time into a copy of the chip
+	memset(states, CART_CHEAT_IMPORT, count);
 	size_t size;
 	const uint8_t* const flash = gameBoy ? libretroGbActionReplayFlash(&size) : actionReplayFlash(&size);
 	uint8_t* const copy = flash && size ? malloc(size) : NULL;
-	size_t unfit = 0;
 	if (copy) {
 		memcpy(copy, flash, size);
 		char title[256];
 		replayTitle(title, sizeof(title));
-		size_t already, left;
-		importTo(copy, size, title, cheats, count, &already, &left, &unfit);
+		size_t gameSize = 0;
+		uint8_t* const game = gameBoy ? NULL : gameRead(replayGamePath, &gameSize);
+		for (size_t i = 0; i < count; ++i) {
+			size_t already, left, unfit;
+			int const added = importToGame(copy, size, title, game, gameSize, &cheats[i], 1, &already, &left, &unfit);
+			if (added < 0) {
+				break;
+			}
+			states[i] = added ? CART_CHEAT_IMPORT : already ? CART_CHEAT_THERE : unfit ? CART_CHEAT_CANT : left ? CART_CHEAT_NO_ROOM : CART_CHEAT_SKIPPED;
+		}
+		free(game);
 		free(copy);
 	}
-	*cantGo = rejected + unfit;
 	for (size_t i = 0; i < count; ++i) {
 		memcpy(names[i], cheats[i].description, sizeof(cheats[i].description));
 		names[i][sizeof(cheats[i].description) - 1] = '\0';
@@ -2632,25 +2648,26 @@ static void importCheats(void) {
 		writeReplayFlash();
 		cheatRestartDue = true;
 	}
-	int n = snprintf(message, sizeof(message), "%s: %d cheat%s for %.150s imported", cartridge, added, added == 1 ? "" : "s", title);
-	// A database template's value to fill, read as 0, which the cartridge's own menus can change
+	int n = snprintf(message, sizeof(message), "%s: %d cheat%s imported for %.150s", cartridge, added, added == 1 ? "" : "s", title);
+	// A database template's value to pick, put in as 0, which the cartridge's own menus can change
 	if (added > 0 && zeroed && n < (int) sizeof(message)) {
-		n += snprintf(message + n, sizeof(message) - (size_t) n, " (%zu with an XX to fill, put in as 0: the value is %s)", zeroed, cartridgeValueAt());
+		const char* const at = cartridgeValueAt();
+		n += snprintf(message + n, sizeof(message) - (size_t) n, ", %zu with a value to pick set to 0%s%s%s", zeroed, at ? " (" : "", at ? at : "",
+		              at ? ")" : "");
 	}
-	if (already) {
+	if (already && n < (int) sizeof(message)) {
 		n += snprintf(message + n, sizeof(message) - (size_t) n, ", %zu already there", already);
 	}
-	if (left) {
+	if (left && n < (int) sizeof(message)) {
 		n += snprintf(message + n, sizeof(message) - (size_t) n, ", %zu didn't fit", left);
 	}
-	// Those whose codes it can't hold: of a kind it doesn't take, or with an XX left in an address
+	// Those whose codes it can't hold: of a kind it doesn't take, or with a value to pick in an address
 	if (rejected + unfit && n < (int) sizeof(message)) {
-		n += snprintf(message + n, sizeof(message) - (size_t) n, ", %zu can't go in this cartridge", rejected + unfit);
+		n += snprintf(message + n, sizeof(message) - (size_t) n, ", %zu can't go in", rejected + unfit);
 	}
 	// RetroArch's file for the title holds codes for another build than the one on top
 	if (added > 0 && otherId >= 0 && n < (int) sizeof(message)) {
-		snprintf(message + n, sizeof(message) - (size_t) n, ". RetroArch's codes were written for another version (%04X; this one is %04X): if one does nothing, that may be why",
-		         otherId, gameId);
+		snprintf(message + n, sizeof(message) - (size_t) n, ". RetroArch's codes are for another version of the game: if one does nothing, that may be why");
 	}
 	notify(message, 300);
 	logMessage(RETRO_LOG_INFO, message);
