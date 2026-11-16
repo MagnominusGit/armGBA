@@ -387,7 +387,8 @@ also work on a row without a value). It opens again where it was left.
 - **Game:** the loaded game's state slots (0 to 99, each with a picture) and Undo Load State, its
   cheats (RetroArch's `.cht` files can be added, and RetroArch Cheats... lists the cheats RetroArch's
   cheat database has for the game, a file at a time, to add; with no database, it offers to download
-  it, and Download Cheat Database Again brings the app's copy up to date), its saves (the core's Saves options: backing up,
+  it, and Download Cheat Database Again brings the app's copy up to date; Delete All Cheats empties the
+  list, and each cheat's own page deletes it), its saves (the core's Saves options: backing up,
   loading and sending), Restart, Take Screenshot, recording and Close Game.
 - **Core:** the core's options, in RetroArch's categories, with LCD Effects (Off, CPU, GPU or GPU Fast) in
   Video in place of the core's LCD Effects.
