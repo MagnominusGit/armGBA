@@ -246,14 +246,19 @@ void audioSampleFifo(struct GBA* gba, int fifoId, uint32_t time) {
 	}
 }
 
-// Returns the mixed sample with the bias added, clipped to the 10-bit output's range.
-static inline int16_t applyBias(int bias, int sample) {
+bool audioPwmDepth = true;
+
+// Returns the mixed sample with the bias added, clipped to the 10-bit output's range, less the low
+// bits the PWM output drops at its rate (dropped: 9 bits at 32 KiHz, down to 6 at 256 KiHz: GBATEK,
+// SOUNDBIAS), then centred again.
+static inline int16_t applyBias(int bias, int sample, int dropped) {
 	sample += bias;
 	if (sample >= 0x400) {
 		sample = 0x3FF;
 	} else if (sample < 0) {
 		sample = 0;
 	}
+	sample &= ~dropped;
 	return ((sample - bias) * MASTER_VOLUME * 3) >> 4;
 }
 
@@ -273,6 +278,7 @@ void audioSample(struct GBA* gba, int32_t timestamp) {
 	struct Psg* psg = &audio->psg;
 	int psgShift = 4 - audio->volume;
 	int bias = biasLevel(audio->soundbias);
+	int const dropped = audioPwmDepth ? (2 << resolution(audio->soundbias)) - 1 : 0;
 	int32_t interval = audio->sampleInterval;
 	int32_t lastSample = audio->lastSample;
 	int shiftA = !audio->volumeChA;
@@ -308,8 +314,8 @@ void audioSample(struct GBA* gba, int32_t timestamp) {
 		if (rightB) {
 			sampleRight += b;
 		}
-		out[sample].left = applyBias(bias, sampleLeft);
-		out[sample].right = applyBias(bias, sampleRight);
+		out[sample].left = applyBias(bias, sampleLeft, dropped);
+		out[sample].right = applyBias(bias, sampleRight, dropped);
 	}
 	audio->sampleIndex = sample;
 	if (sample == maxSample) {

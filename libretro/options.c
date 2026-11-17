@@ -326,6 +326,10 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_lcd_threads", "LCD Effect Threads", NULL,
 	  "CPU cores for the LCD effects. Auto leaves one core free.",
 	  NULL, "video_lcd", { { "auto", "Auto" }, { "1", "1" }, { "2", "2" }, { "3", "3" }, { "4", "4" }, { NULL, NULL } }, "auto" },
+	{ "armgba_gba_audio_output", "GBA Audio Output", NULL,
+	  "Accurate gives the sound the bit depth the console's output has at the rate each game picks: 9 "
+	  "bits at the usual 32 kHz, down to 6 at 262 kHz. Off keeps every bit.",
+	  NULL, "audio", { { "accurate", "Accurate" }, { "disabled", "Off" }, { NULL, NULL } }, "accurate" },
 	{ "armgba_gb_audio_filter", "Game Boy Audio Filter", NULL,
 	  "The capacitor a Game Boy's sound leaves through, which keeps it centered. Accurate is each "
 	  "model's: the Pocket's and the Color's take more bass than the original's. Remove Offset Only uses "
@@ -597,6 +601,7 @@ bool showOptions(void) {
 		{ "armgba_action_replay_button", replayHasButton() },
 		{ "armgba_gb_color_correction", !advance },
 		{ "armgba_gb_audio_filter", !advance },
+		{ "armgba_gba_audio_output", advance || !gameBoy },
 		{ "armgba_gb_screen", !advance },
 		{ "armgba_gb_contrast", lcdCastsShadow() },
 		{ "armgba_gb_advance_border", !advance && !megaDuckGame && (gbOnAdvance || optionIs("armgba_gb_model", "Game Boy Advance")) },

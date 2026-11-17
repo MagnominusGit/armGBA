@@ -919,6 +919,9 @@ void gbaSetOverclock(struct GBA*, int8_t overclock);
 // Set by the frontend for a frame it won't show (Frame Skip): its lines aren't drawn. Kept out of
 // struct GBA, whose state it isn't.
 extern _Thread_local bool videoDrawSkipped;
+// Set by the frontend (GBA Audio Output): whether the sound has the PWM output's bit depth at the rate
+// SOUNDBIAS picks, as on the console. Kept out of struct GBA, whose state it isn't.
+extern bool audioPwmDepth;
 void gbaStop(struct GBA*);
 void gbaInterrupt(struct GBA*);
 void gbaFrameStarted(struct GBA*, uint32_t late);

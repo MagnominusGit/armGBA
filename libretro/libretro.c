@@ -882,6 +882,7 @@ static void readOptions(void) {
 	static const struct Choice threadChoices[] = { { "1", 1 }, { "2", 2 }, { "3", 3 }, { "4", 4 } };
 	lcdThreads = optionChoice("armgba_lcd_threads", threadChoices, COUNT(threadChoices), 0);
 	readFrameSkip();
+	audioPwmDepth = !optionIs("armgba_gba_audio_output", "disabled");
 	const char* const filter = option("armgba_low_pass_filter");
 	lowPass = filter ? atoi(filter) * 0x10000 / 100 : 0;
 	gbModel = optionChoice("armgba_gb_model", modelChoices, COUNT(modelChoices), LIBRETRO_GB_AUTO);
