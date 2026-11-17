@@ -327,13 +327,15 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "CPU cores for the LCD effects. Auto leaves one core free.",
 	  NULL, "video_lcd", { { "auto", "Auto" }, { "1", "1" }, { "2", "2" }, { "3", "3" }, { "4", "4" }, { NULL, NULL } }, "auto" },
 	{ "armgba_gba_audio_output", "GBA Audio Output", NULL,
-	  "Accurate gives the sound the bit depth the console's output has at the rate each game picks: 9 "
-	  "bits at the usual 32 kHz, down to 6 at 262 kHz. Off keeps every bit.",
-	  NULL, "audio", { { "accurate", "Accurate" }, { "disabled", "Off" }, { NULL, NULL } }, "accurate" },
+	  "The console's output, through its speaker or its headphone jack: the bit depth it has at the rate "
+	  "each game picks (9 bits at the usual 32 kHz, down to 6 at 262 kHz), and the capacitor that keeps it "
+	  "centered, which takes the bass under about 200 Hz from the speaker, 70 Hz from headphones. Game "
+	  "Boy games on a Game Boy Advance get its capacitor too. Off keeps every bit and all the bass.",
+	  NULL, "audio", { { "speaker", "Speaker" }, { "headphones", "Headphones" }, { "disabled", "Off" }, { NULL, NULL } }, "speaker" },
 	{ "armgba_gb_audio_filter", "Game Boy Audio Filter", NULL,
 	  "The capacitor a Game Boy's sound leaves through, which keeps it centered. Accurate is each "
-	  "model's: the Pocket's and the Color's take more bass than the original's. Remove Offset Only uses "
-	  "the original's on every model.",
+	  "model's: the Pocket's and the Color's take more bass than the original's, and a Game Boy "
+	  "Advance's is GBA Audio Output's. Remove Offset Only uses the original's on every model.",
 	  NULL, "audio", { { "accurate", "Accurate" }, { "offset", "Remove Offset Only" }, { "disabled", "Off" }, { NULL, NULL } }, "accurate" },
 	{ "armgba_low_pass_filter", "Low-Pass Filter", NULL,
 	  "Softens high notes, as the consoles' small speakers did. Higher is softer.", NULL, "audio",
@@ -601,7 +603,7 @@ bool showOptions(void) {
 		{ "armgba_action_replay_button", replayHasButton() },
 		{ "armgba_gb_color_correction", !advance },
 		{ "armgba_gb_audio_filter", !advance },
-		{ "armgba_gba_audio_output", advance || !gameBoy },
+		{ "armgba_gba_audio_output", advance || !gameBoy || (!megaDuckGame && (gbOnAdvance || optionIs("armgba_gb_model", "Game Boy Advance"))) },
 		{ "armgba_gb_screen", !advance },
 		{ "armgba_gb_contrast", lcdCastsShadow() },
 		{ "armgba_gb_advance_border", !advance && !megaDuckGame && (gbOnAdvance || optionIs("armgba_gb_model", "Game Boy Advance")) },

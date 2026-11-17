@@ -50,6 +50,22 @@ enum LibretroGbFilter {
 	LIBRETRO_GB_FILTER_OFF,
 };
 void libretroGbSetAudioFilter(enum LibretroGbFilter);
+// GBA Audio Output: what the Game Boy Advance's sound leaves through (its service manual's AGB-CPU
+// schematic). The amp's outputs sit at half its supply, and the speaker's other side and the
+// headphones' shared return go to ground through one capacitor (CP4), which keeps that DC out of the
+// sound and takes bass with it: under about 200 Hz through the speaker (8 ohms), about 70 Hz through
+// headphones (32 ohms each side, behind 15, both sides charging it together), where only what the two
+// sides have in common goes through it. Off leaves the sound without it. A Game Boy game on a Game Boy
+// Advance has it too, with the Game Boy Audio Filter on Accurate.
+enum LibretroAdvanceOutput {
+	LIBRETRO_ADVANCE_SPEAKER,
+	LIBRETRO_ADVANCE_HEADPHONES,
+	LIBRETRO_ADVANCE_OFF,
+};
+#define ADVANCE_OUTPUT_FARADS 100e-6
+// The resistance the capacitor charges through: the speaker, or the two headphone sides together
+#define ADVANCE_OUTPUT_OHMS(output) ((output) == LIBRETRO_ADVANCE_HEADPHONES ? (32.0 + 15.0) / 2 : 8.0)
+void libretroGbSetAdvanceOutput(enum LibretroAdvanceOutput);
 // Whether the next game loaded is a Mega Duck's: an original Game Boy with the Mega Duck's registers
 // and cartridges, starting without a boot ROM, as it has none. -1 for a Game Boy game, else the kind of
 // cartridge: 0 either handheld kind (a .bin), 1 none (.duck), 2 MD0, 3 MD1, 4 MD2, 5 MD20S, 6 MD25S.

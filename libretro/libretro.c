@@ -107,6 +107,13 @@ static uint16_t correctedFrame[SCREEN_WIDTH * SCREEN_HEIGHT];
 // Whether RetroArch is to hear of a new picture size, as LCD Grid's scale changed.
 static bool gridAnnounce;
 static int32_t lowPass;
+// GBA Audio Output: the output capacitor's share of its charge kept each frontend sample, out of
+// 0x10000 (0: none), and its charge per side, in samples x 0x10000; with headphones, the one both sides
+// share is advanceCapacitor[0]. The frontend's, not the machine's: only the sound that's heard goes
+// through it, so a frame run again doesn't charge it twice.
+static enum LibretroAdvanceOutput advanceOutput;
+static int32_t advanceCharge;
+static int64_t advanceCapacitor[2];
 bool gameBoy;
 enum LibretroGbModel gbModel;
 static bool gbColorCorrection;
@@ -882,7 +889,14 @@ static void readOptions(void) {
 	static const struct Choice threadChoices[] = { { "1", 1 }, { "2", 2 }, { "3", 3 }, { "4", 4 } };
 	lcdThreads = optionChoice("armgba_lcd_threads", threadChoices, COUNT(threadChoices), 0);
 	readFrameSkip();
-	audioPwmDepth = !optionIs("armgba_gba_audio_output", "disabled");
+	static const struct Choice outputChoices[] = {
+		{ "speaker", LIBRETRO_ADVANCE_SPEAKER }, { "headphones", LIBRETRO_ADVANCE_HEADPHONES }, { "disabled", LIBRETRO_ADVANCE_OFF },
+	};
+	advanceOutput = optionChoice("armgba_gba_audio_output", outputChoices, COUNT(outputChoices), LIBRETRO_ADVANCE_SPEAKER);
+	audioPwmDepth = advanceOutput != LIBRETRO_ADVANCE_OFF;
+	advanceCharge = advanceOutput == LIBRETRO_ADVANCE_OFF ? 0 :
+	                (int32_t) lround(exp(-1.0 / (ADVANCE_OUTPUT_OHMS(advanceOutput) * ADVANCE_OUTPUT_FARADS * AUDIO_RATE)) * 0x10000);
+	libretroGbSetAdvanceOutput(advanceOutput);
 	const char* const filter = option("armgba_low_pass_filter");
 	lowPass = filter ? atoi(filter) * 0x10000 / 100 : 0;
 	gbModel = optionChoice("armgba_gb_model", modelChoices, COUNT(modelChoices), LIBRETRO_GB_AUTO);
@@ -3485,6 +3499,7 @@ bool retro_load_game_special(unsigned type, const struct retro_game_info* info, 
 
 void retro_unload_game(void) {
 	useSensors(false, false);
+	advanceCapacitor[0] = advanceCapacitor[1] = 0;
 	if (!secondFromFrontend) {
 		rememberSecondChoice();
 	}
@@ -4002,6 +4017,15 @@ bool rerunning(void) {
 	return environment(RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &enabled) && !(enabled & RETRO_AV_ENABLE_VIDEO);
 }
 
+// Whether this frame's sound is heard: not a frame run ahead or again, whose sound is dropped.
+static bool soundHeard(void) {
+	int enabled = RETRO_AV_ENABLE_AUDIO;
+	if (!environment(RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &enabled)) {
+		return true;
+	}
+	return (enabled & RETRO_AV_ENABLE_AUDIO) && !(enabled & RETRO_AV_ENABLE_HARD_DISABLE_AUDIO);
+}
+
 // Whether Switch Controller Combo works now: on, with the consoles here and not in netplay.
 static bool switchOn(void) {
 	return switchController != SWITCH_OFF && togetherRunning() && (!netplaySeen || playingOn) && playersHere > 1;
@@ -4303,7 +4327,32 @@ static void readScreensKeys(void) {
 
 // Running a frame.
 
-// The low-pass filter: each sample out, per side, is the last one out weighted by lowPass, out of
+static int16_t clippedSample(int64_t scaled) {
+	int64_t const sample = scaled / 0x10000;
+	return (int16_t) (sample < -32768 ? -32768 : sample > 32767 ? 32767 : sample);
+}
+
+// A Game Boy Advance's output capacitor (GBA Audio Output), as the Game Boy core has it: each sample
+// out is what's in less the charge, which then keeps advanceCharge out of 0x10000 of the difference.
+// With headphones the charge is one, towards the mean of the two sides.
+static void throughAdvanceCapacitor(int16_t* frame) {
+	int64_t const left = (int64_t) frame[0] * 0x10000, right = (int64_t) frame[1] * 0x10000;
+	if (advanceOutput == LIBRETRO_ADVANCE_HEADPHONES) {
+		int64_t const mean = (left + right) / 2, charge = advanceCapacitor[0];
+		advanceCapacitor[0] = mean - (mean - charge) * advanceCharge / 0x10000;
+		frame[0] = clippedSample(left - charge);
+		frame[1] = clippedSample(right - charge);
+		return;
+	}
+	int64_t const outLeft = left - advanceCapacitor[0], outRight = right - advanceCapacitor[1];
+	advanceCapacitor[0] = left - outLeft * advanceCharge / 0x10000;
+	advanceCapacitor[1] = right - outRight * advanceCharge / 0x10000;
+	frame[0] = clippedSample(outLeft);
+	frame[1] = clippedSample(outRight);
+}
+
+// The sound to the frontend: a Game Boy Advance game's through the console's output capacitor, then
+// the low-pass filter, where each sample out, per side, is the last one out weighted by lowPass, out of
 // 0x10000, and the new one by the rest.
 static void sendSound(const int16_t* samples, size_t frames) {
 	static int16_t filtered[2 * 4096];
@@ -4311,15 +4360,25 @@ static void sendSound(const int16_t* samples, size_t frames) {
 	if (megaDuckGame && !rerunning()) {
 		samples = libretroGbMixSpeech(samples, frames);
 	}
-	if (!lowPass || rerunning()) {
+	bool const capacitor = !gameBoy && advanceCharge && soundHeard();
+	bool const smoothed = lowPass && !rerunning();
+	if (!capacitor && !smoothed) {
 		audioBatch(samples, frames);
 		return;
 	}
 	while (frames) {
 		size_t const n = frames < COUNT(filtered) / 2 ? frames : COUNT(filtered) / 2;
-		for (size_t k = 0; k < n * 2; ++k) {
-			last[k & 1] = (last[k & 1] * lowPass + samples[k] * (0x10000 - lowPass)) >> 16;
-			filtered[k] = (int16_t) last[k & 1];
+		memcpy(filtered, samples, n * 2 * sizeof(*filtered));
+		for (size_t k = 0; k < n * 2; k += 2) {
+			if (capacitor) {
+				throughAdvanceCapacitor(&filtered[k]);
+			}
+			if (smoothed) {
+				for (size_t side = 0; side < 2; ++side) {
+					last[side] = (last[side] * lowPass + filtered[k + side] * (0x10000 - lowPass)) >> 16;
+					filtered[k + side] = (int16_t) last[side];
+				}
+			}
 		}
 		audioBatch(filtered, n);
 		samples += n * 2;

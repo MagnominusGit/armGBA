@@ -132,6 +132,11 @@ enum {
 enum { RTC_DH, RTC_DL, RTC_H, RTC_M, RTC_S, RTC_C, RTC_LATCHED };
 unsigned long const RTC_SECOND = 0x400000;
 
+// How the output capacitor is wired: a Game Boy's, connected while a DAC is on; a Game Boy Advance's,
+// after its amp, always connected, per side with the speaker; or its headphones', one charge their
+// two sides share.
+enum class Wiring { GAME_BOY, ADVANCE, SHARED_RETURN };
+
 // One Game Boy. There are two to four when the consoles of a link run here; s is the one being worked
 // on.
 struct Console {
@@ -155,8 +160,10 @@ struct Console {
 	unsigned summed;
 	// The output capacitor's charge per side, in samples x 0x10000, and how much of it it keeps each
 	// frontend sample, out of 0x10000 (0: none, the Game Boy Audio Filter off). Saved with states.
+	// With headphones on a Game Boy Advance, the one charge both sides share is capacitor[0].
 	int64_t capacitor[2];
 	int32_t charge;
+	Wiring wiring;
 	size_t stateSize;
 	// The game, kept so it can be restarted as another model.
 	std::vector<unsigned char> game;
@@ -186,18 +193,29 @@ Console* s = &consoles[0];
 
 // The Game Boy Audio Filter, and the output capacitor's charge factor a 4 MiHz cycle (Pan Docs, Audio
 // Details): the original Game Boy's 0.999958 (about 28 Hz), the Pocket's and the Color's 0.998943
-// (about 700 Hz). The GBA's is stronger still, but unmeasured: the Color's is the nearest known. A
-// Mega Duck is taken as an original Game Boy.
+// (about 700 Hz). A Game Boy Advance has its own output's (GBA Audio Output), always connected, or
+// with that off the original's. A Mega Duck is taken as an original Game Boy.
 enum LibretroGbFilter audioFilter = LIBRETRO_GB_FILTER_ACCURATE;
+enum LibretroAdvanceOutput advanceOutput = LIBRETRO_ADVANCE_SPEAKER;
 
-int32_t chargeFor(unsigned flags) {
+void setCapacitor(Console& c) {
+	c.wiring = Wiring::GAME_BOY;
 	if (audioFilter == LIBRETRO_GB_FILTER_OFF) {
-		return 0;
+		c.charge = 0;
+		return;
 	}
-	bool const pocketOrLater = flags & (gambatte::GB::MGB_FLAG | gambatte::GB::CGB_MODE | gambatte::GB::GBA_FLAG);
+	bool const advance = c.loadFlags & gambatte::GB::GBA_FLAG;
+	if (audioFilter == LIBRETRO_GB_FILTER_ACCURATE && advance && advanceOutput != LIBRETRO_ADVANCE_OFF) {
+		c.wiring = advanceOutput == LIBRETRO_ADVANCE_HEADPHONES ? Wiring::SHARED_RETURN : Wiring::ADVANCE;
+		// Per frontend sample: 2097152 / ratio a second
+		double const seconds = ratio / 2097152.0;
+		c.charge = static_cast<int32_t>(std::lround(std::exp(-seconds / (ADVANCE_OUTPUT_OHMS(advanceOutput) * ADVANCE_OUTPUT_FARADS)) * 0x10000));
+		return;
+	}
+	bool const pocketOrLater = !advance && c.loadFlags & (gambatte::GB::MGB_FLAG | gambatte::GB::CGB_MODE);
 	double const perCycle = audioFilter == LIBRETRO_GB_FILTER_ACCURATE && pocketOrLater ? 0.998943 : 0.999958;
 	// Per frontend sample: 4194304 / (2097152 / ratio) cycles
-	return static_cast<int32_t>(std::lround(std::pow(perCycle, 2.0 * ratio) * 0x10000));
+	c.charge = static_cast<int32_t>(std::lround(std::pow(perCycle, 2.0 * ratio) * 0x10000));
 }
 // The CPU Clock, in quarters of the console's own clock.
 static unsigned cpuQuarters = 4;
@@ -841,7 +859,7 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	s->sumLeft = s->sumRight = 0;
 	s->summed = 0;
 	s->capacitor[0] = s->capacitor[1] = 0;
-	s->charge = chargeFor(s->loadFlags);
+	setCapacitor(*s);
 	s->pressed = 0;
 	std::memset(s->pixels, 0, sizeof(s->pixels));
 	size_t const needed = std::max(s->gb->saveState(0, 0, static_cast<char*>(0)), s->gb->exactStateSize()) + sizeof(gambatte::uint_least32_t);
@@ -981,7 +999,14 @@ void libretroGbSetBootRom(enum LibretroGbBoot boot) {
 void libretroGbSetAudioFilter(enum LibretroGbFilter filter) {
 	audioFilter = filter;
 	for (int i = 0; i < MAX_PLAYERS; ++i) {
-		consoles[i].charge = chargeFor(consoles[i].loadFlags);
+		setCapacitor(consoles[i]);
+	}
+}
+
+void libretroGbSetAdvanceOutput(enum LibretroAdvanceOutput output) {
+	advanceOutput = output;
+	for (int i = 0; i < MAX_PLAYERS; ++i) {
+		setCapacitor(consoles[i]);
 	}
 }
 
@@ -1114,6 +1139,11 @@ namespace {
 // charge, which then keeps charge out of 0x10000 of the difference. Where the DACs go from all off
 // to any on, or back, comes from Gambatte, sample by sample. Fixed-point, so every CPU makes the same
 // sound and the same state.
+int16_t clipped(int64_t scaled) {
+	int64_t const sample = scaled / 0x10000;
+	return static_cast<int16_t>(sample < -32768 ? -32768 : sample > 32767 ? 32767 : sample);
+}
+
 int16_t throughCapacitor(int side, long in, bool connected) {
 	if (!s->charge) {
 		return static_cast<int16_t>(in);
@@ -1124,8 +1154,19 @@ int16_t throughCapacitor(int side, long in, bool connected) {
 	int64_t const scaled = static_cast<int64_t>(in) * 0x10000;
 	int64_t const out = scaled - s->capacitor[side];
 	s->capacitor[side] = scaled - out * s->charge / 0x10000;
-	int64_t const sample = out / 0x10000;
-	return static_cast<int16_t>(sample < -32768 ? -32768 : sample > 32767 ? 32767 : sample);
+	return clipped(out);
+}
+
+// Headphones on a Game Boy Advance: both sides return through the one capacitor, which charges
+// towards their mean, and each side is heard less that charge.
+void throughSharedReturn(long left, long right, int16_t* out) {
+	int64_t const l = static_cast<int64_t>(left) * 0x10000;
+	int64_t const r = static_cast<int64_t>(right) * 0x10000;
+	int64_t const mean = (l + r) / 2;
+	int64_t const charge = s->capacitor[0];
+	s->capacitor[0] = mean - (mean - charge) * s->charge / 0x10000;
+	out[0] = clipped(l - charge);
+	out[1] = clipped(r - charge);
 }
 
 // Averages a run's 2 MHz stereo samples down to the frontend's rate: each frontend sample is the
@@ -1154,8 +1195,17 @@ void mixDown(std::size_t count) {
 		}
 		if (s->summed == ratio) {
 			if (s->sampleCount + 2 <= sizeof(s->samples) / sizeof(s->samples[0])) {
-				s->samples[s->sampleCount++] = throughCapacitor(0, s->sumLeft / static_cast<long>(ratio), dacs);
-				s->samples[s->sampleCount++] = throughCapacitor(1, s->sumRight / static_cast<long>(ratio), dacs);
+				long const left = s->sumLeft / static_cast<long>(ratio);
+				long const right = s->sumRight / static_cast<long>(ratio);
+				if (s->wiring == Wiring::SHARED_RETURN) {
+					throughSharedReturn(left, right, &s->samples[s->sampleCount]);
+					s->sampleCount += 2;
+				} else {
+					// A Game Boy Advance's capacitor is after its amp: connected whatever the DACs do
+					bool const connected = dacs || s->wiring == Wiring::ADVANCE;
+					s->samples[s->sampleCount++] = throughCapacitor(0, left, connected);
+					s->samples[s->sampleCount++] = throughCapacitor(1, right, connected);
+				}
 			}
 			s->sumLeft = s->sumRight = 0;
 			s->summed = 0;
