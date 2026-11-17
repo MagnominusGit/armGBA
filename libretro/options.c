@@ -216,7 +216,7 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_action_replay_switch", "Action Replay Switch", NULL,
 	  "The Game Boy Action Replay's switch. On, it shows its menu at power on and its codes and button work "
 	  "in the game; Off, the game runs alone, with the codes the Action Replay wrote before starting it (as "
-	  "its menu asks for Pokemon games).",
+	  "its menu asks for some games).",
 	  NULL, "system", { { "on", "On" }, { "off", "Off" }, { NULL, NULL } }, "on" },
 	{ "armgba_action_replay_button", "Cheat Cartridge Button", NULL,
 	  "A stick click that's the cheat cartridge's button: on the Game Boy (an Action Replay or Xploder), it "
@@ -353,7 +353,7 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  NULL, "input", { { "fast forward", "Fast-Forward" }, { "toggle", "Fast-Forward Toggle" }, { "turbo", "Turbo L and R" }, { NULL, NULL } }, "fast forward" },
 	{ "armgba_l3_button", "L3 Button", NULL,
 	  "Fast-Forward Toggle: click L3 to fast-forward until it's clicked again. Soft Reset: hold L3 for half "
-	  "a second to press A + B + Select + Start, which resets most games at once (Pokemon among them). "
+	  "a second to press A + B + Select + Start, which resets most games at once. "
 	  "L3 keeps a Restart or Switch Controller Combo or the cheat cartridge's button instead.",
 	  NULL, "input", { { "fast forward", "Fast-Forward Toggle" }, { "soft reset", "Soft Reset (Hold)" }, { "off", "Off" }, { NULL, NULL } }, "fast forward" },
 	{ "armgba_gb_tilt", "Tilt Control", NULL,
