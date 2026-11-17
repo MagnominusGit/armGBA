@@ -916,9 +916,10 @@ void gbaWriteIme(struct GBA*, uint16_t value);
 void gbaTestKeypadIrq(struct GBA*, uint32_t late);
 void gbaHalt(struct GBA*);
 void gbaSetOverclock(struct GBA*, int8_t overclock);
-// Set by the frontend for a frame it won't show (Frame Skip): its lines aren't drawn. Kept out of
-// struct GBA, whose state it isn't.
-extern _Thread_local bool videoDrawSkipped;
+// Set by the frontend, on the thread that runs the console, for a frame it won't show (Frame Skip):
+// its lines aren't drawn. Kept out of struct GBA, whose state it isn't, and set by a call, as Android's
+// emulated thread-local storage can't link a thread-local variable into code built without LTO.
+void videoSetDrawSkipped(bool skipped);
 // Set by the frontend (GBA Audio Output): whether the sound has the PWM output's bit depth at the rate
 // SOUNDBIAS picks, as on the console. Kept out of struct GBA, but the mixer's samples, which a state
 // holds, have it, so it's on for every player in netplay.

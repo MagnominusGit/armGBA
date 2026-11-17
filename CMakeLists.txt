@@ -15,6 +15,10 @@ add_compile_options(-fwrapv)
 # them; they load on 4 KB devices as before.
 if(ANDROID)
 	add_link_options(-Wl,-z,max-page-size=16384)
+	# Thread-local variables are emulated on Android before 10 (API 29), which has no native ones. The
+	# core library's link-time optimisation compiles in the linker, which the compiler driver only
+	# tells to emulate them when it links with -flto, so it's told here.
+	add_link_options(-Wl,-plugin-opt=-emulated-tls)
 endif()
 
 set(CORE_SOURCES

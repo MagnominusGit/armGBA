@@ -5033,7 +5033,7 @@ void retro_run(void) {
 	showReplayHint();
 	frameSkipped = skipThisFrame();
 	// One Frame Late shows the frame before, so its lines are still drawn.
-	videoDrawSkipped = frameSkipped && threadedVideo != THREADED_LATE;
+	videoSetDrawSkipped(frameSkipped && threadedVideo != THREADED_LATE);
 	// A new LCD Grid size changes the picture's largest size too, which only a new AV info can say.
 	if (gridAnnounce) {
 		struct retro_system_av_info av;
