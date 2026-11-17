@@ -258,9 +258,6 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_fast_forward_skip", "Fast-Forward Skip", NULL,
 	  "While fast-forwarding, frames the frontend won't show aren't drawn, for speed. GBA only. Not in netplay.",
 	  NULL, "video", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "enabled" },
-	{ "armgba_fast_flash_saves", "Fast Flash Saves", NULL,
-	  "Skips the timeout timer Nintendo's flash save code starts for every byte saved, in games that use it, Pokemon Ruby, Sapphire, FireRed, LeafGreen and Emerald among them, so saving doesn't slow the game. The save is the same. From the next time the game is loaded. Every netplay player needs the same setting.",
-	  NULL, "saves", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
 	{ "armgba_lcd_effects", "LCD Effects", NULL,
 	  "Turns the effects below on or off together. Each one keeps its setting.",
 	  NULL, "video_lcd", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
@@ -460,6 +457,9 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_safe_saves", "Safe Saves", NULL,
 	  "Writes saves to a new file first, so a crash can't leave a broken save.",
 	  NULL, "saves_settings", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "enabled" },
+	{ "armgba_fast_flash_saves", "Fast Flash Saves", NULL,
+	  "Skips the timeout timer Nintendo's flash save code starts for every byte saved, in games that use it, Pokemon Ruby, Sapphire, FireRed, LeafGreen and Emerald among them, so saving doesn't slow the game. The save is the same. From the next time the game is loaded. Every netplay player needs the same setting.",
+	  NULL, "saves_settings", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
 	{ NULL, NULL, NULL, NULL, NULL, NULL, { { NULL, NULL } }, NULL },
 };
 
@@ -478,7 +478,7 @@ static struct retro_core_option_v2_category optionCategories[] = {
 	{ "link_connection", "Link: Connection", "The link cable, the Wireless Adapter, the Four Player Adapter and the GameCube." },
 	{ "link_screens", "Link: Screens and Controllers", "How the consoles' screens are shown, and moving a controller between them." },
 	{ "saves", "Saves", "Backing up, loading and sending saves." },
-	{ "saves_settings", "Saves: Settings", "Where saves are kept, new players' saves, backups, Safe Saves and netplay progress." },
+	{ "saves_settings", "Saves: Settings", "Where saves are kept, new players' saves, backups, Safe Saves, Fast Flash Saves and netplay progress." },
 	{ NULL, NULL, NULL },
 };
 
