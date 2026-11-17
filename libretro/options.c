@@ -458,7 +458,7 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "Writes saves to a new file first, so a crash can't leave a broken save.",
 	  NULL, "saves_settings", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "enabled" },
 	{ "armgba_fast_flash_saves", "Fast Flash Saves", NULL,
-	  "Skips the timeout timer Nintendo's flash save code starts for every byte saved, in games that use it, Pokemon Ruby, Sapphire, FireRed, LeafGreen and Emerald among them, so saving doesn't slow the game. The save is the same. From the next time the game is loaded. Every netplay player needs the same setting.",
+	  "Skips the timeout timer Nintendo's flash save code starts for every byte saved, in games that use it, so saving doesn't slow the game. The save is the same. From the next time the game is loaded. Every netplay player needs the same setting.",
 	  NULL, "saves_settings", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
 	{ NULL, NULL, NULL, NULL, NULL, NULL, { { NULL, NULL } }, NULL },
 };

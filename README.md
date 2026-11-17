@@ -155,7 +155,7 @@ standalone frontend shows as one page with headers.
 | | Backups Kept | Both | 10, 5, 20, All |
 | | Backups Listed | Both | 10, 20, 40, 80, 126 |
 | | Safe Saves | Both | Off, On; On by default |
-| | Fast Flash Saves (from the next time the game is loaded) | Game Boy Advance | Off (default), On: games using Nintendo's flash save code, Pokémon Ruby, Sapphire, FireRed, LeafGreen and Emerald among them, save without its per-byte timer (the bytes saved are the same; every netplay player needs the same setting) |
+| | Fast Flash Saves (from the next time the game is loaded) | Game Boy Advance | Off (default), On: games using Nintendo's flash save code save without its per-byte timer (the bytes saved are the same; every netplay player needs the same setting) |
 
 ### CPU Clock
 
