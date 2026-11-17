@@ -16,14 +16,25 @@ enum {
 	MAX_BLOCK_INSTS = 64,
 	LOOKUP_BITS = 16,
 	LOOKUP_SIZE = 1 << LOOKUP_BITS,
-	// Within reach of every branch: AArch64's and A32's reach 128 and 32 MiB. The 3DS has 64 MiB
-	// for everything on an Old 3DS, the cartridge buffer taking 32 of it.
+	// The code memory: an eighth of the device's RAM (jit.c: codeSizeFor), from CODE_SIZE_MIN, what
+	// it was before, to CODE_SIZE, the most within reach of every branch. AArch64's reach 128 MiB
+	// back and 128 less 4 forward from themselves, and A32's 32 MiB from themselves plus 8, which
+	// compiled code never needs to the full: it goes only in whole 1 MiB stretches after the shared
+	// routines (jit-layout.h), so the last MiB is never filled. The encoders abort on a branch out
+	// of reach. Only what a game fills is in memory: most games' code takes 1 to 18 MiB, but Payback
+	// compiles about 15 MiB a minute for as long as it runs, and in 17 minutes flushed 35 times in
+	// 16 MiB, 4 in 64 and once in 128, its whole process taking up to about 1.5 times the code
+	// memory and 25 MiB more. The 3DS has 64 MiB for everything on an Old 3DS, the cartridge buffer
+	// taking 32 of it.
 #if defined(__3DS__)
 	// The most; the 3DS takes what the heap can spare (platform/3ds/source/jitmem.c).
 	CODE_SIZE = 24 << 20,
+	CODE_SIZE_MIN = CODE_SIZE,
 #else
-	CODE_SIZE = (UINTPTR_MAX > 0xFFFFFFFFu ? 64 : 16) << 20,
+	CODE_SIZE = (UINTPTR_MAX > 0xFFFFFFFFu ? 128 : 32) << 20,
+	CODE_SIZE_MIN = (UINTPTR_MAX > 0xFFFFFFFFu ? 64 : 16) << 20,
 #endif
+	MARKS_PER_MIB = 8,
 	BLOCK_HASH_SIZE = 1 << 16,
 	SITE_CACHE_SIZE = 1024,
 	TINY_ROUTINES = 1024,
@@ -455,11 +466,14 @@ struct Jit {
 	// Where the code memory's stretches and their parts begin (jit-layout.h), in address order: from
 	// each mark's start up to the next mark, code at or past its hotEnd is cold code. freshNext: the
 	// code memory no stretch has taken yet.
+	// markCap: as many as MARKS_PER_MIB for each MiB of code memory, as a game that compiles all the
+	// time (Payback) lays out about 3.4 a MiB, and running out empties the code memory early.
 	struct StretchMark {
 		uint8_t* start;
 		uint8_t* hotEnd;
-	} marks[256];
+	}* marks;
 	int markCount;
+	int markCap;
 	uint8_t* freshNext;
 	uint8_t* coldMark;
 	uint64_t flushes;

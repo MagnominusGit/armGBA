@@ -50,8 +50,7 @@ static size_t hotShare(const struct Jit* jit, size_t size, size_t least, size_t 
 
 // Notes that from start on, code at or past hotEnd is cold, keeping the marks in address order.
 static bool addMark(struct Jit* jit, uint8_t* start, uint8_t* hotEnd) {
-	int const capacity = (int) (sizeof(jit->marks) / sizeof(*jit->marks));
-	if (jit->markCount >= capacity) {
+	if (jit->markCount >= jit->markCap) {
 		return false;
 	}
 	int at = jit->markCount;
@@ -85,7 +84,7 @@ static void leave(struct Jit* jit) {
 
 // A new stretch from the code memory no stretch has taken. Fails if there is none.
 static bool freshStretch(struct Jit* jit) {
-	if (jit->codeEnd - jit->freshNext < STRETCH || jit->markCount + 1 > (int) (sizeof(jit->marks) / sizeof(*jit->marks))) {
+	if (jit->codeEnd - jit->freshNext < STRETCH || jit->markCount + 1 > jit->markCap) {
 		return false;
 	}
 	uint8_t* const base = jit->freshNext;
@@ -105,7 +104,7 @@ static bool carveStretch(struct Jit* jit, bool fromHot) {
 	uint8_t* const base = fromHot ? jit->codeNext : jit->coldNext;
 	uint8_t* const end = fromHot ? jit->hotEnd : jit->coldEnd;
 	size_t const size = (size_t) (end - base);
-	if (size < CARVE_MIN || jit->markCount + 2 > (int) (sizeof(jit->marks) / sizeof(*jit->marks))) {
+	if (size < CARVE_MIN || jit->markCount + 2 > jit->markCap) {
 		return false;
 	}
 	size_t const hot = hotShare(jit, size, HOT_ROOM * 2, size - COLD_ROOM * 2);

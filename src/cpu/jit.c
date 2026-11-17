@@ -2652,6 +2652,22 @@ static void printStats(const struct Jit* jit) {
 	        (unsigned long long) jit->stepped, (unsigned long long) jit->carefulSteps, (unsigned long long) jit->exits[EXIT_EXACT]);
 }
 
+#if !defined(__3DS__)
+// An eighth of the RAM the system reports, in whole MiB, from CODE_SIZE_MIN to CODE_SIZE: 16 MiB as
+// before on a Miyoo Mini (128 MB, less what Linux keeps), where Payback filling more could leave
+// too little for the rest, and the most from 256 MB (32-bit) or 1 GB (64-bit) up. Nothing is in
+// memory until a game fills it.
+static size_t codeSizeFor(void) {
+	long const pages = sysconf(_SC_PHYS_PAGES);
+	long const pageSize = sysconf(_SC_PAGESIZE);
+	if (pages <= 0 || pageSize <= 0) {
+		return CODE_SIZE_MIN;
+	}
+	uint64_t const eighth = (uint64_t) pages * (uint64_t) pageSize / 8 & ~(uint64_t) ((1 << 20) - 1);
+	return eighth < CODE_SIZE_MIN ? CODE_SIZE_MIN : eighth > CODE_SIZE ? CODE_SIZE : (size_t) eighth;
+}
+#endif
+
 // Maps the code memory, writable and executable, and has the backend emit its shared routines.
 bool jitInit(struct GBA* gba) {
 	readDebugSettings();
@@ -2666,8 +2682,8 @@ bool jitInit(struct GBA* gba) {
 	jit->code = jitHostAllocCode(&jit->codeSize);
 	if (!jit->code) {
 #else
-	jit->code = mmap(NULL, CODE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	jit->codeSize = CODE_SIZE;
+	jit->codeSize = codeSizeFor();
+	jit->code = mmap(NULL, jit->codeSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (jit->code == MAP_FAILED) {
 #endif
 		free(jit);
@@ -2675,8 +2691,10 @@ bool jitInit(struct GBA* gba) {
 		return false;
 	}
 	jit->codeEnd = jit->code + jit->codeSize;
+	jit->markCap = (int) (jit->codeSize >> 20) * MARKS_PER_MIB;
+	jit->marks = calloc((size_t) jit->markCap, sizeof(*jit->marks));
 	jit->lookup = calloc(LOOKUP_SIZE, sizeof(*jit->lookup));
-	if (!jit->lookup) {
+	if (!jit->marks || !jit->lookup) {
 		jitDeinit(gba);
 		return false;
 	}
@@ -2733,6 +2751,7 @@ void jitDeinit(struct GBA* gba) {
 		free(jit->pages[kind]);
 	}
 	free(jit->lookup);
+	free(jit->marks);
 	free(jit->romBlocks);
 	free(jit->ranges);
 	free(jit->coldRanges);
