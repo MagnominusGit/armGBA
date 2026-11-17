@@ -66,6 +66,31 @@ enum LibretroAdvanceOutput {
 // The resistance the capacitor charges through: the speaker, or the two headphone sides together
 #define ADVANCE_OUTPUT_OHMS(output) ((output) == LIBRETRO_ADVANCE_HEADPHONES ? (32.0 + 15.0) / 2 : 8.0)
 void libretroGbSetAdvanceOutput(enum LibretroAdvanceOutput);
+
+// An output capacitor, one frontend sample at a time, in 32-bit fixed point so every CPU makes the
+// same sound: each sample out is what's in less the charge (samples x 256), and the charge then takes
+// up all but keep (out of 0x10000) of that difference (Pan Docs, Audio Details), with one widening
+// multiply. The sample out is rounded to the nearest, so the sound stays centred.
+static inline int16_t outputClip(int32_t scaled) {
+	int32_t const sample = (scaled + 128) >> 8;
+	return (int16_t) (sample < -32768 ? -32768 : sample > 32767 ? 32767 : sample);
+}
+
+static inline int16_t outputCapacitor(int32_t* charge, int32_t in, int32_t keep) {
+	int32_t const out = in * 256 - *charge;
+	*charge += (int32_t) (((int64_t) out * (0x10000 - keep)) >> 16);
+	return outputClip(out);
+}
+
+// Headphones on a Game Boy Advance: both sides return through the one capacitor, which charges
+// towards their mean, and each side is heard less that charge.
+static inline void outputSharedReturn(int32_t* charge, int32_t left, int32_t right, int32_t keep, int16_t* out) {
+	int32_t const now = *charge;
+	*charge += (int32_t) (((int64_t) ((left + right) * 128 - now) * (0x10000 - keep)) >> 16);
+	out[0] = outputClip(left * 256 - now);
+	out[1] = outputClip(right * 256 - now);
+}
+
 // Whether the next game loaded is a Mega Duck's: an original Game Boy with the Mega Duck's registers
 // and cartridges, starting without a boot ROM, as it has none. -1 for a Game Boy game, else the kind of
 // cartridge: 0 either handheld kind (a .bin), 1 none (.duck), 2 MD0, 3 MD1, 4 MD2, 5 MD20S, 6 MD25S.

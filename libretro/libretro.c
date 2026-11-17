@@ -108,12 +108,12 @@ static uint16_t correctedFrame[SCREEN_WIDTH * SCREEN_HEIGHT];
 static bool gridAnnounce;
 static int32_t lowPass;
 // GBA Audio Output: the output capacitor's share of its charge kept each frontend sample, out of
-// 0x10000 (0: none), and its charge per side, in samples x 0x10000; with headphones, the one both sides
+// 0x10000 (0: none), and its charge per side, in samples x 256; with headphones, the one both sides
 // share is advanceCapacitor[0]. The frontend's, not the machine's: only the sound that's heard goes
 // through it, so a frame run again doesn't charge it twice.
 static enum LibretroAdvanceOutput advanceOutput;
 static int32_t advanceCharge;
-static int64_t advanceCapacitor[2];
+static int32_t advanceCapacitor[2];
 bool gameBoy;
 enum LibretroGbModel gbModel;
 static bool gbColorCorrection;
@@ -4327,30 +4327,6 @@ static void readScreensKeys(void) {
 
 // Running a frame.
 
-static int16_t clippedSample(int64_t scaled) {
-	int64_t const sample = scaled / 0x10000;
-	return (int16_t) (sample < -32768 ? -32768 : sample > 32767 ? 32767 : sample);
-}
-
-// A Game Boy Advance's output capacitor (GBA Audio Output), as the Game Boy core has it: each sample
-// out is what's in less the charge, which then keeps advanceCharge out of 0x10000 of the difference.
-// With headphones the charge is one, towards the mean of the two sides.
-static void throughAdvanceCapacitor(int16_t* frame) {
-	int64_t const left = (int64_t) frame[0] * 0x10000, right = (int64_t) frame[1] * 0x10000;
-	if (advanceOutput == LIBRETRO_ADVANCE_HEADPHONES) {
-		int64_t const mean = (left + right) / 2, charge = advanceCapacitor[0];
-		advanceCapacitor[0] = mean - (mean - charge) * advanceCharge / 0x10000;
-		frame[0] = clippedSample(left - charge);
-		frame[1] = clippedSample(right - charge);
-		return;
-	}
-	int64_t const outLeft = left - advanceCapacitor[0], outRight = right - advanceCapacitor[1];
-	advanceCapacitor[0] = left - outLeft * advanceCharge / 0x10000;
-	advanceCapacitor[1] = right - outRight * advanceCharge / 0x10000;
-	frame[0] = clippedSample(outLeft);
-	frame[1] = clippedSample(outRight);
-}
-
 // The sound to the frontend: a Game Boy Advance game's through the console's output capacitor, then
 // the low-pass filter, where each sample out, per side, is the last one out weighted by lowPass, out of
 // 0x10000, and the new one by the rest.
@@ -4370,8 +4346,11 @@ static void sendSound(const int16_t* samples, size_t frames) {
 		size_t const n = frames < COUNT(filtered) / 2 ? frames : COUNT(filtered) / 2;
 		memcpy(filtered, samples, n * 2 * sizeof(*filtered));
 		for (size_t k = 0; k < n * 2; k += 2) {
-			if (capacitor) {
-				throughAdvanceCapacitor(&filtered[k]);
+			if (capacitor && advanceOutput == LIBRETRO_ADVANCE_HEADPHONES) {
+				outputSharedReturn(&advanceCapacitor[0], filtered[k], filtered[k + 1], advanceCharge, &filtered[k]);
+			} else if (capacitor) {
+				filtered[k] = outputCapacitor(&advanceCapacitor[0], filtered[k], advanceCharge);
+				filtered[k + 1] = outputCapacitor(&advanceCapacitor[1], filtered[k + 1], advanceCharge);
 			}
 			if (smoothed) {
 				for (size_t side = 0; side < 2; ++side) {

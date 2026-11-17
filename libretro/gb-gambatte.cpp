@@ -158,10 +158,10 @@ struct Console {
 	long sumLeft;
 	long sumRight;
 	unsigned summed;
-	// The output capacitor's charge per side, in samples x 0x10000, and how much of it it keeps each
+	// The output capacitor's charge per side, in samples x 256, and how much of it it keeps each
 	// frontend sample, out of 0x10000 (0: none, the Game Boy Audio Filter off). Saved with states.
 	// With headphones on a Game Boy Advance, the one charge both sides share is capacitor[0].
-	int64_t capacitor[2];
+	int32_t capacitor[2];
 	int32_t charge;
 	Wiring wiring;
 	size_t stateSize;
@@ -1135,38 +1135,13 @@ uint32_t libretroGbBootCrc(void) {
 namespace {
 
 // The console's sound leaves through a capacitor that keeps DC out of it, connected only while a
-// channel's DAC is on (Pan Docs, Audio Details): each frontend sample out is what's in less the
-// charge, which then keeps charge out of 0x10000 of the difference. Where the DACs go from all off
-// to any on, or back, comes from Gambatte, sample by sample. Fixed-point, so every CPU makes the same
-// sound and the same state.
-int16_t clipped(int64_t scaled) {
-	int64_t const sample = scaled / 0x10000;
-	return static_cast<int16_t>(sample < -32768 ? -32768 : sample > 32767 ? 32767 : sample);
-}
-
+// channel's DAC is on (Pan Docs, Audio Details). Where the DACs go from all off to any on, or back,
+// comes from Gambatte, sample by sample.
 int16_t throughCapacitor(int side, long in, bool connected) {
 	if (!s->charge) {
 		return static_cast<int16_t>(in);
 	}
-	if (!connected) {
-		return 0;
-	}
-	int64_t const scaled = static_cast<int64_t>(in) * 0x10000;
-	int64_t const out = scaled - s->capacitor[side];
-	s->capacitor[side] = scaled - out * s->charge / 0x10000;
-	return clipped(out);
-}
-
-// Headphones on a Game Boy Advance: both sides return through the one capacitor, which charges
-// towards their mean, and each side is heard less that charge.
-void throughSharedReturn(long left, long right, int16_t* out) {
-	int64_t const l = static_cast<int64_t>(left) * 0x10000;
-	int64_t const r = static_cast<int64_t>(right) * 0x10000;
-	int64_t const mean = (l + r) / 2;
-	int64_t const charge = s->capacitor[0];
-	s->capacitor[0] = mean - (mean - charge) * s->charge / 0x10000;
-	out[0] = clipped(l - charge);
-	out[1] = clipped(r - charge);
+	return connected ? outputCapacitor(&s->capacitor[side], static_cast<int32_t>(in), s->charge) : 0;
 }
 
 // Averages a run's 2 MHz stereo samples down to the frontend's rate: each frontend sample is the
@@ -1198,7 +1173,7 @@ void mixDown(std::size_t count) {
 				long const left = s->sumLeft / static_cast<long>(ratio);
 				long const right = s->sumRight / static_cast<long>(ratio);
 				if (s->wiring == Wiring::SHARED_RETURN) {
-					throughSharedReturn(left, right, &s->samples[s->sampleCount]);
+					outputSharedReturn(&s->capacitor[0], static_cast<int32_t>(left), static_cast<int32_t>(right), s->charge, &s->samples[s->sampleCount]);
 					s->sampleCount += 2;
 				} else {
 					// A Game Boy Advance's capacitor is after its amp: connected whatever the DACs do
@@ -1750,15 +1725,16 @@ void loadLaptop(const void* data, size_t size) {
 	}
 }
 
-// The output capacitor's charge, just before the laptop's controller. Older states have zeros there:
-// an uncharged capacitor.
+// The output capacitor's charge, just before the laptop's controller, as 64-bit samples x 0x10000, as
+// it was first kept. Older states have zeros there: an uncharged capacitor.
 size_t capacitorAt() {
-	return laptopAt() - sizeof(s->capacitor);
+	return laptopAt() - 2 * sizeof(int64_t);
 }
 
 void saveCapacitor(void* data, size_t length) {
 	if (sizeof(gambatte::uint_least32_t) + length <= capacitorAt()) {
-		std::memcpy(static_cast<char*>(data) + capacitorAt(), s->capacitor, sizeof(s->capacitor));
+		int64_t const saved[2] = { static_cast<int64_t>(s->capacitor[0]) * 256, static_cast<int64_t>(s->capacitor[1]) * 256 };
+		std::memcpy(static_cast<char*>(data) + capacitorAt(), saved, sizeof(saved));
 	}
 }
 
@@ -1767,7 +1743,10 @@ void loadCapacitor(const void* data, size_t size) {
 	std::memcpy(&length, data, sizeof(length));
 	length &= ~0x80000000u;
 	if (size >= s->stateSize && sizeof(length) + length <= capacitorAt()) {
-		std::memcpy(s->capacitor, static_cast<const char*>(data) + capacitorAt(), sizeof(s->capacitor));
+		int64_t saved[2];
+		std::memcpy(saved, static_cast<const char*>(data) + capacitorAt(), sizeof(saved));
+		s->capacitor[0] = static_cast<int32_t>(saved[0] / 256);
+		s->capacitor[1] = static_cast<int32_t>(saved[1] / 256);
 	} else {
 		s->capacitor[0] = s->capacitor[1] = 0;
 	}
