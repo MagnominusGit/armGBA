@@ -190,6 +190,9 @@ bool libretroGbBooting(void);
 size_t libretroGbStateSize(void);
 // States for rollback and run-ahead save the whole machine exactly; others, in gambatte's format.
 void libretroGbExactStates(bool exact);
+// States for netplay leave out what each device sets for itself, such as the output capacitor's
+// charge, which the Game Boy Audio Filter and GBA Audio Output shape, so every player's match.
+void libretroGbNetplayStates(bool netplay);
 bool libretroGbSaveState(void* data, size_t size);
 bool libretroGbLoadState(const void* data, size_t size);
 // The link cable: the byte this Game Boy shifts out, and a byte shifted in when the other Game Boy

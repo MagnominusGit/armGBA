@@ -118,7 +118,7 @@ standalone frontend shows as one page with headers.
 | | Game Boy Pixel Shadow Distance | Game Boy | 0.5 to 2.5 dots in halves, 1.5 by default; how far Tilt reaches in the app |
 | | LCD Effect Threads | Both | Auto, 1, 2, 3, 4 |
 | Audio | Threaded Audio | Game Boy Advance | Off, On (the sound mixed on another CPU core; the same samples) |
-| | GBA Audio Output | Game Boy Advance | Speaker, Headphones (the console's output: the bit depth it has at the rate a game picks, 9 bits at 32 kHz down to 6 at 262 kHz, and the 100 µF capacitor its speaker and headphones return through, about 200 Hz with the speaker, 70 Hz with headphones; Game Boy games on Game Boy Advance get the capacitor too), Off |
+| | GBA Audio Output | Game Boy Advance | Speaker, Headphones (the console's output: the bit depth it has at the rate a game picks, 9 bits at 32 kHz down to 6 at 262 kHz, and the 100 µF capacitor its speaker and headphones return through, about 200 Hz with the speaker, 70 Hz with headphones; Game Boy games on Game Boy Advance get the capacitor too), Off (in netplay every player still has the console's bit depth, so states match) |
 | | Game Boy Audio Filter | Game Boy | Accurate (each model's output capacitor, as Pan Docs gives it: the original's about 28 Hz, the Pocket's and Color's about 700 Hz, on Game Boy Advance GBA Audio Output's), Remove Offset Only (the original's on every model), Off |
 | | Low-Pass Filter | Both | Off, 20%, 40%, 60%, 80% |
 | Input | Left Stick as D-Pad | Both | Off, On |
@@ -155,7 +155,7 @@ standalone frontend shows as one page with headers.
 | | Backups Kept | Both | 10, 5, 20, All |
 | | Backups Listed | Both | 10, 20, 40, 80, 126 |
 | | Safe Saves | Both | Off, On; On by default |
-| | Fast Flash Saves (from the next time the game is loaded) | Game Boy Advance | Off (default), On: Pokémon Ruby, Sapphire, FireRed, LeafGreen and Emerald save without their per-byte timer (the bytes saved are the same) |
+| | Fast Flash Saves (from the next time the game is loaded) | Game Boy Advance | Off (default), On: games using Nintendo's flash save code, Pokémon Ruby, Sapphire, FireRed, LeafGreen and Emerald among them, save without its per-byte timer (the bytes saved are the same; every netplay player needs the same setting) |
 
 ### CPU Clock
 

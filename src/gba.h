@@ -920,8 +920,13 @@ void gbaSetOverclock(struct GBA*, int8_t overclock);
 // struct GBA, whose state it isn't.
 extern _Thread_local bool videoDrawSkipped;
 // Set by the frontend (GBA Audio Output): whether the sound has the PWM output's bit depth at the rate
-// SOUNDBIAS picks, as on the console. Kept out of struct GBA, whose state it isn't.
+// SOUNDBIAS picks, as on the console. Kept out of struct GBA, but the mixer's samples, which a state
+// holds, have it, so it's on for every player in netplay.
 extern bool audioPwmDepth;
+// Set by the frontend: whether a state saved now keeps what the renderer has from the lines it drew,
+// so loading it doesn't draw them again (run-ahead), or leaves it out (netplay), as it depends on how
+// each device draws (Threaded Video) and netplay compares the states' bytes.
+extern bool stateKeepsRenderer;
 void gbaStop(struct GBA*);
 void gbaInterrupt(struct GBA*);
 void gbaFrameStarted(struct GBA*, uint32_t late);

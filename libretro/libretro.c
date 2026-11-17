@@ -893,7 +893,9 @@ static void readOptions(void) {
 		{ "speaker", LIBRETRO_ADVANCE_SPEAKER }, { "headphones", LIBRETRO_ADVANCE_HEADPHONES }, { "disabled", LIBRETRO_ADVANCE_OFF },
 	};
 	advanceOutput = optionChoice("armgba_gba_audio_output", outputChoices, COUNT(outputChoices), LIBRETRO_ADVANCE_SPEAKER);
-	audioPwmDepth = advanceOutput != LIBRETRO_ADVANCE_OFF;
+	// The bit depth shapes the mixer's samples, which states hold: in netplay every player has the
+	// console's, so their states match
+	audioPwmDepth = advanceOutput != LIBRETRO_ADVANCE_OFF || netplaySeen;
 	advanceCharge = advanceOutput == LIBRETRO_ADVANCE_OFF ? 0 :
 	                (int32_t) lround(exp(-1.0 / (ADVANCE_OUTPUT_OHMS(advanceOutput) * ADVANCE_OUTPUT_FARADS * AUDIO_RATE)) * 0x10000);
 	libretroGbSetAdvanceOutput(advanceOutput);
@@ -5070,14 +5072,18 @@ static size_t consolesStateSize(void) {
 	return gbaStateSize() + (actionReplayLoaded ? actionReplayStateSize() : 0);
 }
 
-// Also tells the Game Boy core whether this state is for rollback or run-ahead, which want it exact.
+// Also tells the Game Boy core whether this state is for rollback or run-ahead, which want it exact,
+// and whether it is netplay's, which leaves out what each device sets for itself.
 // Returns whether netplay asks for this state.
 static bool checkNetplay(void) {
 	int context = RETRO_SAVESTATE_CONTEXT_NORMAL;
 	bool const told = environment(RETRO_ENVIRONMENT_GET_SAVESTATE_CONTEXT, &context);
 	bool const forNetplay = told && context == RETRO_SAVESTATE_CONTEXT_ROLLBACK_NETPLAY;
 	netplaySeen |= forNetplay;
+	audioPwmDepth |= netplaySeen;
 	libretroGbExactStates(told && context != RETRO_SAVESTATE_CONTEXT_NORMAL);
+	libretroGbNetplayStates(forNetplay);
+	stateKeepsRenderer = !forNetplay;
 	// A tag of this device's own: the time, the processor time used and where this core sits in
 	// memory, which differ from one device to the next.
 	while (netplaySeen && !sessionTag) {

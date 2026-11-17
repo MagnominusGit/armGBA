@@ -1660,6 +1660,8 @@ size_t stateSizeOne() {
 // An exact state is saved with the shades blank, as each device shows the screen its own way.
 bool exactStates;
 gambatte::uint_least32_t const EXACT = 0x80000000u;
+// Netplay's states hold no capacitor charge, and loading one keeps this device's.
+bool netplayStates;
 
 // Player 1's printer is kept at the end of its console's part, in the room left for the state to
 // grow; zeros there, as in a state from before the printer, are a printer just switched on.
@@ -1726,19 +1728,23 @@ void loadLaptop(const void* data, size_t size) {
 }
 
 // The output capacitor's charge, just before the laptop's controller, as 64-bit samples x 0x10000, as
-// it was first kept. Older states have zeros there: an uncharged capacitor.
+// it was first kept. Older states have zeros there: an uncharged capacitor. Netplay's have zeros too,
+// as the charge depends on each player's audio settings, and loading one keeps the charge as it is.
 size_t capacitorAt() {
 	return laptopAt() - 2 * sizeof(int64_t);
 }
 
 void saveCapacitor(void* data, size_t length) {
 	if (sizeof(gambatte::uint_least32_t) + length <= capacitorAt()) {
-		int64_t const saved[2] = { static_cast<int64_t>(s->capacitor[0]) * 256, static_cast<int64_t>(s->capacitor[1]) * 256 };
+		int64_t const saved[2] = { netplayStates ? 0 : static_cast<int64_t>(s->capacitor[0]) * 256, netplayStates ? 0 : static_cast<int64_t>(s->capacitor[1]) * 256 };
 		std::memcpy(static_cast<char*>(data) + capacitorAt(), saved, sizeof(saved));
 	}
 }
 
 void loadCapacitor(const void* data, size_t size) {
+	if (netplayStates) {
+		return;
+	}
 	gambatte::uint_least32_t length;
 	std::memcpy(&length, data, sizeof(length));
 	length &= ~0x80000000u;
@@ -1904,6 +1910,10 @@ extern "C" {
 
 void libretroGbExactStates(bool exact) {
 	exactStates = exact;
+}
+
+void libretroGbNetplayStates(bool netplay) {
+	netplayStates = netplay;
 }
 
 // Link cable: the byte this Game Boy shifts out, and one shifted in from the other's transfer.

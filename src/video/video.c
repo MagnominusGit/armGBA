@@ -52,6 +52,7 @@ static uint32_t nextLineStart(struct GBA* gba) {
 }
 
 _Thread_local bool videoDrawSkipped;
+bool stateKeepsRenderer = true;
 
 // A visible line is drawn as at its H-blank: then, or later but before anything it shows changes.
 static void drawLine(struct GBA* gba) {

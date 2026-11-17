@@ -216,7 +216,11 @@ void gbaSaveState(struct GBA* gba, void* state) {
 	// What the renderer keeps from the lines it drew depends on which copy drew which line only
 	// with two render workers, and their merged renderer has none of it already
 	// (renderThreadRenderer). Drawn by one renderer it is whole and the same for the same machine,
-	// so it stays: a state loaded every frame (run-ahead) doesn't draw every line again.
+	// so it stays: a state loaded every frame (run-ahead) doesn't draw every line again. Netplay's
+	// states leave it out, as players may draw differently and netplay compares the bytes.
+	if (!stateKeepsRenderer) {
+		renderForget(&saved->renderer);
+	}
 	saved->renderer.copyCycle = 0;
 	leaveOutHost(gba, saved);
 }

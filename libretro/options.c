@@ -259,7 +259,7 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "While fast-forwarding, frames the frontend won't show aren't drawn, for speed. GBA only. Not in netplay.",
 	  NULL, "video", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "enabled" },
 	{ "armgba_fast_flash_saves", "Fast Flash Saves", NULL,
-	  "Skips the timeout timer that Pokemon Ruby, Sapphire, FireRed, LeafGreen and Emerald start for every byte they save, so saving doesn't slow the game. The save is the same. From the next time the game is loaded.",
+	  "Skips the timeout timer Nintendo's flash save code starts for every byte saved, in games that use it, Pokemon Ruby, Sapphire, FireRed, LeafGreen and Emerald among them, so saving doesn't slow the game. The save is the same. From the next time the game is loaded. Every netplay player needs the same setting.",
 	  NULL, "saves", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
 	{ "armgba_lcd_effects", "LCD Effects", NULL,
 	  "Turns the effects below on or off together. Each one keeps its setting.",
@@ -330,7 +330,8 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "The console's output, through its speaker or its headphone jack: the bit depth it has at the rate "
 	  "each game picks (9 bits at the usual 32 kHz, down to 6 at 262 kHz), and the capacitor that keeps it "
 	  "centered, which takes the bass under about 200 Hz from the speaker, 70 Hz from headphones. Game "
-	  "Boy games on a Game Boy Advance get its capacitor too. Off keeps every bit and all the bass.",
+	  "Boy games on a Game Boy Advance get its capacitor too. Off keeps every bit and all the bass; in "
+	  "netplay, every player has the console's bit depth, so their states match.",
 	  NULL, "audio", { { "speaker", "Speaker" }, { "headphones", "Headphones" }, { "disabled", "Off" }, { NULL, NULL } }, "speaker" },
 	{ "armgba_gb_audio_filter", "Game Boy Audio Filter", NULL,
 	  "The capacitor a Game Boy's sound leaves through, which keeps it centered. Accurate is each "
