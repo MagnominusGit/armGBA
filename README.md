@@ -689,17 +689,17 @@ RAM by its program) and goes on to the game's. As on the cartridge:
   cartridges' in-game menu, with its SnapShot and Restore of the game;
 - Action Replay Switch is the cartridge's switch. On, it shows its menu at power on and its codes work
   in the game. Off, the game runs alone, with the codes the menu wrote before starting it, and doesn't
-  show the menu at power on; the button still opens the in-game menu. Pokemon games need it off to
-  start: their menus say so when one is found, as the hook delays their VBlank handler past the
-  lines where it copies graphics, and they wait for those copies (Crystal stays black before its
-  copyright screen, as reported on the real cartridge). The Action Replay Xtreme Special Edition
-  for Pokemon Crystal takes care of the copies it makes on changing map, so its codes work once
-  the switch goes back on in the game; switched on earlier (in the intro or New Game) it still
-  freezes;
+  show the menu at power on; the button still opens the in-game menu. Some games need it off to
+  start: the menu says so when one is found, as the hook delays their VBlank handler past the
+  lines where it copies graphics, and they wait for those copies (one stays black before its
+  copyright screen, as reported on the real cartridge). A special edition of the Action Replay made
+  for one of those games takes care of the copies that game makes on changing map, so its codes
+  work once the switch goes back on in the game; switched on earlier (in the intro or New Game) it
+  still freezes;
 - the later cartridges' flash chip, and the Pro Action Replay's battery-backed RAM, are kept in the
   Action Replay's save file; states keep the rest, in either state format. The Pro Action Replay's
   RAM shows over the game's own save RAM at B000-BFFF while its switch is on, so a game that saves
-  there (Pokemon Red and Blue do) keeps that part of its save only with the switch off.
+  there keeps that part of its save only with the switch off.
 
 Import Cheats from RetroArch adds the GameShark cheats RetroArch's cheat database has for the game
 on top, those the cartridge doesn't have yet (alike by their codes), switched off; then the console
