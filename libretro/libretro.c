@@ -477,7 +477,7 @@ unsigned retro_api_version(void) {
 void retro_get_system_info(struct retro_system_info* info) {
 	memset(info, 0, sizeof(*info));
 	info->library_name = "armGBA";
-	info->library_version = "1.8";
+	info->library_version = "1.8.1";
 	info->valid_extensions = "gba|bin|gb|gbc|gb2|gba2|duck|md0|md1|md2|md20s|md25s";
 	info->need_fullpath = false;
 	info->block_extract = false;
