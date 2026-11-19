@@ -1043,6 +1043,9 @@ void timerCatchUp(struct GBA*, uint32_t time, bool inclusive);
 // After a change to what overflows do, runs the quiet overflows due by now and turns the rest back
 // into events.
 void timerReplan(struct GBA*, uint32_t time);
+// Whether a timer's interrupt requests change nothing, IE leaving them out and IF showing them, so
+// its overflows can be quiet.
+bool timerIrqSettled(struct GBA*, int id);
 // Whether a timer event can run at the end of the instruction it falls in, because it starts no
 // DMA.
 bool timerDeferrable(struct GBA*, const struct Event*);

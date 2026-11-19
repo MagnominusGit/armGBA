@@ -535,12 +535,20 @@ void gbaIrqQuietChanged(struct GBA* gba, bool wasQuiet) {
 	irq->ifStable = timingCpuTime(gba) + INT32_MAX;
 }
 
+// IE and IF bits of the four timers' interrupts.
+#define TIMER_IRQS (0xF << IRQ_TIMER0)
+
 // The three interrupt registers. Each write goes through the pipeline's first stage one cycle
 // later.
 void gbaWriteIe(struct GBA* gba, uint16_t value) {
 	gbaIrqSync(gba);
 	bool wasQuiet = gbaQuietHblank(gba);
 	uint16_t old = gba->irq.ie;
+	if ((old ^ value) & TIMER_IRQS) {
+		// A timer's requests that IE left out may now be heard, or the other way round: its overflows
+		// are planned again.
+		timerReplan(gba, timingCurrentTime(gba));
+	}
 	gba->irq.ie = value & 0x3FFF;
 	scheduleChange(gba, gba->irq.apply, false, 1, 0);
 	if ((old ^ gba->irq.ie) & (1 << IRQ_HBLANK)) {
@@ -553,6 +561,10 @@ void gbaWriteIe(struct GBA* gba, uint16_t value) {
 // Writing a 1 to an IF bit acknowledges that interrupt.
 void gbaWriteIf(struct GBA* gba, uint16_t value) {
 	gbaIrqSync(gba);
+	if (value & gba->irq.iflags & TIMER_IRQS) {
+		// An acknowledged timer's next request sets its bit again, so its overflows are events again.
+		timerReplan(gba, timingCurrentTime(gba));
+	}
 	gba->irq.iflags &= ~value;
 	scheduleChange(gba, gba->irq.apply, false, 1, 0);
 	if ((value & (1 << IRQ_HBLANK)) && gbaQuietHblank(gba)) {
