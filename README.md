@@ -362,7 +362,7 @@ Select on a controller without one):
 
 | Hotkey + | Does |
 | --- | --- |
-| Start (pressed twice) | Quit |
+| Start, twice (the second held a second) | Quit |
 | A | Pause |
 | R, L | Save, load a state |
 | R2 | Fast-forward on or off |
@@ -370,6 +370,9 @@ Select on a controller without one):
 | X | Menu |
 | Y | Show the frame rate |
 | B | Screenshot, as many RetroArch setups have it |
+
+Controls' Quit Twice and Quit Hold change how Quit works. The game still gets a quick Hotkey + Start,
+for games that use Select + Start.
 
 While the game is paused, fast-forwarding or rewinding, a symbol shows at the top right.
 
