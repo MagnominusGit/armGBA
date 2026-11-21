@@ -2604,6 +2604,9 @@ static struct {
 
 void renderSetHd(struct GBA* gba, int scale) {
 	if (scale < 2 || !gba) {
+		// Turned off, its frame goes: up to 4.9 MB at 8x.
+		free(hd.frame);
+		hd.frame = NULL;
 		hd.gba = NULL;
 		hd.scale = 1;
 		return;

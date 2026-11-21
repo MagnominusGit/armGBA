@@ -243,11 +243,11 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
 	{ "armgba_hd_affine", "HD Affine Backgrounds", NULL,
 	  "Draws the backgrounds that rotate and scale (racing tracks, world maps, floors in perspective) at 2 to 8 times the "
-	  "resolution, with the rest of the picture scaled up, as bsnes's HD Mode 7 does. Ultra is for a fast computer: a "
-	  "picture up to 1920x1280. Only the picture changes. Costs speed. Not with Threaded Video or linked consoles.",
+	  "resolution, with the rest of the picture scaled up, as bsnes's HD Mode 7 does. Only the picture changes. Costs speed: "
+	  "5x and above need a fast computer (8x is a 1920x1280 picture). Not with Threaded Video or linked consoles.",
 	  NULL, "video",
-	  { { "disabled", "Off" }, { "2", "2x" }, { "3", "3x" }, { "4", "4x" }, { "5", "Ultra 5x" }, { "6", "Ultra 6x" }, { "7", "Ultra 7x" },
-	    { "8", "Ultra 8x" }, { NULL, NULL } },
+	  { { "disabled", "Off" }, { "2", "2x" }, { "3", "3x" }, { "4", "4x" }, { "5", "5x" }, { "6", "6x" }, { "7", "7x" }, { "8", "8x" },
+	    { NULL, NULL } },
 	  "disabled" },
 	{ "armgba_gb_color_correction", "Game Boy Color Correction", NULL,
 	  "Colors as the Game Boy Color's screen showed them.", NULL, "video",

@@ -4937,6 +4937,8 @@ static void syncHd(void) {
 		renderSetHd(gba, wanted);
 	} else if (wanted == 1 && hdDrawn > 1) {
 		renderSetHd(gba, 1);
+		free(correctedHd);
+		correctedHd = NULL;
 	}
 	int const drawn = wanted > 1 && renderHdFrame(gba, &scale) ? scale : 1;
 	if (drawn != hdDrawn) {
