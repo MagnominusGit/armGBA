@@ -2919,10 +2919,9 @@ static void printStats(const struct Jit* jit) {
 }
 
 #if !defined(__3DS__)
-// An eighth of the RAM the system reports, in whole MiB, from CODE_SIZE_MIN to CODE_SIZE: 16 MiB as
-// before on a Miyoo Mini (128 MB, less what Linux keeps), where Payback filling more could leave
-// too little for the rest, and the most from 256 MB (32-bit) or 1 GB (64-bit) up. Nothing is in
-// memory until a game fills it.
+// An eighth of the RAM the system reports, in whole MiB, from CODE_SIZE_MIN to CODE_SIZE: 16 MiB on
+// a Miyoo Mini (128 MB, less what Linux keeps), where a game filling more could leave too little
+// for the rest, and 32 MiB from 256 MB up. Nothing is in memory until a game fills it.
 static size_t codeSizeFor(void) {
 	long const pages = sysconf(_SC_PHYS_PAGES);
 	long const pageSize = sysconf(_SC_PAGESIZE);
