@@ -30,6 +30,9 @@ enum {
 
 static bool compileInStretch(struct Jit*, struct Block*, struct Inst* insts, int count, const uint32_t* nextOps);
 
+// Stretches are laid out in whole slots, which jit.c reclaims when the code memory is full.
+_Static_assert((int) STRETCH == (int) JIT_SLOT, "a stretch is a slot");
+
 enum {
 	// When one part of a stretch is full and the other has at least this much room, that room is
 	// laid out as a smaller stretch of its own rather than left: a fixed split wasted about 40% of
@@ -69,6 +72,7 @@ static bool addMark(struct Jit* jit, uint8_t* start, uint8_t* hotEnd) {
 
 // Lays out [base, end) as a stretch: block bodies fill its first part and cold code its second.
 static void layStretch(struct Jit* jit, uint8_t* base, uint8_t* end, size_t hot) {
+	jit->currentSlot = (int) ((size_t) (base - jit->codeStart) / JIT_SLOT);
 	jit->codeNext = base;
 	jit->hotEnd = base + hot;
 	jit->coldNext = jit->hotEnd;
@@ -82,17 +86,44 @@ static void leave(struct Jit* jit) {
 	}
 }
 
-// A new stretch from the code memory no stretch has taken. Fails if there is none.
-static bool freshStretch(struct Jit* jit) {
-	if (jit->codeEnd - jit->freshNext < STRETCH || jit->markCount + 1 > jit->markCap) {
-		return false;
+// Forgets the marks of a slot being laid out again.
+static void dropMarks(struct Jit* jit, const uint8_t* start, const uint8_t* end) {
+	int kept = 0;
+	for (int i = 0; i < jit->markCount; ++i) {
+		if (jit->marks[i].start < start || jit->marks[i].start >= end) {
+			jit->marks[kept++] = jit->marks[i];
+		}
 	}
-	uint8_t* const base = jit->freshNext;
+	jit->markCount = kept;
+}
+
+// A new stretch from the code memory no stretch has taken, or once all of it has been, from the
+// slot jit.c reclaims. Fails if there is neither.
+static bool freshStretch(struct Jit* jit) {
+	uint8_t* base;
+	bool const fresh = jit->codeEnd - jit->freshNext >= STRETCH;
+	if (fresh) {
+		if (jit->markCount + 1 > jit->markCap) {
+			return false;
+		}
+		base = jit->freshNext;
+	} else {
+		base = jitReclaimSlot(jit);
+		if (!base) {
+			return false;
+		}
+		dropMarks(jit, base, base + STRETCH);
+		if (jit->markCount + 1 > jit->markCap) {
+			return false;
+		}
+	}
 	size_t const hot = hotShare(jit, STRETCH, HOT_PART_MIN, HOT_PART_MAX);
 	leave(jit);
 	addMark(jit, base, base + hot);
 	layStretch(jit, base, base + STRETCH, hot);
-	jit->freshNext = base + STRETCH;
+	if (fresh) {
+		jit->freshNext = base + STRETCH;
+	}
 	return true;
 }
 
@@ -162,6 +193,7 @@ bool backendCompile(struct Jit* jit, struct Block* block, struct Inst* insts, in
 	}
 	jit->hotBytes += (uint64_t) (jit->codeNext - jit->hotMark);
 	jit->coldBytes += (uint64_t) (jit->coldNext - jit->coldMark);
+	block->codeBytes = (uint32_t) ((jit->codeNext - jit->hotMark) + (jit->coldNext - jit->coldMark));
 	if (block->careful) {
 		++jit->carefulCompiles;
 		jit->carefulBytes += (uint64_t) (jit->coldNext - jit->coldMark);

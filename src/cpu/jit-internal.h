@@ -14,6 +14,8 @@
 
 enum {
 	MAX_BLOCK_INSTS = 64,
+	// The code memory's stretches come from it in slots of this size (jit-layout.h's STRETCH)
+	JIT_SLOT = 1 << 20,
 	LOOKUP_BITS = 16,
 	LOOKUP_SIZE = 1 << LOOKUP_BITS,
 	// The code memory: an eighth of the device's RAM (jit.c: codeSizeFor), from CODE_SIZE_MIN, what
@@ -182,6 +184,7 @@ struct Block {
 	// The hash chain, and the list of every block
 	struct Block* hashNext;
 	struct Block* allNext;
+	struct Block* allPrev;
 	// Blocks from RAM keep a copy of their code, so they can come back when that code is copied in
 	// again.
 	uint8_t* bytes;
@@ -196,6 +199,12 @@ struct Block {
 	bool idleHead;
 	// On the list of live cartridge blocks that a wait-state change goes through.
 	bool listed;
+	// The bytes of code it took, body and cold code, for choosing a slot to reclaim
+	uint32_t codeBytes;
+	// A careful copy's block, for as long as that block keeps it
+	struct Block* parent;
+	// Going away with a slot of the code memory being reclaimed
+	bool evicting;
 };
 
 // The memories code can run from. Blocks are kept per kind.
@@ -345,10 +354,39 @@ struct Jit {
 		uint8_t wait;
 		uint8_t fails;
 	} idleSeen[256];
-	// Blocks in the order their code was emitted, to find the block a return address is in.
-	struct Block** ranges;
-	size_t rangeCount;
-	size_t rangeCap;
+	// The code memory in slots of JIT_SLOT bytes from codeStart, each the stretches jit-layout.h
+	// lays out in it: the unit a full code memory reclaims (jitReclaimSlot). In each, its blocks in
+	// the order of their bodies, and those with cold code in its order, to find the block a return
+	// address is in.
+	struct CodeSlot {
+		struct Block** hot;
+		size_t hotCount;
+		size_t hotCap;
+		struct Block** cold;
+		size_t coldCount;
+		size_t coldCap;
+		// Bytes of the code of its blocks still in use
+		uint64_t live;
+	}* slots;
+	int slotCount;
+	// The slot the stretch being filled is in, and the block whose careful copy is being compiled,
+	// whose slot isn't reclaimed under it.
+	int currentSlot;
+	const struct Block* pinned;
+	// For a slot being reclaimed: its blocks, and the pages they were listed on
+	struct Block** evicted;
+	int evictedCount;
+	int evictedCap;
+	uint32_t* evictPages;
+	int evictPageCount;
+	int evictPageCap;
+	// Bumped whenever compiled code goes away (a flush or a reclaimed slot), so the run loop knows
+	// what it held on to may be gone.
+	uint64_t codeEpoch;
+	uint64_t reclaims;
+	// Bytes of compiled code in use, and the most there has been (ARMGBA_STATS)
+	uint64_t liveBytes;
+	uint64_t peakLiveBytes;
 	// Sites found from their return addresses, valid until a flush reuses the code memory.
 	struct SiteCacheEntry siteCache[SITE_CACHE_SIZE];
 	struct FormSet formSets[FORM_SETS];
@@ -363,9 +401,6 @@ struct Jit {
 	uint8_t* hotEnd;
 	uint8_t* coldNext;
 	uint8_t* coldEnd;
-	struct Block** coldRanges;
-	size_t coldRangeCount;
-	size_t coldRangeCap;
 	struct LookupEntry* lookup;
 	struct Block* hash[BLOCK_HASH_SIZE];
 	struct Block* dormant[BLOCK_HASH_SIZE];
@@ -550,6 +585,10 @@ void backendPatchJump(uint8_t* site, const void* target);
 void backendReset(struct Jit*);
 // Whether the address is in the part of the code memory kept for cold code.
 bool backendColdSide(const struct Jit*, const uint8_t* p);
+// For jit-layout.h when the code memory is full: empties the slot whose compiled code is least in
+// use and returns it, or NULL when none can go (then the caller flushes). Only called while
+// compiling, when no compiled code is running.
+uint8_t* jitReclaimSlot(struct Jit*);
 
 bool jitStepOnly(const struct Inst*);
 // Writes the CPSR; compiled as a call to jitHelperSystem.
