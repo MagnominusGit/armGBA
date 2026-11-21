@@ -244,7 +244,8 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_hd_affine", "HD Affine Backgrounds", NULL,
 	  "Draws the backgrounds that rotate and scale (racing tracks, world maps, floors in perspective) at 2 to 8 times the "
 	  "resolution, with the rest of the picture scaled up, as bsnes's HD Mode 7 does. Only the picture changes. Costs speed: "
-	  "5x and above need a fast computer (8x is a 1920x1280 picture). Not with Threaded Video or linked consoles.",
+	  "5x and above need a fast computer (8x is a 1920x1280 picture). In RetroArch, above 4x (2x on 32-bit ARM) takes effect "
+	  "the next time the game is started. Not with Threaded Video or linked consoles, and hidden while LCD Scale is on.",
 	  NULL, "video",
 	  { { "disabled", "Off" }, { "2", "2x" }, { "3", "3x" }, { "4", "4x" }, { "5", "5x" }, { "6", "6x" }, { "7", "7x" }, { "8", "8x" },
 	    { NULL, NULL } },
@@ -295,7 +296,8 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "The Color's and Advance's screens update every other row each frame. With LCD Ghosting, updated rows fade faster.",
 	  NULL, "video_lcd", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
 	{ "armgba_lcd_grid", "LCD Scale", NULL,
-	  "Draws the picture larger, with room for Pixel Gaps, LCD Subpixels and the pixel shadow. Fit Screen draws it at the screen's own size.",
+	  "Draws the picture larger, with room for Pixel Gaps, LCD Subpixels and the pixel shadow. Fit Screen draws it at the screen's own size. "
+	  "Turns HD Affine Backgrounds off and hides it. In RetroArch, a picture above 4x (2x on 32-bit ARM) takes effect the next time the game is started.",
 	  NULL, "video_lcd",
 	  { { "disabled", "Off" }, { "fit", "Fit Screen" }, { "2", "2x" }, { "2.5", "2.5x" }, { "3", "3x" }, { "3.5", "3.5x" }, { "4", "4x" }, { "4.5", "4.5x" },
 	    { "5", "5x" }, { "5.5", "5.5x" }, { "6", "6x" }, { "6.5", "6.5x" }, { "7", "7x" }, { "7.5", "7.5x" }, { "8", "8x" }, { NULL, NULL } },
@@ -632,7 +634,8 @@ bool showOptions(void) {
 		{ "armgba_lcd_shadow", scaled && libretroLcdShadow() },
 		{ "armgba_lcd_shadow_distance", scaled && libretroLcdShadow() && !optionIs("armgba_lcd_shadow", "off") },
 		{ "armgba_color_correction", !gameBoy },
-		{ "armgba_hd_affine", !gameBoy },
+		// LCD Scale turns HD off, so while it's on HD isn't shown, and comes back as it was.
+		{ "armgba_hd_affine", !gameBoy && !scaled },
 		{ "armgba_solar_sensor", !gameBoy && (!advance || devices & HW_LIGHT_SENSOR) },
 		{ "armgba_gb_tilt", (!gameBoy && !advance) || devices & (HW_TILT | HW_GYRO) || (gameBoy && tiltCartridge) },
 		{ "armgba_motion_rotation", ((!gameBoy && !advance) || devices & HW_TILT || (gameBoy && tiltCartridge)) && optionIs("armgba_gb_tilt", "device") },

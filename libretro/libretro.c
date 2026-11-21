@@ -107,13 +107,25 @@ static uint16_t correctedFrame[SCREEN_WIDTH * SCREEN_HEIGHT];
 // HD Affine Backgrounds: the scale chosen (1: off), the one the machine draws at, and the corrected
 // colors of its frame.
 static int hdChosen = 1, hdDrawn = 1;
-// The largest HD scale the picture size told to the frontend has room for. Telling a larger picture
-// later makes RetroArch build its video again, which the compositor of ROCKNIX's handhelds refuses
-// mid-game (RetroArch quits), and as geometry alone, threaded video crops it. So the room is told when
-// the game is loaded, for the scale chosen then (at least 2x, which the linked screens' room holds):
-// room for 8x costs RetroArch about 50 MB even with HD off, which a low-end handheld can't spare. A
-// larger scale chosen during a game waits for the game to be loaded again.
-static int hdRoom = 2;
+// The picture's room: the largest size told to the frontend, set when the game is loaded (0 until
+// then). Telling a larger picture later makes RetroArch build its video again, which the compositor of
+// ROCKNIX's handhelds refuses mid-game (RetroArch quits). So the room has space for 4x (960x640, which
+// costs RetroArch about 12-15 MB more than the 2x the linked screens need; 8x would cost 50), or 2x
+// on 32-bit ARM, whose devices are short of memory and too slow for more; or more for the HD or LCD
+// Scale chosen when the game is loaded. A larger scale chosen during a game is drawn as large as fits,
+// and the rest waits for the game to be started again. The standalone app takes any size as it comes
+// (libretroAnySize).
+#if defined(__arm__)
+#define ROOM_SCALE 2
+#else
+#define ROOM_SCALE 4
+#endif
+static unsigned roomWidth, roomHeight;
+// LCD Scale as chosen: in halves (2: off), Fit Screen, and the size Fit Screen fits. gridHalves,
+// gridFit and gridFitWidth and gridFitHeight are as drawn, which fits the room.
+static int gridChosen = 2;
+static bool fitChosen;
+static unsigned fitChosenWidth = 1280, fitChosenHeight = 720;
 static uint16_t* correctedHd;
 // Whether RetroArch is to hear of a new picture size, as LCD Grid's scale changed.
 static bool gridAnnounce;
@@ -506,15 +518,13 @@ static void keepLargest(struct retro_game_geometry* geometry) {
 	geometry->max_height = largestHeight;
 }
 
-// The picture size: 240x160, or 160x144 for a Game Boy game, or the linked consoles' screens. On the Game
-// Boy Advance model, a Game Boy game is 240x160 with the border shown, or 160x144 cropped (240x144
-// when stretched). Its largest is as told, which geometry() keeps.
-static void pictureSize(struct retro_game_geometry* geometry) {
+// The picture size: 240x160, or 160x144 for a Game Boy game, or the linked consoles' screens, at HD
+// scale hd and LCD Scale's halves (or Fit Screen), and how many times larger than the console's it is
+// by LCD Scale (shown). On the Game Boy Advance model, a Game Boy game is 240x160 with the border shown,
+// or 160x144 cropped (240x144 when stretched).
+static void sizeFor(struct retro_game_geometry* geometry, int hd, int halves, bool fit, float* shown) {
 	geometry->base_width = SCREEN_WIDTH;
 	geometry->base_height = SCREEN_HEIGHT;
-	// Room for two by two consoles' screens, which a Restart can bring in.
-	geometry->max_width = SCREEN_WIDTH * 2;
-	geometry->max_height = SCREEN_HEIGHT * 2;
 	geometry->aspect_ratio = 3.0f / 2.0f;
 	if (gameBoy && !gbOnAdvance) {
 		geometry->base_width = LIBRETRO_GB_WIDTH;
@@ -534,59 +544,135 @@ static void pictureSize(struct retro_game_geometry* geometry) {
 		geometry->base_width = SCREEN_WIDTH;
 		geometry->base_height = SCREEN_HEIGHT;
 	}
-	if (!gameBoy) {
-		geometry->max_width = geometry->max_width > SCREEN_WIDTH * (unsigned) hdRoom ? geometry->max_width : SCREEN_WIDTH * (unsigned) hdRoom;
-		geometry->max_height = geometry->max_height > SCREEN_HEIGHT * (unsigned) hdRoom ? geometry->max_height : SCREEN_HEIGHT * (unsigned) hdRoom;
-	}
-	if (hdDrawn > 1) {
-		geometry->base_width *= (unsigned) hdDrawn;
-		geometry->base_height *= (unsigned) hdDrawn;
-		geometry->max_width = geometry->max_width > geometry->base_width ? geometry->max_width : geometry->base_width;
-		geometry->max_height = geometry->max_height > geometry->base_height ? geometry->max_height : geometry->base_height;
+	if (hd > 1) {
+		geometry->base_width *= (unsigned) hd;
+		geometry->base_height *= (unsigned) hd;
 	}
 	if (togetherRunning()) {
-		int const shown = screens;
-		bool const grid = playersHere > 2 && shown < SCREENS_ONE;
-		geometry->base_width *= shown == SCREENS_SIDE || grid ? 2 : 1;
-		geometry->base_height *= shown == SCREENS_STACKED || grid ? 2 : 1;
+		int const layout = screens;
+		bool const grid = playersHere > 2 && layout < SCREENS_ONE;
+		geometry->base_width *= layout == SCREENS_SIDE || grid ? 2 : 1;
+		geometry->base_height *= layout == SCREENS_STACKED || grid ? 2 : 1;
 		geometry->aspect_ratio = (float) geometry->base_width / geometry->base_height;
 	}
-	// Fit Screen's picture, as large as fits the screen, and never larger than it unless the picture
-	// is.
-	if (gridFit) {
+	if (fit) {
+		// Fit Screen's picture, as large as fits the screen, and never larger than it unless the
+		// picture is.
 		unsigned w, h;
 		libretroLcdFitSize(geometry->base_width, geometry->base_height, &w, &h);
-		libretroLcdShownScale = (float) w / geometry->base_width;
+		*shown = (float) w / geometry->base_width;
 		geometry->base_width = w;
 		geometry->base_height = h;
-		geometry->max_width = geometry->max_width > gridFitWidth ? geometry->max_width : gridFitWidth;
-		geometry->max_height = geometry->max_height > gridFitHeight ? geometry->max_height : gridFitHeight;
-		return;
+	} else {
+		// The LCD Grid's larger picture.
+		*shown = halves / 2.0f;
+		geometry->base_width = geometry->base_width * (unsigned) halves / 2;
+		geometry->base_height = geometry->base_height * (unsigned) halves / 2;
 	}
-	// The LCD Grid's larger picture.
-	libretroLcdShownScale = gridHalves / 2.0f;
-	geometry->base_width = geometry->base_width * (unsigned) gridHalves / 2;
-	geometry->base_height = geometry->base_height * (unsigned) gridHalves / 2;
-	geometry->max_width = geometry->max_width * (unsigned) gridHalves / 2;
-	geometry->max_height = geometry->max_height * (unsigned) gridHalves / 2;
+	geometry->max_width = geometry->base_width;
+	geometry->max_height = geometry->base_height;
 }
 
+// The picture as drawn.
+static void pictureSize(struct retro_game_geometry* geometry) {
+	sizeFor(geometry, hdDrawn, gridHalves, gridFit, &libretroLcdShownScale);
+}
+
+// LCD Scale and HD don't go together: LCD Scale's grid is around the console's pixels, which HD
+// splits, so LCD Scale turns HD off.
+static bool lcdScaled(void) {
+	return gridChosen > 2 || fitChosen;
+}
+
+// Whether a picture at these scales fits the room, or the frontend takes any size. Before the game is
+// loaded no room has been told, and anything fits.
+static bool fitsRoom(int hd, int halves, bool fit) {
+	if (libretroAnySize || !roomWidth) {
+		return true;
+	}
+	struct retro_game_geometry size;
+	float shown;
+	sizeFor(&size, hd, halves, fit, &shown);
+	return size.base_width <= roomWidth && size.base_height <= roomHeight;
+}
+
+// The room, when the game is loaded: for 4x (2x on 32-bit ARM), and for the scales chosen then, with
+// every layout of the linked screens.
+static void setRoom(void) {
+	unsigned width = SCREEN_WIDTH * ROOM_SCALE, height = SCREEN_HEIGHT * ROOM_SCALE;
+	gridHalves = gridChosen;
+	gridFit = fitChosen;
+	gridFitWidth = fitChosenWidth;
+	gridFitHeight = fitChosenHeight;
+	struct retro_game_geometry size;
+	float shown;
+	sizeFor(&size, !gameBoy && !lcdScaled() ? hdChosen : 1, gridChosen, fitChosen, &shown);
+	unsigned wide = size.base_width, high = size.base_height;
+	if (fitChosen) {
+		wide = wide > fitChosenWidth ? wide : fitChosenWidth;
+		high = high > fitChosenHeight ? high : fitChosenHeight;
+	} else if (togetherRunning()) {
+		wide = wide > SCREEN_WIDTH * (unsigned) gridChosen ? wide : SCREEN_WIDTH * (unsigned) gridChosen;
+		high = high > SCREEN_HEIGHT * (unsigned) gridChosen ? high : SCREEN_HEIGHT * (unsigned) gridChosen;
+	}
+	roomWidth = width > wide ? width : wide;
+	roomHeight = height > high ? height : high;
+}
+
+// LCD Scale as drawn: as chosen, or as large as fits the room, with a message.
+static void pickLcdScale(void) {
+	gridFit = fitChosen;
+	gridFitWidth = fitChosenWidth;
+	gridFitHeight = fitChosenHeight;
+	if (roomWidth && !libretroAnySize) {
+		gridFitWidth = gridFitWidth < roomWidth ? gridFitWidth : roomWidth;
+		gridFitHeight = gridFitHeight < roomHeight ? gridFitHeight : roomHeight;
+	}
+	int halves = gridChosen;
+	while (halves > 2 && !fitsRoom(1, halves, false)) {
+		--halves;
+	}
+	gridHalves = halves;
+	bool const smaller = fitChosen ? gridFitWidth < fitChosenWidth || gridFitHeight < fitChosenHeight : gridHalves < gridChosen;
+	static int toldHalves;
+	static bool toldFit;
+	if (!smaller) {
+		toldHalves = 0;
+		toldFit = false;
+	} else if (toldHalves != gridChosen || toldFit != fitChosen) {
+		toldHalves = gridChosen;
+		toldFit = fitChosen;
+		char message[112];
+		if (fitChosen) {
+			snprintf(message, sizeof(message), "LCD Scale Fit Screen: full size from the next time the game is started");
+		} else {
+			snprintf(message, sizeof(message), "LCD Scale %d%sx: from the next time the game is started (%d%sx until then)",
+				gridChosen / 2, gridChosen % 2 ? ".5" : "", gridHalves / 2, gridHalves % 2 ? ".5" : "");
+		}
+		notify(message, 300);
+	}
+}
+
+// The picture with its room: told when the game is loaded, and never smaller after (see keepLargest).
 static void geometry(struct retro_game_geometry* geometry) {
 	pictureSize(geometry);
+	geometry->max_width = geometry->max_width > roomWidth ? geometry->max_width : roomWidth;
+	geometry->max_height = geometry->max_height > roomHeight ? geometry->max_height : roomHeight;
 	keepLargest(geometry);
 }
 
-// Whether the picture fits the room told to the frontend, or the frontend takes any size. Before the
-// game is loaded nothing has been told, and anything fits.
-static bool pictureFits(void) {
-	struct retro_game_geometry size;
-	pictureSize(&size);
-	return libretroAnySize || !largestWidth || (size.max_width <= largestWidth && size.max_height <= largestHeight);
-}
+// A new picture size, as LCD Scale and HD fit it. One larger than the largest told before needs a new AV
+// info (the standalone app's, which takes any size): RetroArch's threaded video crops to that largest
+// size otherwise. A frontend without one gets the geometry.
+static bool settleHd(void);
 
-// A picture larger than the largest told before needs a new AV info: RetroArch's threaded video crops
-// to that largest size otherwise. A frontend without one gets the geometry.
 static void announceGeometry(void) {
+	pickLcdScale();
+	// HD as it will be drawn: a change that turns it off (LCD Scale, linked consoles) is told with
+	// HD's larger picture otherwise, larger than the room.
+	if (gba) {
+		settleHd();
+	}
 	unsigned const toldWidth = largestWidth, toldHeight = largestHeight;
 	struct retro_system_av_info av = { .timing = { .fps = FRAME_RATE, .sample_rate = AUDIO_RATE } };
 	geometry(&av.geometry);
@@ -600,6 +686,9 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
 	memset(info, 0, sizeof(*info));
 	gridAnnounce = false;
 	gbOnAdvance = gameBoy && !gbTogether && libretroGbOnAdvance();
+	if (!roomWidth) {
+		setRoom();
+	}
 	geometry(&info->geometry);
 	// A Game Boy frame lasts as long as a Game Boy Advance frame.
 	info->timing.fps = FRAME_RATE;
@@ -934,45 +1023,17 @@ static void readOptions(void) {
 	};
 	int const grid = effects ? optionChoice("armgba_lcd_grid", gridChoices, COUNT(gridChoices), 2) : 2;
 	bool const fitting = effects && optionIs("armgba_lcd_grid", "fit");
-	unsigned fitWidth = gridFitWidth, fitHeight = gridFitHeight;
+	unsigned fitWidth = fitChosenWidth, fitHeight = fitChosenHeight;
 	if (fitting) {
 		readScreenSize(&fitWidth, &fitHeight);
 	}
-	if (grid != gridHalves || fitting != gridFit || fitWidth != gridFitWidth || fitHeight != gridFitHeight) {
-		int const wasHalves = gridHalves;
-		bool const wasFit = gridFit;
-		unsigned const wasWidth = gridFitWidth, wasHeight = gridFitHeight;
-		gridHalves = grid;
-		gridFit = fitting;
-		gridFitWidth = fitWidth;
-		gridFitHeight = fitHeight;
-		// A picture larger than the room told waits for the game to be started again (see
-		// libretroAnySize), as the scale it was until then.
-		static int toldHalves;
-		static bool toldFit;
-		if (pictureFits()) {
-			gridAnnounce = true;
-			toldHalves = 0;
-			toldFit = false;
-		} else {
-			if (toldHalves != grid || toldFit != fitting) {
-				toldHalves = grid;
-				toldFit = fitting;
-				char message[96];
-				if (fitting) {
-					snprintf(message, sizeof(message), "LCD Scale Fit Screen: from the next time the game is started");
-				} else {
-					snprintf(message, sizeof(message), "LCD Scale %d%sx: from the next time the game is started", grid / 2, grid % 2 ? ".5" : "");
-				}
-				notify(message, 300);
-			}
-			gridHalves = wasHalves;
-			gridFit = wasFit;
-			gridFitWidth = wasWidth;
-			gridFitHeight = wasHeight;
-			// Its shown scale as it was
-			pictureFits();
-		}
+	if (grid != gridChosen || fitting != fitChosen || fitWidth != fitChosenWidth || fitHeight != fitChosenHeight) {
+		gridChosen = grid;
+		fitChosen = fitting;
+		fitChosenWidth = fitWidth;
+		fitChosenHeight = fitHeight;
+		pickLcdScale();
+		gridAnnounce = true;
 	}
 	static const struct Choice wayChoices[] = {
 		{ "up", 1 }, { "up right", 2 }, { "right", 3 }, { "down right", 4 }, { "down", 5 }, { "down left", 6 }, { "left", 7 }, { "up left", 8 },
@@ -3438,7 +3499,6 @@ static bool loadAdvance(const struct retro_game_info* game, const struct retro_g
 	threadedVideo = 0;
 	threadedAudio = false;
 	readOptions();
-	hdRoom = hdChosen > 2 ? hdChosen : 2;
 	readClockOptions(false);
 	cartridgeOut = false;
 	applyCartridge();
@@ -3653,6 +3713,7 @@ void retro_unload_game(void) {
 	ereaderForget();
 	printoutFinish();
 	largestWidth = largestHeight = 0;
+	roomWidth = roomHeight = 0;
 	pairFile = false;
 	secondFromFrontend = false;
 	secondPath[0] = '\0';
@@ -4988,18 +5049,34 @@ static void sendOneAdvanceSound(void) {
 }
 
 // HD Affine Backgrounds as chosen, where they can be drawn: one GBA, drawn on this thread.
-static void syncHd(void) {
-	int wanted = !gameBoy && !togetherRunning() && !threadedVideo && gba ? hdChosen : 1;
-	// More than the room told: as much as fits, and the rest when the game is loaded again.
+// HD as drawn: as chosen, off while LCD Scale or linked consoles are on, or as large as fits the room,
+// with a message. Returns whether the scale drawn changed.
+static bool settleHd(void) {
+	bool const allowed = !gameBoy && !togetherRunning() && !threadedVideo && gba;
+	int wanted = allowed && !lcdScaled() ? hdChosen : 1;
+	static bool toldLcd;
+	if (allowed && hdChosen > 1 && lcdScaled()) {
+		if (!toldLcd) {
+			toldLcd = true;
+			notify("HD Affine Backgrounds: off while LCD Scale is on", 300);
+		}
+	} else {
+		toldLcd = false;
+	}
+	// More than fits the room: as much as fits, and the rest when the game is loaded again.
+	int fits = wanted;
+	while (fits > 1 && !fitsRoom(fits, gridHalves, gridFit)) {
+		--fits;
+	}
 	static int toldWaiting;
-	if (wanted > hdRoom && !libretroAnySize) {
+	if (fits < wanted) {
 		if (toldWaiting != wanted) {
 			toldWaiting = wanted;
-			char message[96];
-			snprintf(message, sizeof(message), "HD Affine Backgrounds %dx: from the next time the game is started (%dx until then)", wanted, hdRoom);
+			char message[112];
+			snprintf(message, sizeof(message), "HD Affine Backgrounds %dx: from the next time the game is started (%dx until then)", wanted, fits);
 			notify(message, 300);
 		}
-		wanted = hdRoom;
+		wanted = fits;
 	} else {
 		toldWaiting = 0;
 	}
@@ -5013,8 +5090,15 @@ static void syncHd(void) {
 		correctedHd = NULL;
 	}
 	int const drawn = wanted > 1 && renderHdFrame(gba, &scale) ? scale : 1;
-	if (drawn != hdDrawn) {
-		hdDrawn = drawn;
+	if (drawn == hdDrawn) {
+		return false;
+	}
+	hdDrawn = drawn;
+	return true;
+}
+
+static void syncHd(void) {
+	if (settleHd()) {
 		announceGeometry();
 	}
 }

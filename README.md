@@ -230,6 +230,14 @@ step such as 2.5x, each 2x2 block of pixels becomes a whole number of output pix
 gaps repeat every two pixels. On a 640x480 handheld, 2.5x (600x400) fills most of the screen with a
 Game Boy Advance game.
 
+In RetroArch, the picture has room for up to 4x (960x640; 2x on 32-bit ARM devices, which are short
+of memory) from the start, so LCD Scale and HD Affine Backgrounds change at once up to there. A
+larger picture, chosen during a game, is drawn as large as fits and takes effect the next time the
+game is started: RetroArch would have to make its video again, which some handhelds' systems refuse
+mid-game (RetroArch quits). Chosen before the game starts, any size takes effect at once. LCD Scale
+turns HD Affine Backgrounds off and hides it until LCD Scale is off again: its grid is around the
+console's pixels, which HD splits.
+
 Fit Screen draws the picture as large as fits a screen size, to the output pixel, so the frontend
 shows it pixel for pixel with no stretching: on a 1240x1080 screen a Game Boy Advance game is drawn
 at 1240x827. RetroArch doesn't tell a core the screen's resolution, so Screen Size says it: Auto
