@@ -562,10 +562,16 @@ static void geometry(struct retro_game_geometry* geometry) {
 	keepLargest(geometry);
 }
 
+// A picture larger than the largest told before needs a new AV info: RetroArch's threaded video crops
+// to that largest size otherwise. A frontend without one gets the geometry.
 static void announceGeometry(void) {
-	struct retro_game_geometry changed;
-	geometry(&changed);
-	environment(RETRO_ENVIRONMENT_SET_GEOMETRY, &changed);
+	unsigned const toldWidth = largestWidth, toldHeight = largestHeight;
+	struct retro_system_av_info av = { .timing = { .fps = FRAME_RATE, .sample_rate = AUDIO_RATE } };
+	geometry(&av.geometry);
+	bool const larger = largestWidth > toldWidth || largestHeight > toldHeight;
+	if (!larger || !environment(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av)) {
+		environment(RETRO_ENVIRONMENT_SET_GEOMETRY, &av.geometry);
+	}
 }
 
 void retro_get_system_av_info(struct retro_system_av_info* info) {
