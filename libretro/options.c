@@ -241,6 +241,14 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  NULL, "video", { { "1", NULL }, { "2", NULL }, { NULL, NULL } }, "1" },
 	{ "armgba_color_correction", "GBA Color Correction", NULL, "Darker, softer colors, as the GBA's screen showed them. Costs a little speed.", NULL, "video",
 	  { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
+	{ "armgba_hd_affine", "HD Affine Backgrounds", NULL,
+	  "Draws the backgrounds that rotate and scale (racing tracks, world maps, floors in perspective) at 2 to 8 times the "
+	  "resolution, with the rest of the picture scaled up, as bsnes's HD Mode 7 does. Ultra is for a fast computer: a "
+	  "picture up to 1920x1280. Only the picture changes. Costs speed. Not with Threaded Video or linked consoles.",
+	  NULL, "video",
+	  { { "disabled", "Off" }, { "2", "2x" }, { "3", "3x" }, { "4", "4x" }, { "5", "Ultra 5x" }, { "6", "Ultra 6x" }, { "7", "Ultra 7x" },
+	    { "8", "Ultra 8x" }, { NULL, NULL } },
+	  "disabled" },
 	{ "armgba_gb_color_correction", "Game Boy Color Correction", NULL,
 	  "Colors as the Game Boy Color's screen showed them.", NULL, "video",
 	  { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
@@ -624,6 +632,7 @@ bool showOptions(void) {
 		{ "armgba_lcd_shadow", scaled && libretroLcdShadow() },
 		{ "armgba_lcd_shadow_distance", scaled && libretroLcdShadow() && !optionIs("armgba_lcd_shadow", "off") },
 		{ "armgba_color_correction", !gameBoy },
+		{ "armgba_hd_affine", !gameBoy },
 		{ "armgba_solar_sensor", !gameBoy && (!advance || devices & HW_LIGHT_SENSOR) },
 		{ "armgba_gb_tilt", (!gameBoy && !advance) || devices & (HW_TILT | HW_GYRO) || (gameBoy && tiltCartridge) },
 		{ "armgba_motion_rotation", ((!gameBoy && !advance) || devices & HW_TILT || (gameBoy && tiltCartridge)) && optionIs("armgba_gb_tilt", "device") },

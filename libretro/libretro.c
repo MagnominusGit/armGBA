@@ -104,6 +104,10 @@ int videoThreads = 1;
 static bool colorCorrection;
 static uint16_t* correctedColors;
 static uint16_t correctedFrame[SCREEN_WIDTH * SCREEN_HEIGHT];
+// HD Affine Backgrounds: the scale chosen (1: off), the one the machine draws at, and the corrected
+// colors of its frame.
+static int hdChosen = 1, hdDrawn = 1;
+static uint16_t* correctedHd;
 // Whether RetroArch is to hear of a new picture size, as LCD Grid's scale changed.
 static bool gridAnnounce;
 static int32_t lowPass;
@@ -523,6 +527,12 @@ static void geometry(struct retro_game_geometry* geometry) {
 		geometry->base_width = SCREEN_WIDTH;
 		geometry->base_height = SCREEN_HEIGHT;
 	}
+	if (hdDrawn > 1) {
+		geometry->base_width *= (unsigned) hdDrawn;
+		geometry->base_height *= (unsigned) hdDrawn;
+		geometry->max_width = geometry->max_width > geometry->base_width ? geometry->max_width : geometry->base_width;
+		geometry->max_height = geometry->max_height > geometry->base_height ? geometry->max_height : geometry->base_height;
+	}
 	if (togetherRunning()) {
 		int const shown = screens;
 		bool const grid = playersHere > 2 && shown < SCREENS_ONE;
@@ -885,6 +895,8 @@ static void readOptions(void) {
 	threadedAudio = audioThread;
 	videoThreads = threads;
 	colorCorrection = optionIs("armgba_color_correction", "enabled") && buildCorrectedColors();
+	static const struct Choice hdChoices[] = { { "2", 2 }, { "3", 3 }, { "4", 4 }, { "5", 5 }, { "6", 6 }, { "7", 7 }, { "8", 8 } };
+	hdChosen = optionChoice("armgba_hd_affine", hdChoices, COUNT(hdChoices), 1);
 	// LCD Effects off leaves each effect's setting as it is, and off.
 	bool const effects = optionIs("armgba_lcd_effects", "enabled");
 	static const struct Choice ghostingChoices[] = { { "25", 1 }, { "half", 2 }, { "75", 3 }, { "enabled", 4 } };
@@ -4916,7 +4928,25 @@ static void sendOneAdvanceSound(void) {
 	gba->audio.outCount = 0;
 }
 
+// HD Affine Backgrounds as chosen, where they can be drawn: one GBA, drawn on this thread.
+static void syncHd(void) {
+	int const wanted = !gameBoy && !togetherRunning() && !threadedVideo && gba ? hdChosen : 1;
+	int scale = 1;
+	// (again for a machine made anew, by a restart)
+	if (wanted > 1 && (!renderHdFrame(gba, &scale) || scale != wanted)) {
+		renderSetHd(gba, wanted);
+	} else if (wanted == 1 && hdDrawn > 1) {
+		renderSetHd(gba, 1);
+	}
+	int const drawn = wanted > 1 && renderHdFrame(gba, &scale) ? scale : 1;
+	if (drawn != hdDrawn) {
+		hdDrawn = drawn;
+		announceGeometry();
+	}
+}
+
 static void runOneAdvance(void) {
+	syncHd();
 	uint16_t keys = sharedControls != SHARED_OFF ? readSharedKeys(true) : readKeys(0) | readTurboShoulders();
 	hintSharedControls();
 	readRestarts(&keys);
@@ -4952,7 +4982,23 @@ static void runOneAdvance(void) {
 	if (cheats.count || cheats.patchCount) {
 		cheatsApply(&cheats, gba);
 	}
-	if (colorCorrection && !frameSkipped) {
+	int hdScale = 1;
+	const uint16_t* const hdPicture = hdDrawn > 1 ? renderHdFrame(gba, &hdScale) : NULL;
+	if (hdPicture) {
+		unsigned const width = SCREEN_WIDTH * (unsigned) hdScale, height = SCREEN_HEIGHT * (unsigned) hdScale;
+		const uint16_t* shown = hdPicture;
+		if (colorCorrection && !frameSkipped) {
+			uint16_t* const room = realloc(correctedHd, (size_t) width * height * sizeof(*room));
+			if (room) {
+				correctedHd = room;
+				for (size_t i = 0; i < (size_t) width * height; ++i) {
+					room[i] = corrected(hdPicture[i]);
+				}
+				shown = room;
+			}
+		}
+		showPicture(shown, width, height, width * sizeof(uint16_t));
+	} else if (colorCorrection && !frameSkipped) {
 		const uint16_t* picture = (const uint16_t*) gba->renderer.frame;
 		for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; ++i) {
 			correctedFrame[i] = corrected(picture[i]);
