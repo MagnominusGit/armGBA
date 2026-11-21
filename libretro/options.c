@@ -19,7 +19,7 @@
 
 struct retro_core_options_v2* coreOptions;
 // Which options were last shown, once set.
-static bool optionsShown[96];
+static bool optionsShown[128];
 static bool optionsShownSet;
 
 static void fillTurboPeriods(struct retro_core_option_v2_definition* definitions) {
@@ -93,6 +93,12 @@ static void setVariables(retro_environment_t callback, const struct retro_core_o
 
 // Keys and values match saved configurations; labels are what the menu shows. showOptions hides
 // the options that do nothing for the game and Link Mode.
+// A layer's switch under Layer Selection, and a sound channel's under Channel Selection
+#define LAYER_OPTION(key, name, info) \
+	{ "armgba_layer_" key, name, NULL, info, NULL, "video", { { "shown", "Shown" }, { "hidden", "Hidden" }, { NULL, NULL } }, "shown" }
+#define CHANNEL_OPTION(key, name, info) \
+	{ "armgba_channel_" key, name, NULL, info, NULL, "audio", { { "enabled", "On" }, { "disabled", "Off" }, { NULL, NULL } }, "enabled" }
+
 static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_skip_bios", "Skip BIOS Intro", NULL, "Starts games without the BIOS intro.", NULL, "system",
 	  { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
@@ -258,6 +264,18 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_fast_forward_skip", "Fast-Forward Skip", NULL,
 	  "While fast-forwarding, frames the frontend won't show aren't drawn, for speed. GBA only. Not in netplay.",
 	  NULL, "video", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "enabled" },
+	{ "armgba_layer_selection", "Layer Selection", NULL,
+	  "Shows switches below that hide the backgrounds, the window or the sprites, to see one on its own: for ripping "
+	  "graphics or a closer look. Only the picture changes; the game plays on the same, so netplay, run-ahead and "
+	  "states aren't affected. Off shows everything.",
+	  NULL, "video", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
+	LAYER_OPTION("bg0", "Background 0", "Which background is the playfield, the scenery or the status bar differs from game to game."),
+	LAYER_OPTION("bg1", "Background 1", NULL),
+	LAYER_OPTION("bg2", "Background 2", "In the bitmap modes, the picture is background 2."),
+	LAYER_OPTION("bg3", "Background 3", NULL),
+	LAYER_OPTION("gb_background", "Background", NULL),
+	LAYER_OPTION("gb_window", "Window", "Often a status bar or a menu over the background."),
+	LAYER_OPTION("sprites", "Sprites", "Characters, enemies and shots."),
 	{ "armgba_lcd_effects", "LCD Effects", NULL,
 	  "Turns the effects below on or off together. Each one keeps its setting.",
 	  NULL, "video_lcd", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
@@ -338,6 +356,17 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_low_pass_filter", "Low-Pass Filter", NULL,
 	  "Softens high notes, as the consoles' small speakers did. Higher is softer.", NULL, "audio",
 	  { { "disabled", "Off" }, { "20", "20%" }, { "40", "40%" }, { "60", "60%" }, { "80", "80%" }, { NULL, NULL } }, "disabled" },
+	{ "armgba_channel_selection", "Channel Selection", NULL,
+	  "Shows a switch below for each sound channel, to hear one or a few on their own: for ripping music or a "
+	  "closer listen. Only the sound changes; the game plays on the same, so netplay, run-ahead and states aren't "
+	  "affected. Off plays everything.",
+	  NULL, "audio", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
+	CHANNEL_OPTION("pulse1", "Pulse 1", "The tone channels the Game Boy and the GBA share."),
+	CHANNEL_OPTION("pulse2", "Pulse 2", NULL),
+	CHANNEL_OPTION("wave", "Wave", NULL),
+	CHANNEL_OPTION("noise", "Noise", NULL),
+	CHANNEL_OPTION("direct_a", "Direct Sound A", "The GBA's sample channels, which most of its games play their music on."),
+	CHANNEL_OPTION("direct_b", "Direct Sound B", NULL),
 	{ "armgba_left_stick_dpad", "Left Stick as D-Pad", NULL,
 	  "The left stick presses the D-pad too, unless it tilts a motion sensor cartridge.", NULL, "input",
 	  { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
@@ -546,6 +575,8 @@ bool showOptions(void) {
 	enum LibretroGbClock const gbClock = gameBoy ? libretroGbClock() : LIBRETRO_GB_NO_CLOCK;
 	bool const clock = devices & HW_RTC || gbClock;
 	bool const gameTime = optionIs("armgba_clock_source", "game");
+	bool const layers = optionIs("armgba_layer_selection", "enabled");
+	bool const channels = optionIs("armgba_channel_selection", "enabled");
 	const struct {
 		const char* key;
 		bool shown;
@@ -564,6 +595,19 @@ bool showOptions(void) {
 		{ "armgba_threaded_video", !gameBoy },
 		{ "armgba_threaded_audio", !gameBoy },
 		{ "armgba_fast_forward_skip", !gameBoy },
+		{ "armgba_layer_bg0", !gameBoy && layers },
+		{ "armgba_layer_bg1", !gameBoy && layers },
+		{ "armgba_layer_bg2", !gameBoy && layers },
+		{ "armgba_layer_bg3", !gameBoy && layers },
+		{ "armgba_layer_gb_background", !advance && layers },
+		{ "armgba_layer_gb_window", !advance && layers },
+		{ "armgba_layer_sprites", layers },
+		{ "armgba_channel_pulse1", channels },
+		{ "armgba_channel_pulse2", channels },
+		{ "armgba_channel_wave", channels },
+		{ "armgba_channel_noise", channels },
+		{ "armgba_channel_direct_a", !gameBoy && channels },
+		{ "armgba_channel_direct_b", !gameBoy && channels },
 		{ "armgba_fast_flash_saves", !gameBoy },
 		{ "armgba_video_threads", !gameBoy && !optionIs("armgba_threaded_video", "disabled") },
 		{ "armgba_lcd_ghosting", effects },

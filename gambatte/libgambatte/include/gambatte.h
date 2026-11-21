@@ -179,6 +179,26 @@ public:
 	void setLayers(unsigned mask);
 
 	/**
+	  * armGBA: the layers shown (1=BG, 2=OBJ, 4=WINDOW), only where pixels get their colors: unlike
+	  * setLayers, the PPU's timing and the state stay the console's.
+	  */
+	void setShownLayers(unsigned mask);
+
+	/**
+	  * armGBA: the sound channels left out of what's heard (bit 0 channel 1 to bit 3 channel 4),
+	  * from the next frame; the channels and the state stay the console's.
+	  */
+	void setMutedChannels(unsigned mask);
+
+	/**
+	  * armGBA: with channels left out, the last runFor's samples as heard, at the places of its
+	  * audioBuf's (else 0); and the running sum they carry on from, kept beside states.
+	  */
+	uint_least32_t const * heardSamples() const;
+	uint_least32_t heardSum() const;
+	void setHeardSum(uint_least32_t sum);
+
+	/**
 	  * Reset to initial state.
 	  * Equivalent to reloading a ROM image, or turning a Game Boy Color off and on again.
 	  */

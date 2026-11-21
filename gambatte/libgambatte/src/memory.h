@@ -125,6 +125,11 @@ public:
 	bool halted() const { return intreq_.halted(); }
 	gb_ulong nextEventTime() const { return intreq_.minEventTime(); }
 	void setLayers(unsigned mask) { lcd_.setLayers(mask); }
+	void setShownLayers(unsigned mask) { lcd_.setShownLayers(mask); }
+	void setMutedChannels(unsigned mask) { psg_.setMutedChannels(mask); }
+	uint_least32_t const * heardSamples() const { return psg_.heardSamples(); }
+	uint_least32_t heardSum() const { return psg_.heardSum(); }
+	void setHeardSum(uint_least32_t sum) { psg_.setHeardSum(sum); }
 	bool isActive() const { return intreq_.eventTime(intevent_end) != disabled_time; }
 
 	gb_long cyclesSinceBlit(gb_ulong cc) const {

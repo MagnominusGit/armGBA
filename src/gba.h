@@ -937,6 +937,7 @@ void gbaFrameEnded(struct GBA*);
 size_t gbaStateSize(void);
 void gbaSaveState(struct GBA*, void* state);
 bool gbaLoadState(struct GBA*, const void* state, size_t size);
+void statePicturesForget(const struct GBA*);
 
 // memory.c
 const uint8_t* codePointer(struct GBA*, uint32_t address);
@@ -1097,6 +1098,31 @@ void audioWriteWaveShape(struct GBA*, bool size, bool bank);
 void audioWriteWaveVolume(struct GBA*, int volume);
 void audioFillFifo(struct GBA*, int fifo, uint32_t time, uint32_t byte);
 void audioFinishInterval(struct GBA*, int32_t time);
+// Channel Selection: the channels left out of what's heard (AUDIO_MUTE_* bits), mixed apart from the
+// console's own mix, which the machine keeps whole so states don't depend on it. audioHeardClaim
+// makes room for a console's (the main thread, before it mixes; audio-thread.c claims its copy's),
+// audioHeardRelease frees it, and audioHeardOut gives the frontend's samples: what's heard, or out.
+enum {
+	AUDIO_MUTE_TONE1 = 1,
+	AUDIO_MUTE_TONE2 = 2,
+	AUDIO_MUTE_WAVE = 4,
+	AUDIO_MUTE_NOISE = 8,
+	AUDIO_MUTE_FIFO_A = 16,
+	AUDIO_MUTE_FIFO_B = 32,
+};
+extern unsigned audioMuted;
+void audioSetMuted(unsigned muted);
+void audioHeardClaim(const struct GBA*);
+void audioHeardRelease(const struct GBA*);
+const struct StereoSample* audioHeardOut(const struct GBA*);
+// Copies what's heard of one console to another, as the audio thread does with the console's
+// samples: its frontend samples from index from (count of them) to index to, and the interval
+// being mixed.
+void audioHeardMove(const struct GBA* from, const struct GBA* to, uint32_t outFrom, uint32_t outTo, uint32_t count, bool interval);
+// For states: notes what's heard at the point a state is made, and takes it back when the same
+// point is loaded (run-ahead, netplay), else picks up from the console's own mix.
+void audioHeardSaved(const struct GBA*);
+void audioHeardLoaded(const struct GBA*);
 
 // audio-thread.c: the mixer on a thread of its own.
 enum {
@@ -1142,6 +1168,8 @@ void psgReset(struct GBA*);
 void psgRun(struct GBA*, int32_t timestamp, int channels);
 void psgUpdateFrame(struct GBA*, int32_t now);
 void psgSample(struct GBA*, int16_t* left, int16_t* right);
+// The same with only some channels (bits 0-3: channels 1-4)
+void psgSampleChannels(struct GBA*, unsigned channels, int16_t* left, int16_t* right);
 void psgWrite(struct GBA*, int nr, uint8_t value);
 void psgWriteNr52(struct GBA*, uint8_t value);
 

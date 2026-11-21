@@ -764,6 +764,35 @@ static bool replaySwitch = true;
 
 static void applyGenieCodes(void);
 
+// Layer Selection on a GBA: the layers left out (bits 0-3 the backgrounds, 4 the sprites), which the
+// renderer's hooks drop where it draws, so only the picture changes. Setting the hooks for each
+// console shares them; taking them away from one takes them from all.
+static struct RenderHooks layerHooks;
+static uint8_t layersWanted;
+static struct GBA* layersHookedOn;
+
+static void unhookLayers(void) {
+	if (layersHookedOn) {
+		renderSetHooks(layersHookedOn, NULL);
+		layersHookedOn = NULL;
+	}
+}
+
+static void hookLayers(void) {
+	unhookLayers();
+	layerHooks.hideLayers = layersWanted;
+	++layerHooks.generation;
+	if (!layersWanted || gameBoy) {
+		return;
+	}
+	for (int i = 0; i < playersHere; ++i) {
+		if (gbas[i]) {
+			renderSetHooks(gbas[i], &layerHooks);
+			layersHookedOn = layersHookedOn ? layersHookedOn : gbas[i];
+		}
+	}
+}
+
 static void readOptions(void) {
 	replaySwitch = !optionIs("armgba_action_replay_switch", "off");
 	applyGenieCodes();
@@ -838,6 +867,7 @@ static void readOptions(void) {
 	int const threads = optionIs("armgba_video_threads", "2") ? 2 : 1;
 	if (gba && (threaded != threadedVideo || (threaded && threads != videoThreads))) {
 		renderThreadStop(gba);
+		unhookLayers();
 		if (threaded) {
 			renderThreadStart(gba, threaded == THREADED_LATE, threads == 2);
 		}
@@ -919,6 +949,32 @@ static void readOptions(void) {
 		if (gameBoy) {
 			libretroGbSetColorCorrection(gbColorCorrection);
 		}
+	}
+	// Layer Selection and Channel Selection: only what's drawn and heard changes
+	bool const layers = optionIs("armgba_layer_selection", "enabled");
+	bool const channels = optionIs("armgba_channel_selection", "enabled");
+	static const char* const gbaLayers[] = { "armgba_layer_bg0", "armgba_layer_bg1", "armgba_layer_bg2", "armgba_layer_bg3",
+	                                         "armgba_layer_sprites" };
+	uint8_t hidden = 0;
+	for (int i = 0; layers && i < (int) COUNT(gbaLayers); ++i) {
+		hidden |= optionIs(gbaLayers[i], "hidden") << i;
+	}
+	unsigned const gbShown = !layers ? 7u :
+		(optionIs("armgba_layer_gb_background", "hidden") ? 0u : 1u) | (optionIs("armgba_layer_sprites", "hidden") ? 0u : 2u) |
+		(optionIs("armgba_layer_gb_window", "hidden") ? 0u : 4u);
+	libretroGbSetLayersShown(gbShown);
+	static const char* const tones[] = { "armgba_channel_pulse1", "armgba_channel_pulse2", "armgba_channel_wave", "armgba_channel_noise",
+	                                     "armgba_channel_direct_a", "armgba_channel_direct_b" };
+	unsigned muted = 0;
+	for (int i = 0; channels && i < (int) COUNT(tones); ++i) {
+		muted |= (unsigned) optionIs(tones[i], "disabled") << i;
+	}
+	audioSetMuted(muted);
+	libretroGbSetMutedChannels(muted & 0xF);
+	// (again for every console each time, as consoles come and go)
+	if (hidden || layersHookedOn) {
+		layersWanted = hidden;
+		hookLayers();
 	}
 	libretroGbSetPrinter(optionIs("armgba_link_mode", "off") && optionIs("armgba_gb_printer", "on"), printoutPage);
 	int const chosenScreens = optionChoice("armgba_link_screens", screensChoices, COUNT(screensChoices), SCREENS_SIDE);
@@ -1209,6 +1265,8 @@ static struct GBA* startAdvance(const struct retro_game_info* game) {
 		gbaDestroy(machine);
 		return NULL;
 	}
+	// Room for Channel Selection's mix of what's heard
+	audioHeardClaim(machine);
 	return machine;
 }
 
@@ -1316,6 +1374,7 @@ static bool startOtherAdvances(int count, const void* const data[], const size_t
 
 static void stopOtherAdvances(void) {
 	workersStop();
+	unhookLayers();
 	for (int i = 1; i < MAX_PLAYERS; ++i) {
 		if (gbas[i]) {
 			gbaDestroy(gbas[i]);
@@ -3562,6 +3621,7 @@ void retro_unload_game(void) {
 	dolphinSetHost(NULL);
 	gamecubeShown = false;
 	workersStop();
+	unhookLayers();
 	for (int i = 0; i < MAX_PLAYERS; ++i) {
 		if (gbas[i]) {
 			gbaDestroy(gbas[i]);
@@ -4808,7 +4868,7 @@ static void runAdvancesFrame(void) {
 			}
 			pictures[i] = gbaCorrected[i];
 		}
-		samples[i] = (const int16_t*) gbas[i]->audio.out;
+		samples[i] = (const int16_t*) audioHeardOut(gbas[i]);
 		frames[i] = gbas[i]->audio.outCount;
 	}
 	showConsoles(pictures, sizeof(uint16_t), SCREEN_WIDTH, SCREEN_HEIGHT, gbaTogetherFrame, samples, frames);
@@ -4852,7 +4912,7 @@ static void runOneGameBoy(void) {
 
 static void sendOneAdvanceSound(void) {
 	audioThreadTake(gba);
-	sendSound((const int16_t*) gba->audio.out, gba->audio.outCount);
+	sendSound((const int16_t*) audioHeardOut(gba), gba->audio.outCount);
 	gba->audio.outCount = 0;
 }
 

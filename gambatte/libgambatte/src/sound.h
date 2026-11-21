@@ -20,6 +20,7 @@
 #define SOUND_H
 
 #include "gbint.h"
+#include <vector>
 #include "sound/channel1.h"
 #include "sound/channel2.h"
 #include "sound/channel3.h"
@@ -42,7 +43,17 @@ public:
 	void resetCounter(gb_ulong newCc, gb_ulong oldCc, bool doubleSpeed);
 	void speedChange(gb_ulong cc, bool doubleSpeed);
 	std::size_t fillBuffer();
-	void setBuffer(uint_least32_t *buf) { buffer_ = buf; bufferPos_ = 0; dacsAtStart_ = dacsLast_; dacEdgeCount_ = 0; }
+	void setBuffer(uint_least32_t *buf) { buffer_ = buf; bufferPos_ = 0; dacsAtStart_ = dacsLast_; dacEdgeCount_ = 0; muted_ = mutedNext_; }
+
+	// armGBA: Channel Selection's channels left out of what's heard (bit 0 channel 1 to bit 3 channel
+	// 4), from the next buffer. The channels run, and the buffer and its running sum (saved) add up as
+	// before; what's heard is summed apart (heardSamples).
+	void setMutedChannels(unsigned mask) { mutedNext_ = mask & 0xF; }
+	// What's heard, as fillBuffer made it, while channels are left out (else 0); and its running sum,
+	// which a frontend keeps beside a state to carry on as it would have.
+	uint_least32_t const * heardSamples() const { return muted_ && !heard_.empty() ? &heard_[0] : 0; }
+	uint_least32_t heardSum() const { return heardSum_; }
+	void setHeardSum(uint_least32_t sum) { heardSum_ = sum; }
 
 	// armGBA: where in the buffer since setBuffer the DACs went from all off to any on, or back: the
 	// output's high-pass filter is connected only while one is on (Pan Docs, Audio Details).
@@ -114,7 +125,15 @@ private:
 	std::size_t dacEdgePos_[DAC_EDGES];
 	bool dacEdgeOn_[DAC_EDGES];
 
+	// armGBA: what's heard with channels left out, and its running sum; not saved
+	unsigned muted_;
+	unsigned mutedNext_;
+	std::vector<uint_least32_t> heard_;
+	std::vector<uint_least32_t> mutedScratch_;
+	uint_least32_t heardSum_;
+
 	void accumulateChannels(gb_ulong cycles);
+	void accumulateHeard(gb_ulong cycles);
 	// After a write that can turn a DAC on or off, with the samples up to it already generated
 	void noteDacs() {
 		bool const on = dacsOn();

@@ -106,6 +106,10 @@ standalone frontend shows as one page with headers.
 | | Game Boy on GBA: Screen | Game Boy | Game Boy Advance, Game Boy Color (Game Boy Advance model) |
 | | Frame Skip | Both | Off, Auto, 1, 2, 3 (not in netplay) |
 | | Fast-Forward Skip | Game Boy Advance | Off, On (on by default; not in netplay) |
+| | Layer Selection | Both | Off, On (shows the switches below; only the picture changes: the game plays on the same, and every netplay player can choose their own) |
+| | Background 0 to Background 3 (with Layer Selection) | Game Boy Advance | Shown, Hidden |
+| | Background, Window (with Layer Selection) | Game Boy | Shown, Hidden |
+| | Sprites (with Layer Selection) | Both | Shown, Hidden |
 | Video: LCD Effects | LCD Effects | Both | Off, On (each effect below keeps its setting) |
 | | LCD Ghosting | Both | Off, 25%, 50%, 75%, 100% |
 | | Interlaced Rows | Both | Off, On (Color's and Advance's screens) |
@@ -121,6 +125,9 @@ standalone frontend shows as one page with headers.
 | | GBA Audio Output | Game Boy Advance | Speaker, Headphones (the console's output: the bit depth it has at the rate a game picks, 9 bits at 32 kHz down to 6 at 262 kHz, and the 100 µF capacitor its speaker and headphones return through, about 200 Hz with the speaker, 70 Hz with headphones; Game Boy games on Game Boy Advance get the capacitor too), Off (in netplay every player still has the console's bit depth, so states match) |
 | | Game Boy Audio Filter | Game Boy | Accurate (each model's output capacitor, as Pan Docs gives it: the original's about 28 Hz, the Pocket's and Color's about 700 Hz, on Game Boy Advance GBA Audio Output's), Remove Offset Only (the original's on every model), Off |
 | | Low-Pass Filter | Both | Off, 20%, 40%, 60%, 80% |
+| | Channel Selection | Both | Off, On (shows the switches below; only the sound changes: the game plays on the same, a channel switched off keeps its place for when it's back on, and every netplay player can choose their own) |
+| | Pulse 1, Pulse 2, Wave, Noise (with Channel Selection) | Both | On, Off |
+| | Direct Sound A, Direct Sound B (with Channel Selection) | Game Boy Advance | On, Off |
 | Input | Left Stick as D-Pad | Both | Off, On |
 | | Turbo Button Period | Both | 4 to 120 frames, 4 by default |
 | | L2 and R2 | Both | Fast-Forward (held), Fast-Forward Toggle (a press until the next, for handhelds without stick clicks; L3's toggle turns the same fast-forward on and off), Turbo L and R (Game Boy Advance; for handhelds without stick clicks; L2 and R2 then don't fast-forward or change screen layouts) |

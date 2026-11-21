@@ -136,6 +136,10 @@ void libretroGbSetColorPanel(bool color);
 void libretroGbSetScreen(int);
 // Sets that screen's contrast wheel, -5 to 5.
 void libretroGbSetContrast(int);
+// Layer Selection's layers shown (1 background, 2 sprites, 4 window) and Channel Selection's channels
+// left out (bits 0-3: channels 1-4), for every console. Only what's drawn and heard changes.
+void libretroGbSetLayersShown(unsigned mask);
+void libretroGbSetMutedChannels(unsigned mask);
 // That screen's shades as shown now, 0 the lightest, as XRGB8888.
 uint32_t libretroGbShade(int shade);
 // That screen's color while the game has it off, as XRGB8888.

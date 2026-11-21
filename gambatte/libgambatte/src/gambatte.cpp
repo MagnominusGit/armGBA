@@ -151,6 +151,26 @@ void GB::setLayers(unsigned mask) {
 	p_->cpu.setLayers(mask);
 }
 
+void GB::setShownLayers(unsigned mask) {
+	p_->cpu.setShownLayers(mask);
+}
+
+void GB::setMutedChannels(unsigned mask) {
+	p_->cpu.setMutedChannels(mask);
+}
+
+uint_least32_t const * GB::heardSamples() const {
+	return p_->cpu.heardSamples();
+}
+
+uint_least32_t GB::heardSum() const {
+	return p_->cpu.heardSum();
+}
+
+void GB::setHeardSum(uint_least32_t sum) {
+	p_->cpu.setHeardSum(sum);
+}
+
 void GB::reset(std::size_t samplesToStall, std::string const &build) {
 	if (p_->cpu.loaded()) {
 		if (p_->implicitSave())

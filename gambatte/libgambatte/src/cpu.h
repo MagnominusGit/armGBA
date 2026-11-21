@@ -33,6 +33,11 @@ public:
 	void saveState(SaveState &state);
 	void loadState(SaveState const &state);
 	void setLayers(unsigned mask) { mem_.setLayers(mask); }
+	void setShownLayers(unsigned mask) { mem_.setShownLayers(mask); }
+	void setMutedChannels(unsigned mask) { mem_.setMutedChannels(mask); }
+	uint_least32_t const * heardSamples() const { return mem_.heardSamples(); }
+	uint_least32_t heardSum() const { return mem_.heardSum(); }
+	void setHeardSum(uint_least32_t sum) { mem_.setHeardSum(sum); }
 	unsigned getSavedataLength() { return mem_.getSavedataLength(); }
 	void loadSavedata(char const *data) { mem_.loadSavedata(data, cycleCounter_); }
 	void saveSavedata(char *dest) { mem_.saveSavedata(dest, cycleCounter_); }

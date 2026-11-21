@@ -157,6 +157,8 @@ static void romFree(uint8_t* rom) {
 }
 
 void gbaDestroy(struct GBA* gba) {
+	audioHeardRelease(gba);
+	statePicturesForget(gba);
 	renderThreadStop(gba);
 	audioThreadStop(gba);
 	jitDeinit(gba);
