@@ -604,6 +604,8 @@ void jitFlush(struct GBA* gba) {
 	jit->staleValid = false;
 	jit->romWindowCode = false;
 	jit->romBlockCount = 0;
+	jit->homeWaits = currentWaits(gba);
+	jit->away = false;
 	jit->midResume = false;
 	jit->irqReturn = ~0u;
 	jit->carefulAtFlush = jit->carefulBytes;
@@ -843,6 +845,8 @@ size_t jitCodeUsed(struct GBA* gba, size_t* size) {
 	return jit ? (size_t) ((jit->freshNext ? jit->freshNext : jit->codeNext) - jit->codeStart) : 0;
 }
 
+static void setAsideCartridge(struct GBA* gba);
+
 // Called after a save state is loaded: compiled code carries on unless what it was compiled from
 // changed, and the run loop starts afresh.
 void jitStateLoaded(struct GBA* gba, bool codeChanged) {
@@ -852,6 +856,11 @@ void jitStateLoaded(struct GBA* gba, bool codeChanged) {
 	}
 	if (codeChanged) {
 		jitFlush(gba);
+	}
+	// Loaded partway through a time away from the blocks' wait states, they're set aside at once.
+	jit->away = false;
+	if (currentWaits(gba) != jit->homeWaits) {
+		setAsideCartridge(gba);
 	}
 	jit->staleValid = false;
 	jit->stepping = false;
@@ -1788,6 +1797,7 @@ static bool compiledMayRun(struct GBA* gba, uint32_t pc, bool thumb) {
 static void setAsideCartridge(struct GBA* gba) {
 	struct Jit* jit = gba->jit;
 	uint32_t waits = currentWaits(gba);
+	jit->homeWaits = waits;
 	int kept = 0;
 	for (int i = 0; i < jit->romBlockCount; ++i) {
 		struct Block* block = jit->romBlocks[i];
@@ -1802,6 +1812,28 @@ static void setAsideCartridge(struct GBA* gba) {
 		block->listed = false;
 	}
 	jit->romBlockCount = kept;
+}
+
+enum {
+	// How long the wait states may stay away from those the cartridge's blocks were compiled for,
+	// with the exact CPU running, before the blocks are set aside. A game that switches to the
+	// slowest wait states and back each frame, for about 100 cycles at a time, made every
+	// cartridge block go and come back each time: a fifth of its frame time on 64-bit ARM.
+	AWAY_CYCLES = 8192,
+};
+
+// Called when the wait states change. Back to those of the cartridge's blocks, compiled code runs
+// on as before; away from them, the exact CPU runs for a while first (jitRunLoop).
+static void awayFromWaits(struct GBA* gba) {
+	struct Jit* jit = gba->jit;
+	if (currentWaits(gba) == jit->homeWaits) {
+		// (from partway through a block, on to its end on the exact CPU, as after stepping)
+		jit->midResume |= jit->away;
+		jit->away = false;
+	} else if (!jit->away) {
+		jit->away = true;
+		jit->awayUntil = timingCpuTime(gba) + AWAY_CYCLES;
+	}
 }
 
 // Idle loops that span blocks and calls (struct IdleLoop): the exact CPU goes round one twice to
@@ -2248,6 +2280,11 @@ void jitRunLoop(struct GBA* gba) {
 		if (jit->waitsChanged) {
 			resumeHere = NULL;
 			jit->waitsChanged = false;
+			awayFromWaits(gba);
+		}
+		if (jit->away && (int32_t) (jit->awayUntil - timingCpuTime(gba)) <= 0) {
+			jit->away = false;
+			jit->midResume = true;
 			setAsideCartridge(gba);
 		}
 		if (cpu->halted) {
@@ -2275,7 +2312,7 @@ void jitRunLoop(struct GBA* gba) {
 			continue;
 		}
 		jit->coldLeft = 0;
-		if (jit->steps || jit->stepping || !compiledMayRun(gba, pc, thumb)) {
+		if (jit->steps || jit->stepping || jit->away || !compiledMayRun(gba, pc, thumb)) {
 			if (jit->steps) {
 				--jit->steps;
 			}

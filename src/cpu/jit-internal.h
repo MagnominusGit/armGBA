@@ -421,9 +421,15 @@ struct Jit {
 	uint32_t warmWaits;
 
 	bool flushRequested;
-	// Set when the wait states changed: the cartridge's blocks are set aside before compiled code
-	// runs again.
+	// Set when the wait states changed, for the run loop to look at before compiled code runs again
+	// (jit.c: awayFromWaits).
 	bool waitsChanged;
+	// The wait states the cartridge's blocks in use were compiled for. While they're others for a
+	// short time (away, until awayUntil), the exact CPU runs instead of compiled code, and the
+	// blocks stay; only a longer time sets them aside.
+	uint32_t homeWaits;
+	bool away;
+	int32_t awayUntil;
 	// The cartridge's blocks in use, which a wait-state change goes through instead of all blocks.
 	struct Block** romBlocks;
 	int romBlockCount;
