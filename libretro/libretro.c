@@ -107,6 +107,13 @@ static uint16_t correctedFrame[SCREEN_WIDTH * SCREEN_HEIGHT];
 // HD Affine Backgrounds: the scale chosen (1: off), the one the machine draws at, and the corrected
 // colors of its frame.
 static int hdChosen = 1, hdDrawn = 1;
+// The largest HD scale the picture size told to the frontend has room for. Telling a larger picture
+// later makes RetroArch build its video again, which the compositor of ROCKNIX's handhelds refuses
+// mid-game (RetroArch quits), and as geometry alone, threaded video crops it. So the room is told when
+// the game is loaded, for the scale chosen then (at least 2x, which the linked screens' room holds):
+// room for 8x costs RetroArch about 50 MB even with HD off, which a low-end handheld can't spare. A
+// larger scale chosen during a game waits for the game to be loaded again.
+static int hdRoom = 2;
 static uint16_t* correctedHd;
 // Whether RetroArch is to hear of a new picture size, as LCD Grid's scale changed.
 static bool gridAnnounce;
@@ -527,6 +534,10 @@ static void geometry(struct retro_game_geometry* geometry) {
 		geometry->base_width = SCREEN_WIDTH;
 		geometry->base_height = SCREEN_HEIGHT;
 	}
+	if (!gameBoy) {
+		geometry->max_width = geometry->max_width > SCREEN_WIDTH * (unsigned) hdRoom ? geometry->max_width : SCREEN_WIDTH * (unsigned) hdRoom;
+		geometry->max_height = geometry->max_height > SCREEN_HEIGHT * (unsigned) hdRoom ? geometry->max_height : SCREEN_HEIGHT * (unsigned) hdRoom;
+	}
 	if (hdDrawn > 1) {
 		geometry->base_width *= (unsigned) hdDrawn;
 		geometry->base_height *= (unsigned) hdDrawn;
@@ -578,6 +589,7 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
 	memset(info, 0, sizeof(*info));
 	gridAnnounce = false;
 	gbOnAdvance = gameBoy && !gbTogether && libretroGbOnAdvance();
+	hdRoom = hdChosen > 2 ? hdChosen : 2;
 	geometry(&info->geometry);
 	// A Game Boy frame lasts as long as a Game Boy Advance frame.
 	info->timing.fps = FRAME_RATE;
@@ -4936,7 +4948,20 @@ static void sendOneAdvanceSound(void) {
 
 // HD Affine Backgrounds as chosen, where they can be drawn: one GBA, drawn on this thread.
 static void syncHd(void) {
-	int const wanted = !gameBoy && !togetherRunning() && !threadedVideo && gba ? hdChosen : 1;
+	int wanted = !gameBoy && !togetherRunning() && !threadedVideo && gba ? hdChosen : 1;
+	// More than the room told: as much as fits, and the rest when the game is loaded again.
+	static int toldWaiting;
+	if (wanted > hdRoom) {
+		if (toldWaiting != wanted) {
+			toldWaiting = wanted;
+			char message[96];
+			snprintf(message, sizeof(message), "HD Affine Backgrounds %dx: from the next time the game is started (%dx until then)", wanted, hdRoom);
+			notify(message, 300);
+		}
+		wanted = hdRoom;
+	} else {
+		toldWaiting = 0;
+	}
 	int scale = 1;
 	// (again for a machine made anew, by a restart)
 	if (wanted > 1 && (!renderHdFrame(gba, &scale) || scale != wanted)) {
