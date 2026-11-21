@@ -268,6 +268,10 @@ struct Irq {
 	// H-blank IRQ requests since quietFrom that aren't in IF yet, because IE leaves them out (see
 	// gbaIrqSync).
 	bool quietPending;
+	// IE dropped the H-blank IRQ while DISPSTAT asks for it: its requests go quiet only at the next
+	// H-blank, which stays an event until then (see gbaWriteIe). In what was padding, so states keep
+	// their layout.
+	bool quietLater;
 	uint32_t quietFrom;
 	// The time until which IF in io stays valid without calling gbaIrqSync.
 	uint32_t ifStable;
@@ -908,6 +912,7 @@ void gbaRunPart(struct GBA*);
 void gbaSetKeys(struct GBA*, uint16_t keys);
 void gbaRaiseIrq(struct GBA*, int irq, uint32_t late);
 bool gbaQuietHblank(struct GBA*);
+bool gbaHblankHeard(struct GBA*);
 void gbaIrqSync(struct GBA*);
 void gbaIrqQuietChanged(struct GBA*, bool wasQuiet);
 void gbaWriteIe(struct GBA*, uint16_t value);

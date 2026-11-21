@@ -475,7 +475,12 @@ void gbaRaiseIrq(struct GBA* gba, int irq, uint32_t late) {
 // shows it one cycle later. With nothing else to do, those requests aren't events: IF is worked out
 // when read, written, or changed by the controller.
 bool gbaQuietHblank(struct GBA* gba) {
-	return (gba->io[IO(REG_DISPSTAT)] & 0x0010) && !(gba->irq.ie & (1 << IRQ_HBLANK));
+	return (gba->io[IO(REG_DISPSTAT)] & 0x0010) && !(gba->irq.ie & (1 << IRQ_HBLANK)) && !gba->irq.quietLater;
+}
+
+// Whether H-blank IRQ requests come from H-blank events, which ask for them.
+bool gbaHblankHeard(struct GBA* gba) {
+	return (gba->io[IO(REG_DISPSTAT)] & 0x0010) && ((gba->irq.ie & (1 << IRQ_HBLANK)) || gba->irq.quietLater);
 }
 
 // Brings IF up to date with the H-blank requests left to be worked out.
@@ -551,12 +556,19 @@ void gbaWriteIe(struct GBA* gba, uint16_t value) {
 		// are planned again.
 		timerReplan(gba, timingCurrentTime(gba));
 	}
+	bool wasHeard = gbaHblankHeard(gba);
 	gba->irq.ie = value & 0x3FFF;
 	scheduleChange(gba, gba->irq.apply, false, 1, 0);
 	if ((old ^ gba->irq.ie) & (1 << IRQ_HBLANK)) {
+		// Dropped, the H-blank IRQ's requests go quiet at the next H-blank, not now: a game that
+		// leaves it out of IE while its handler runs and puts it back had the video events planned
+		// again twice a line.
+		gba->irq.quietLater = !(gba->irq.ie & (1 << IRQ_HBLANK)) && !wasQuiet && (gba->io[IO(REG_DISPSTAT)] & 0x0010);
 		gbaIrqQuietChanged(gba, wasQuiet);
-		// H-blank events on every line, or not.
-		videoHblankDmaArmed(gba);
+		if (gbaHblankHeard(gba) != wasHeard) {
+			// H-blank events on every line, or not.
+			videoHblankDmaArmed(gba);
+		}
 	}
 }
 

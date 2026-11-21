@@ -167,7 +167,7 @@ int videoLine(struct GBA* gba) {
 // H-blank is an event only for what can't wait: H-blank DMA on the visible lines, and its IRQ where
 // IE lets it through.
 static bool hblankEvent(struct GBA* gba, int line) {
-	return (line < VISIBLE_LINES && dmaTimingArmed(gba, 2)) || ((gba->io[IO(REG_DISPSTAT)] & 0x0010) && (gba->irq.ie & (1 << IRQ_HBLANK)));
+	return (line < VISIBLE_LINES && dmaTimingArmed(gba, 2)) || gbaHblankHeard(gba);
 }
 
 // Returns the first H-blank at from or later, before or after the line video last came up to.
@@ -447,6 +447,14 @@ static void startHblank(struct GBA* gba, void* context, uint32_t late) {
 	}
 	if ((dispstat & 0x0010) && (gba->irq.ie & (1 << IRQ_HBLANK))) {
 		scheduleIrq(gba, 1, late);
+	} else if (gba->irq.quietLater) {
+		// IE has left the IRQ out since the last H-blank. This request only sets IF, as a quiet one
+		// would, and the ones after it are quiet.
+		gba->irq.quietLater = false;
+		if (dispstat & 0x0010) {
+			scheduleIrq(gba, 1, late);
+			gbaIrqQuietChanged(gba, false);
+		}
 	}
 	scheduleVideo(gba, timingCurrentTime(gba) - late);
 }
