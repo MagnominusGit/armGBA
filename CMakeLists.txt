@@ -62,6 +62,18 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
 	list(APPEND CORE_SOURCES src/video/render-neon.c)
 	set(BACKEND src/cpu/a32/backend.c)
+	# C as Thumb-2: about a tenth smaller, so more of it stays in a small in-order core's instruction
+	# cache. Races in two games with busy interrupt handlers ran 4% and 7% faster on an RG353M's
+	# Cortex-A55 in 32-bit. Compiled code stays ARM. ARMv6 (the 3DS) has only the first Thumb, which
+	# would be slower, so it is left as it is.
+	include(CheckCSourceCompiles)
+	check_c_source_compiles("#if !defined(__ARM_ARCH) || __ARM_ARCH < 7 || __ARM_ARCH_PROFILE == 'M'
+#error not ARMv7-A or later
+#endif
+int main(void) { return 0; }" ARMGBA_THUMB2)
+	if(ARMGBA_THUMB2)
+		add_compile_options($<$<COMPILE_LANGUAGE:C>:-mthumb>)
+	endif()
 endif()
 if(ARMGBA_JIT AND BACKEND)
 	list(APPEND CORE_SOURCES src/cpu/jit.c ${BACKEND})
