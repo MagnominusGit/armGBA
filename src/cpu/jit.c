@@ -2341,7 +2341,13 @@ void jitRunLoop(struct GBA* gba) {
 		}
 		if (!entry && mid && !gba->traceFile && !findBlock(jit, key)) {
 			const struct Block* within = blockWithin(jit, pc, thumb);
-			if (within) {
+			// The block's careful copy, if it has one, goes on from any of its instructions: an
+			// interrupt taken in the copy comes back to it, on every line for an H-blank IRQ.
+			const struct Block* twin = within ? within->twin : NULL;
+			unsigned const index = within ? (pc - within->pc) / (uint32_t) width : 0;
+			if (twin && twin->valid && index < (unsigned) twin->count) {
+				entry = twin->entries[index];
+			} else if (within) {
 				jit->coldPc = pc + width;
 				jit->coldThumb = thumb;
 				jit->coldLeft = (int) ((within->end - pc) / (uint32_t) width) - 1;
@@ -2678,6 +2684,17 @@ static bool boundaryOk(struct GBA* gba, const struct Block* block) {
 	       !gba->returnRequested && !gba->dmaRunnable && !gba->lastAccessDma && !(gba->irq.line && (!cpu->irqMasked || !(cpu->cpsr & PSR_I)));
 }
 
+// Whether an IRQ to take is all that stops compiled code going on at a boundary in block. The exact
+// CPU then takes it there (jitHelperStepOne), as the run loop would after compiled code left, and
+// compiled code carries on in the handler. A game whose H-blank IRQ fires on every line left and came
+// back for each of them.
+static bool onlyIrq(struct GBA* gba, const struct Block* block) {
+	struct CPU* cpu = &gba->cpu;
+	struct Jit* jit = gba->jit;
+	return gba->irq.line && !(cpu->cpsr & PSR_I) && block->valid && !gba->jitLeave && !cpu->halted && !jit->flushRequested && !jit->waitsChanged && !jit->staleValid &&
+	       gba->video.frameCounter == jit->frame && !gba->returnRequested && !gba->dmaRunnable && !gba->lastAccessDma;
+}
+
 // Runs the events due by now at an instruction boundary. Returns false when compiled code has to
 // leave.
 static bool runDue(struct GBA* gba, const struct Block* block) {
@@ -2703,12 +2720,12 @@ int jitHelperCareful(struct GBA* gba, int32_t cost, int deferrable, const struct
 	// Events put off by the branch or block end that led here run first, between the instructions.
 	if (gba->jitDeferred) {
 		if (!runDue(gba, block)) {
-			return CAREFUL_LEAVE;
+			return onlyIrq(gba, block) ? CAREFUL_STEP : CAREFUL_LEAVE;
 		}
 		gba->jitDeferred = false;
 	}
 	if (!boundaryOk(gba, block)) {
-		return CAREFUL_LEAVE;
+		return onlyIrq(gba, block) ? CAREFUL_STEP : CAREFUL_LEAVE;
 	}
 	if (cpu->cycles + cost < cpu->nextEvent) {
 		return CAREFUL_RUN;
@@ -2723,7 +2740,15 @@ int jitHelperCareful(struct GBA* gba, int32_t cost, int deferrable, const struct
 // Called after an instruction whose events were put off. Returns 0 to go on.
 int jitHelperDeferred(struct GBA* gba, const struct Block* block) {
 	gba->jitDeferred = false;
-	return !runDue(gba, block);
+	if (runDue(gba, block)) {
+		return 0;
+	}
+	if (onlyIrq(gba, block)) {
+		// The next instruction's check then fires, and the exact CPU takes the IRQ there.
+		yield(gba);
+		return 0;
+	}
+	return 1;
 }
 
 // Called when a careful copy's check fires because an event falls inside the instruction at pc. The
