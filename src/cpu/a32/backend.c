@@ -2329,6 +2329,30 @@ static void emitStepExit(struct Compiler* c, const struct Inst* in) {
 static void emitSystem(struct Compiler* c, const struct Inst* in) {
 	struct Emitter* e = &c->e;
 	bool writesPc = in->kind != I_MSR && !(in->kind == I_ALU && isTest(in->op));
+	uint8_t* fast = NULL;
+	if (in->kind == I_MSR && (in->op2.isImm || in->op2.rm != 15)) {
+		// Tried first without leaving the registers: only the flags go to the CPSR, and come back
+		// from it.
+		clobberFlags(c);
+		flushPending(c);
+		if (in->op2.isImm) {
+			aMovI(e, R1, in->op2.imm);
+		} else {
+			loadGuest(c, R1, in->op2.rm, in);
+		}
+		ldrF(e, R2, OFF(cpu.cpsr));
+		aDpI(e, C_AL, D_BIC, false, R2, R2, 0xF0000000);
+		aDpI(e, C_AL, D_AND, false, R3, R_FLAGS, 0xF0000000);
+		aDpR(e, C_AL, D_ORR, false, R2, R2, R3, S_LSL, 0);
+		strF(e, R2, OFF(cpu.cpsr));
+		aMov(e, R0, R_GBA);
+		aMovI(e, R2, in->fieldMask | (in->spsr ? 0x100 : 0));
+		callAbs(e, jitHelperMsrFast);
+		ldrF(e, R_FLAGS, OFF(cpu.cpsr));
+		canonical(c);
+		aDpI(e, C_AL, D_CMP, true, 0, R0, 0);
+		fast = aB(e, C_EQ, NULL);
+	}
 	storeHead(c, in->address + 3 * c->width);
 	spill(c);
 	aMovI(e, R1, in->opcode);
@@ -2340,6 +2364,9 @@ static void emitSystem(struct Compiler* c, const struct Inst* in) {
 		setBiosPrefetchNext(c, in);
 		aB(e, C_AL, c->jit->dispatchKey);
 	} else {
+		if (fast) {
+			patchHere(e, fast);
+		}
 		emitLinkTo(c, in->address + c->width, c->thumb);
 	}
 	patchHere(e, exact);

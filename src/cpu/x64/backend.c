@@ -2293,6 +2293,23 @@ static void emitStepExit(struct Compiler* c, const struct Inst* in) {
 static void emitSystem(struct Compiler* c, const struct Inst* in) {
 	struct Emitter* e = &c->e;
 	bool writesPc = in->kind != I_MSR && !(in->kind == I_ALU && isTest(in->op));
+	uint8_t* fast = NULL;
+	if (in->kind == I_MSR && (in->op2.isImm || in->op2.rm != 15)) {
+		// Tried first without the exact CPU's decoder. Most of the guest registers are in registers a
+		// call may change, so here they still go through the CPU state.
+		spill(c);
+		if (in->op2.isImm) {
+			xMovI(e, RSI, in->op2.imm);
+		} else {
+			xLoad(e, 4, RSI, M(R15, REG(in->op2.rm)));
+		}
+		xMovI(e, RDX, in->fieldMask | (in->spsr ? 0x100 : 0));
+		xMovRR(e, 8, RDI, R15);
+		callAbs(e, jitHelperMsrFast);
+		xCall(e, c->jit->reloadRoutine);
+		xTest(e, 4, R(RAX), RAX);
+		fast = xJcc(e, CC_E, NULL);
+	}
 	storeHead(c, in->address + 3 * c->width);
 	spill(c);
 	xMovI(e, RSI, in->opcode);
@@ -2304,6 +2321,9 @@ static void emitSystem(struct Compiler* c, const struct Inst* in) {
 		setBiosPrefetchNext(c, in);
 		xJmp(e, c->jit->dispatchKey);
 	} else {
+		if (fast) {
+			patchHere(e, fast);
+		}
 		emitLinkTo(c, in->address + c->width, c->thumb);
 	}
 	patchHere(e, exact);

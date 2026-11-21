@@ -2431,6 +2431,39 @@ static void emitStepExit(struct Compiler* c, const struct Inst* in) {
 static void emitSystem(struct Compiler* c, const struct Inst* in) {
 	struct Emitter* e = &c->e;
 	bool writesPc = in->kind != I_MSR && !(in->kind == I_ALU && isTest(in->op));
+	uint8_t* fast = NULL;
+	if (in->kind == I_MSR && (in->op2.isImm || in->op2.rm != 15)) {
+		// Tried first without leaving the registers. Guest r8-r14 are in registers a call may change,
+		// and a mode switch banks r13 and r14 (and r8-r12 for FIQ): they go to the CPU state and
+		// come back, as do the flags.
+		clobberFlags(c);
+		flushPending(c);
+		if (in->op2.isImm) {
+			aMovImm(e, 1, in->op2.imm);
+		} else {
+			loadGuest(c, 1, in->op2.rm, in);
+		}
+		for (int r = 8; r < 14; r += 2) {
+			aStpW(e, hostReg[r], hostReg[r + 1], R_GBA, REG(r));
+		}
+		aStr(e, hostReg[14], R_GBA, REG(14));
+		aLdr(e, 16, R_GBA, OFF(cpu.cpsr));
+		aLsrImm(e, 17, R_FLAGS, 28);
+		aBfi(e, 16, 17, 28, 4);
+		aStr(e, 16, R_GBA, OFF(cpu.cpsr));
+		aMovX(e, 0, R_GBA);
+		aMovImm(e, 2, in->fieldMask | (in->spsr ? 0x100 : 0));
+		callAbs(e, jitHelperMsrFast);
+		for (int r = 8; r < 14; r += 2) {
+			aLdpW(e, hostReg[r], hostReg[r + 1], R_GBA, REG(r));
+		}
+		aLdr(e, hostReg[14], R_GBA, REG(14));
+		aLdr(e, R_FLAGS, R_GBA, OFF(cpu.cpsr));
+		aLsrImm(e, R_FLAGS, R_FLAGS, 28);
+		aLslImm(e, R_FLAGS, R_FLAGS, 28);
+		canonical(c);
+		fast = aCbz(e, 0, NULL);
+	}
 	storeHead(c, in->address + 3 * c->width);
 	spill(c);
 	aMovImm(e, 1, in->opcode);
@@ -2442,6 +2475,9 @@ static void emitSystem(struct Compiler* c, const struct Inst* in) {
 		setBiosPrefetchNext(c, in);
 		aB(e, c->jit->dispatchKey);
 	} else {
+		if (fast) {
+			patchHere(e, fast);
+		}
 		emitLinkTo(c, in->address + c->width, c->thumb);
 	}
 	patchHere(e, exact);

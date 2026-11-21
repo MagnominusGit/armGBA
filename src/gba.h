@@ -887,6 +887,7 @@ bool cpuMultiplyCarryFull(uint32_t multiplier);
 bool cpuMultiplyCarryLow(uint32_t multiplicand, uint32_t multiplier, uint32_t accum);
 bool cpuMultiplyCarryHigh(uint32_t multiplicand, uint32_t multiplier, uint32_t accumHi, bool sign);
 void jitHelperMsr(struct GBA*, uint32_t value, uint32_t packed);
+uint32_t jitHelperMsrFast(struct GBA*, uint32_t value, uint32_t packed);
 
 // gba.c
 struct GBA* gbaCreate(void);
