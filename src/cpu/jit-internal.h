@@ -172,6 +172,10 @@ struct Block {
 	uint32_t stop;
 	// Its host code
 	uint8_t* entry;
+	// A cartridge block's first instruction: a no-op, or a jump to headStub, its idle loop head's
+	// check, while it is one (backendIdleHead)
+	uint8_t* headSite;
+	uint8_t* headStub;
 	// Where its cold code starts, when a backend keeps that apart from the bodies; NULL when it
 	// doesn't.
 	uint8_t* cold;
@@ -588,6 +592,7 @@ void jitHostFlushCode(void* start, void* end);
 bool backendInit(struct Jit*);
 bool backendCompile(struct Jit*, struct Block*, struct Inst* insts, int count, const uint32_t* nextOps);
 void backendPatchJump(uint8_t* site, const void* target);
+void backendIdleHead(struct Block*, bool on);
 // Called when the code memory is empty again (at start and after a flush); codeNext is where blocks
 // begin.
 void backendReset(struct Jit*);

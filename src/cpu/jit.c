@@ -1348,7 +1348,7 @@ static struct Block* revive(struct GBA* gba, uint32_t key) {
 			continue;
 		}
 		// A head's check left in a block that is no longer one would leave at its start forever.
-		if (block->idleHead != jitIsIdleHead(jit, key)) {
+		if (!block->headSite && block->idleHead != jitIsIdleHead(jit, key)) {
 			continue;
 		}
 		if (block->setAside) {
@@ -1371,6 +1371,9 @@ static struct Block* revive(struct GBA* gba, uint32_t key) {
 		*prev = block->dormantNext;
 		block->valid = true;
 		countLive(jit, block, true);
+		if (block->headSite) {
+			backendIdleHead(block, jitIsIdleHead(jit, key));
+		}
 		int kind = block->codeKind;
 		if (kind == CODE_IWRAM || kind == CODE_EWRAM) {
 			for (uint32_t offset = block->start & ~3u; offset < block->stop; offset += 4) {
@@ -2109,10 +2112,13 @@ bool jitIsIdleHead(const struct Jit* jit, uint32_t key) {
 	return false;
 }
 
-// When recompiled, a block takes on or drops the start of an idle loop's head.
+// A block takes on or drops the start of an idle loop's head: a cartridge block's first instruction
+// is patched, and any other is compiled again.
 static void idleRecompile(struct Jit* jit, uint32_t key) {
 	struct Block* block = findBlock(jit, key);
-	if (block) {
+	if (block && block->headSite) {
+		backendIdleHead(block, jitIsIdleHead(jit, key));
+	} else if (block) {
 		removeBlock(jit, block);
 	}
 }

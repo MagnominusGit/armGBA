@@ -46,6 +46,14 @@ static void flushCode(void* start, void* end) {
 }
 
 // Points the branch at site somewhere else. This is how blocks are linked and unlinked.
+// Turns a cartridge block's idle loop head check on or off: its first instruction branches to the
+// check or does nothing.
+void backendIdleHead(struct Block* block, bool on) {
+	uint32_t insn = on ? 0xEA000000 | ((uint32_t) ((block->headStub - (block->headSite + 8)) / 4) & 0xFFFFFF) : 0xE320F000;
+	memcpy(block->headSite, &insn, 4);
+	flushCode(block->headSite, block->headSite + 4);
+}
+
 void backendPatchJump(uint8_t* site, const void* target) {
 	patchBranch(site, target);
 	flushCode(site, site + 4);
@@ -2748,8 +2756,10 @@ static bool compileInStretch(struct Jit* jit, struct Block* block, struct Inst* 
 	c.idleExit = idleExit(&c);
 
 	block->entry = c.e.p;
-	if (jitIsIdleHead(jit, blockKey(block->pc, block->thumb))) {
-		emitIdleHead(&c);
+	block->headSite = NULL;
+	if (!c.careful && block->codeKind == CODE_ROM) {
+		block->headSite = c.e.p;
+		emit32(&c.e, 0xE320F000);
 	}
 	if (c.idleExit) {
 		emitIdleSkip(&c);
@@ -2903,6 +2913,11 @@ static bool compileInStretch(struct Jit* jit, struct Block* block, struct Inst* 
 		storeConst(&c, OFF(exitReason), EXIT_LOOKUP);
 		aB(e, C_AL, jit->exitRoutine);
 	}
+	if (block->headSite) {
+		block->headStub = e->p;
+		emitIdleHead(&c);
+		aB(e, C_AL, block->headSite + 4);
+	}
 	block->outCount = c.linkCount;
 	block->out = malloc(c.linkCount * sizeof(*block->out));
 	memcpy(block->out, c.links, c.linkCount * sizeof(*block->out));
@@ -2930,6 +2945,9 @@ static bool compileInStretch(struct Jit* jit, struct Block* block, struct Inst* 
 		flushCode(c.e.start, bodyEnd);
 		flushCode(cold, e->p);
 		jit->codeNext = bodyEnd;
+	}
+	if (block->headSite && jitIsIdleHead(jit, blockKey(block->pc, block->thumb))) {
+		backendIdleHead(block, true);
 	}
 	jitNameBlock(block, bodyEnd, cold, e->p);
 	jit->coldNext = e->p;

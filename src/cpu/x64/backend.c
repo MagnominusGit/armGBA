@@ -40,6 +40,18 @@ void backendPatchJump(uint8_t* site, const void* target) {
 	patchRel32(site, target);
 }
 
+// Turns a cartridge block's idle loop head check on or off: its first instruction jumps to the check
+// or does nothing.
+void backendIdleHead(struct Block* block, bool on) {
+	static const uint8_t nop5[5] = { 0x0F, 0x1F, 0x44, 0x00, 0x00 };
+	if (on) {
+		block->headSite[0] = 0xE9;
+		patchRel32(block->headSite + 1, block->headStub);
+	} else {
+		memcpy(block->headSite, nop5, 5);
+	}
+}
+
 // Shared routines.
 
 // Converts the prefetch buffer's base between jitBase and the form C code keeps.
@@ -2675,8 +2687,13 @@ static bool compileInStretch(struct Jit* jit, struct Block* block, struct Inst* 
 	c.idleExit = idleExit(&c);
 
 	block->entry = c.e.p;
-	if (jitIsIdleHead(jit, blockKey(block->pc, block->thumb))) {
-		emitIdleHead(&c);
+	block->headSite = NULL;
+	if (!c.careful && block->codeKind == CODE_ROM) {
+		block->headSite = c.e.p;
+		static const uint8_t nop5[5] = { 0x0F, 0x1F, 0x44, 0x00, 0x00 };
+		for (int i = 0; i < 5; ++i) {
+			e8(&c.e, nop5[i]);
+		}
 	}
 	if (c.idleExit) {
 		emitIdleSkip(&c);
@@ -2811,6 +2828,11 @@ static bool compileInStretch(struct Jit* jit, struct Block* block, struct Inst* 
 		xStoreI(e, 4, M(R15, OFF(exitReason)), EXIT_LOOKUP);
 		xJmp(e, jit->exitRoutine);
 	}
+	if (block->headSite) {
+		block->headStub = e->p;
+		emitIdleHead(&c);
+		xJmp(e, block->headSite + 5);
+	}
 	block->outCount = c.linkCount;
 	block->out = malloc(c.linkCount * sizeof(*block->out));
 	memcpy(block->out, c.links, c.linkCount * sizeof(*block->out));
@@ -2833,6 +2855,9 @@ static bool compileInStretch(struct Jit* jit, struct Block* block, struct Inst* 
 	}
 	if (!c.careful) {
 		jit->codeNext = bodyEnd;
+	}
+	if (block->headSite && jitIsIdleHead(jit, blockKey(block->pc, block->thumb))) {
+		backendIdleHead(block, true);
 	}
 	jitNameBlock(block, bodyEnd, cold, e->p);
 	jit->coldNext = e->p;

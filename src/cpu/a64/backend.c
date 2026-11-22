@@ -43,6 +43,14 @@ void backendPatchJump(uint8_t* site, const void* target) {
 	flushCode(site, site + 4);
 }
 
+// Turns a cartridge block's idle loop head check on or off: its first instruction branches to the
+// check or does nothing.
+void backendIdleHead(struct Block* block, bool on) {
+	uint32_t insn = on ? 0x14000000 | ((uint32_t) ((block->headStub - block->headSite) / 4) & 0x3FFFFFF) : 0xD503201F;
+	memcpy(block->headSite, &insn, 4);
+	flushCode(block->headSite, block->headSite + 4);
+}
+
 // Calls a C function anywhere in the address space.
 static void callAbs(struct Emitter* e, const void* fn) {
 	aMovImm64(e, 16, (uint64_t) (uintptr_t) fn);
@@ -2838,8 +2846,10 @@ static bool compileInStretch(struct Jit* jit, struct Block* block, struct Inst* 
 	c.idleExit = idleExit(&c);
 
 	block->entry = c.e.p;
-	if (jitIsIdleHead(jit, blockKey(block->pc, block->thumb))) {
-		emitIdleHead(&c);
+	block->headSite = NULL;
+	if (!c.careful && block->codeKind == CODE_ROM) {
+		block->headSite = c.e.p;
+		emit32(&c.e, 0xD503201F);
 	}
 	if (c.idleExit) {
 		emitIdleSkip(&c);
@@ -2976,6 +2986,11 @@ static bool compileInStretch(struct Jit* jit, struct Block* block, struct Inst* 
 		storeField32(&c, OFF(exitReason), EXIT_LOOKUP);
 		aB(e, jit->exitRoutine);
 	}
+	if (block->headSite) {
+		block->headStub = e->p;
+		emitIdleHead(&c);
+		aB(e, block->headSite + 4);
+	}
 	block->outCount = c.linkCount;
 	block->out = malloc(c.linkCount * sizeof(*block->out));
 	memcpy(block->out, c.links, c.linkCount * sizeof(*block->out));
@@ -3007,6 +3022,9 @@ static bool compileInStretch(struct Jit* jit, struct Block* block, struct Inst* 
 		flushCode(c.e.start, bodyEnd);
 		flushCode(cold, e->p);
 		jit->codeNext = bodyEnd;
+	}
+	if (block->headSite && jitIsIdleHead(jit, blockKey(block->pc, block->thumb))) {
+		backendIdleHead(block, true);
 	}
 	jitNameBlock(block, bodyEnd, cold, e->p);
 	jit->coldNext = e->p;
