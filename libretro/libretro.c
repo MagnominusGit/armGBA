@@ -4186,13 +4186,20 @@ static void readFrameSkip(void) {
 static bool skipThisFrame(void) {
 	static int run;
 	bool skip = false;
-	if (frameSkip && !netplaySeen && !rerunning()) {
-		skip = frameSkip < 0 ? soundActive && (soundShort || soundFull <= 33) && run < 3 : run < frameSkip;
+	if (rerunning()) {
+		bool fastForwarding = false;
+		if (fastForwardSkip && !gameBoy && !netplaySeen && environment(RETRO_ENVIRONMENT_GET_FASTFORWARDING, &fastForwarding) &&
+		    fastForwarding) {
+			++run;
+			++frameSkipTotal;
+			return true;
+		}
+		// A frame run ahead or again leaves Frame Skip's count as it is: reset by it, every frame shown
+		// was left out, and with run-ahead the picture stood still.
+		return false;
 	}
-	bool fastForwarding = false;
-	if (!skip && fastForwardSkip && !gameBoy && !netplaySeen && rerunning() &&
-	    environment(RETRO_ENVIRONMENT_GET_FASTFORWARDING, &fastForwarding) && fastForwarding) {
-		skip = true;
+	if (frameSkip && !netplaySeen) {
+		skip = frameSkip < 0 ? soundActive && (soundShort || soundFull <= 33) && run < 3 : run < frameSkip;
 	}
 	if (!skip) {
 		framesSkipped = run;
