@@ -1363,6 +1363,31 @@ static void sendFitted(const void* picture, unsigned width, unsigned height, siz
 	videoRefresh(gridOut.data, outWidth, outHeight, outPitch);
 }
 
+// LCD Scale turned off: its buffers go, as HD's do (at 8x the larger picture alone is up to 9.8 MB).
+// Only once a picture without it has been shown: the frontend keeps the last one it showed, to show
+// again under its menu, and a frame it runs without showing (run-ahead, a netplay rollback), or a
+// picture left out, doesn't replace it.
+static void releaseScaled(void) {
+	if (!gridOut.data && !fit.columnFrom) {
+		return;
+	}
+	struct GridBuffer* const buffers[] = { &gridOut, &gridBlends, &gridTemplates, &gridSplits, &gridDark, &gridKeeps, &gridKeptRows };
+	for (size_t i = 0; i < sizeof(buffers) / sizeof(*buffers); ++i) {
+		free(buffers[i]->data);
+		buffers[i]->data = NULL;
+		buffers[i]->size = 0;
+	}
+	void** const tables[] = { (void**) &fit.columnFrom, (void**) &fit.rowFrom, (void**) &fit.across, (void**) &fit.down, (void**) &fit.across16,
+		                      (void**) &fit.across32, (void**) &fit.tint16[0], (void**) &fit.tint16[1], (void**) &fit.tint16[2],
+		                      (void**) &fit.tint32[0], (void**) &fit.tint32[1], (void**) &fit.tint32[2] };
+	for (size_t i = 0; i < sizeof(tables) / sizeof(*tables); ++i) {
+		free(*tables[i]);
+		*tables[i] = NULL;
+	}
+	// Laid out again when Fit Screen comes back
+	fit.width = 0;
+}
+
 void sendPicture(const void* picture, unsigned width, unsigned height, size_t pitch) {
 	if (gridFit) {
 		sendFitted(picture, width, height, pitch);
@@ -1372,6 +1397,9 @@ void sendPicture(const void* picture, unsigned width, unsigned height, size_t pi
 	int const halves = gridHalves % 2 && (width | height) & 1 ? gridHalves - 1 : gridHalves;
 	if (halves <= 2) {
 		videoRefresh(frameSkipped ? NULL : picture, width, height, pitch);
+		if (picture && !frameSkipped && !rerunning()) {
+			releaseScaled();
+		}
 		return;
 	}
 	size_t const bytes = pitch / width;
