@@ -127,6 +127,7 @@ static int gridChosen = 2;
 static bool fitChosen;
 static unsigned fitChosenWidth = 1280, fitChosenHeight = 720;
 static uint16_t* correctedHd;
+static size_t correctedHdSize;
 // Whether RetroArch is to hear of a new picture size, as LCD Grid's scale changed.
 static bool gridAnnounce;
 static int32_t lowPass;
@@ -3714,6 +3715,13 @@ void retro_unload_game(void) {
 	printoutFinish();
 	largestWidth = largestHeight = 0;
 	roomWidth = roomHeight = 0;
+	// The game gone, the frontend has no picture of it to show again.
+	free(renderSetHd(NULL, 1));
+	hdDrawn = 1;
+	free(correctedHd);
+	correctedHd = NULL;
+	correctedHdSize = 0;
+	pictureRetiredFree();
 	pairFile = false;
 	secondFromFrontend = false;
 	secondPath[0] = '\0';
@@ -4638,13 +4646,13 @@ static void showConsoles(const void* const pictures[], size_t pixelBytes, int wi
                          const size_t frames[]) {
 	if (screens >= SCREENS_ONE) {
 		int const shown = screens - SCREENS_ONE < playersHere ? screens - SCREENS_ONE : 0;
+		// Copied, not given as it is: that console's picture goes with it when the link stops, and the
+		// frontend may still have it as its last.
+		memcpy(frame, pictures[shown], width * pixelBytes * height);
 		if (playerNumbers) {
-			memcpy(frame, pictures[shown], width * pixelBytes * height);
 			numberScreen(frame, width * pixelBytes, pixelBytes, shown);
-			showPicture(frame, width, height, width * pixelBytes);
-		} else {
-			showPicture(pictures[shown], width, height, width * pixelBytes);
 		}
+		showPicture(frame, width, height, width * pixelBytes);
 		sendSound(samples[shown], frames[shown]);
 		return;
 	}
@@ -5089,12 +5097,14 @@ static bool settleHd(void) {
 	}
 	int scale = 1;
 	// (again for a machine made anew, by a restart)
+	// The frames it no longer draws into may still be the frontend's last picture (pictureRetire).
 	if (wanted > 1 && (!renderHdFrame(gba, &scale) || scale != wanted)) {
-		renderSetHd(gba, wanted);
+		pictureRetire(renderSetHd(gba, wanted));
 	} else if (wanted == 1 && hdDrawn > 1) {
-		renderSetHd(gba, 1);
-		free(correctedHd);
+		pictureRetire(renderSetHd(gba, 1));
+		pictureRetire(correctedHd);
 		correctedHd = NULL;
+		correctedHdSize = 0;
 	}
 	int const drawn = wanted > 1 && renderHdFrame(gba, &scale) ? scale : 1;
 	if (drawn == hdDrawn) {
@@ -5153,9 +5163,18 @@ static void runOneAdvance(void) {
 		unsigned const width = SCREEN_WIDTH * (unsigned) hdScale, height = SCREEN_HEIGHT * (unsigned) hdScale;
 		const uint16_t* shown = hdPicture;
 		if (colorCorrection && !frameSkipped) {
-			uint16_t* const room = realloc(correctedHd, (size_t) width * height * sizeof(*room));
+			size_t const size = (size_t) width * height;
+			if (size != correctedHdSize) {
+				// Given to the frontend: a new one, the old retired
+				uint16_t* const made = malloc(size * sizeof(*made));
+				if (made) {
+					pictureRetire(correctedHd);
+					correctedHd = made;
+					correctedHdSize = size;
+				}
+			}
+			uint16_t* const room = size == correctedHdSize ? correctedHd : NULL;
 			if (room) {
-				correctedHd = room;
 				for (size_t i = 0; i < (size_t) width * height; ++i) {
 					room[i] = corrected(hdPicture[i]);
 				}

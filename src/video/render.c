@@ -2602,22 +2602,23 @@ static struct {
 	int lineOf[2];
 } hd = { .lineOf = { -2, -2 } };
 
-void renderSetHd(struct GBA* gba, int scale) {
+uint16_t* renderSetHd(struct GBA* gba, int scale) {
+	uint16_t* old = NULL;
 	if (scale < 2 || !gba) {
 		// Turned off, its frame goes: up to 4.9 MB at 8x.
-		free(hd.frame);
+		old = hd.frame;
 		hd.frame = NULL;
 		hd.gba = NULL;
 		hd.scale = 1;
-		return;
+		return old;
 	}
 	if (scale != hd.scale || !hd.frame) {
 		uint16_t* frame = calloc((size_t) SCREEN_WIDTH * SCREEN_HEIGHT * scale * scale, sizeof(*frame));
 		if (!frame) {
 			hd.gba = NULL;
-			return;
+			return NULL;
 		}
-		free(hd.frame);
+		old = hd.frame;
 		hd.frame = frame;
 	}
 	hd.gba = gba;
@@ -2625,6 +2626,7 @@ void renderSetHd(struct GBA* gba, int scale) {
 	hd.lineOf[0] = hd.lineOf[1] = -2;
 	// Every line drawn again, at the new size.
 	memset(gba->renderer.scanlineDirty, 0xFF, sizeof(gba->renderer.scanlineDirty));
+	return old;
 }
 
 const uint16_t* renderHdFrame(const struct GBA* gba, int* scale) {
