@@ -749,9 +749,15 @@ static bool buildCorrectedColors(void) {
 	return true;
 }
 
-// Whether the left stick tilts controller 1's motion sensor cartridge, rather than being the D-pad.
+// Whether Device Motion's readings came from the device last frame; without them the left stick
+// stands in.
+static bool motionFromDevice;
+
+// Whether the left stick tilts controller 1's motion sensor cartridge, rather than being the D-pad:
+// with Tilt Control's Left Stick, or standing in for Device Motion.
 static bool stickTilts(void) {
-	return tiltControl == TILT_LEFT_STICK && (gameBoy ? tiltCartridge : gba && gba->gpio.devices & (HW_TILT | HW_GYRO));
+	bool const cartridge = gameBoy ? tiltCartridge : gba && gba->gpio.devices & (HW_TILT | HW_GYRO);
+	return cartridge && (tiltControl == TILT_LEFT_STICK || (tiltControl == TILT_DEVICE && !motionFromDevice));
 }
 
 // Names each button for the loaded console, including the tilt sensor's controls.
@@ -805,7 +811,7 @@ static void showButtons(void) {
 		BUTTON(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "D-Pad Left / D-Pad Right");
 		BUTTON(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "D-Pad Up / D-Pad Down");
 	}
-	if (tiltControl != TILT_DPAD && !(tiltControl == TILT_DEVICE && forGameBoy) && !(tiltControl == TILT_LEFT_STICK && stickDpad)) {
+	if (tiltControl != TILT_DPAD && !(tiltControl == TILT_DEVICE && forGameBoy) && !(tiltControl != TILT_RIGHT_STICK && stickDpad)) {
 		unsigned const stick = tiltControl == TILT_RIGHT_STICK ? RETRO_DEVICE_INDEX_ANALOG_RIGHT : RETRO_DEVICE_INDEX_ANALOG_LEFT;
 		BUTTON(RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_X, "Tilt / Turn (Motion Sensor)");
 		BUTTON(RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_Y,
@@ -3880,11 +3886,22 @@ static bool deviceMotion(int* x, int* y) {
 	return true;
 }
 
+// Notes whether the device gave the motion this frame, the controls menu told when the left stick
+// starts or stops standing in for it.
+static void noteMotionFrom(bool device) {
+	if (device != motionFromDevice) {
+		motionFromDevice = device;
+		if (tiltControl == TILT_DEVICE) {
+			showButtons();
+		}
+	}
+}
+
 // Reads the motion sensor control: a stick, or the D-pad pushed all the way, giving -0x7FFF to
-// 0x7FFF on each axis, or the device's motion.
-static void readMotion(uint16_t keys, int* x, int* y) {
+// 0x7FFF on each axis, or the device's motion. Returns whether it was the device's.
+static bool readMotion(uint16_t keys, int* x, int* y) {
 	if (deviceMotion(x, y)) {
-		return;
+		return true;
 	}
 	if (tiltControl == TILT_DPAD) {
 		*x = keys & KEY_RIGHT ? 0x7FFF : keys & KEY_LEFT ? -0x7FFF : 0;
@@ -3894,6 +3911,7 @@ static void readMotion(uint16_t keys, int* x, int* y) {
 		*x = inputState(0, RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_X);
 		*y = inputState(0, RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_Y);
 	}
+	return false;
 }
 
 // Feeds the tilt sensor of a Game Boy cartridge that has one (Kirby Tilt 'n' Tumble). L flicks the
@@ -3904,7 +3922,7 @@ static void readTilt(uint16_t keys) {
 	int y;
 	bool const click = keys & KEY_L;
 	useSensors(true, false);
-	readMotion(keys, &x, &y);
+	noteMotionFrom(readMotion(keys, &x, &y));
 	if (click && !pressed.flickHeld) {
 		libretroGbFlick();
 	}
@@ -4022,10 +4040,12 @@ static void readSensors(uint16_t keys) {
 		int x;
 		int y;
 		useSensors(devices & HW_TILT, devices & HW_GYRO);
-		readMotion(keys, &x, &y);
+		bool const device = readMotion(keys, &x, &y);
 		gba->gpio.tiltInputX = x * 0x3800;
 		gba->gpio.tiltInputY = y * 0x3800;
 		gba->gpio.gyroZ = x * 11000;
+		// A gyro alone, turned by the device's own gyroscope, leaves the left stick to the D-pad too.
+		noteMotionFrom(device || (gyroscopeOn && !(devices & HW_TILT)));
 		if (gyroscopeOn) {
 			// The cartridge's gyro reads up to about 300 degrees a second (5 rad/s) either way;
 			// turning clockwise as the stick's right does.
