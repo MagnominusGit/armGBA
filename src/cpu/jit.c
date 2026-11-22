@@ -2479,8 +2479,11 @@ void jitRunLoop(struct GBA* gba) {
 			}
 			if (link->formMiss) {
 				// When compiled again, the block and any others starting at the word learn the form
-				// it holds now.
+				// it holds now. Both are stepped through first, as new code is: code a game writes
+				// afresh each frame, which a block would only run once or twice, isn't compiled.
 				++jit->formMisses;
+				jit->seenCount[lookupHash(blockKey(link->from->pc, link->from->thumb))] = 0;
+				jit->seenCount[lookupHash(blockKey(next, thumb))] = 0;
 				removeBlock(jit, link->from);
 				struct Block* at = findBlock(jit, blockKey(next, thumb));
 				if (at) {
