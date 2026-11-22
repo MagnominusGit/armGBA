@@ -1282,10 +1282,14 @@ static bool outdated(struct Jit* jit, const struct Block* block) {
 	}
 	int kind = block->codeKind;
 	for (uint32_t address = block->pc; address < block->end; address += 4) {
+		// A word compiled for each of its forms checks which one it holds as it runs.
+		int i = (address - block->pc) >> 2;
+		if (i < 64 && ((block->polymorphic >> i) & 1)) {
+			continue;
+		}
 		if (reshaped(jit, kind, address)) {
 			return true;
 		}
-		int i = (address - block->pc) >> 2;
 		if (i < 64 && !((block->patchable >> i) & 1) && jit->smcCount[smcIndex(kind, canonical(kind, address))] >= PATCH_THRESHOLD) {
 			struct Inst in;
 			decodeArm(&in, address, codeFetch32(jit->gba, address));
@@ -1571,8 +1575,7 @@ static struct Block* compileBlockTimed(struct GBA* gba, uint32_t pc, bool thumb,
 		addPages(jit, block);
 	} else {
 		block->cached = true;
-		// Once copied back, rewritten words could hold forms the block wasn't compiled for.
-		if (kind != CODE_BIOS && kind != CODE_ROM && kind != CODE_NONE && !polymorphic) {
+		if (kind != CODE_BIOS && kind != CODE_ROM && kind != CODE_NONE) {
 			block->bytes = malloc(block->bodyStop - block->start);
 			memcpy(block->bytes, codePointer(gba, pc), block->bodyStop - block->start);
 		}
