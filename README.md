@@ -41,7 +41,7 @@ interrupts, DMA, timers and what's on screen all happen when they would on the h
 | R3 | The cheat cartridge's button, with one | The cheat cartridge's button, with one; otherwise the contrast back to 50% |
 | L, R | L, R | Stretch the picture (Game Boy Advance model), as that console's shoulder buttons do; with a tilt cartridge, L flicks it (motion sensor) and R stretches |
 | Tilt stick | Tilt and turn (motion sensor games) | Tilt (motion sensor games) |
-| Left stick, with Left Stick as D-Pad | D-pad, except while it tilts | Same |
+| Left stick | The D-pad too, unless Left Stick as D-Pad is off or it tilts (motion sensor games) | Same |
 | Right stick up, down | Sunlight up, down (solar sensor games) | Contrast up, down (original Game Boy screens) |
 | L, R, Start (held 1 s) | Restart that player's console (the Restart Combo option) | Same |
 
@@ -128,7 +128,7 @@ standalone frontend shows as one page with headers.
 | | Channel Selection | Both | Off, On (shows the switches below; only the sound changes: the game plays on the same, a channel switched off keeps its place for when it's back on, and every netplay player can choose their own) |
 | | Pulse 1, Pulse 2, Wave, Noise (with Channel Selection) | Both | On, Off |
 | | Direct Sound A, Direct Sound B (with Channel Selection) | Game Boy Advance | On, Off |
-| Input | Left Stick as D-Pad | Both | Off, On |
+| Input | Left Stick as D-Pad | Both | On, Off |
 | | Turbo Button Period | Both | 4 to 120 frames, 4 by default |
 | | L2 and R2 | Both | Fast-Forward (held), Fast-Forward Toggle (a press until the next, for handhelds without stick clicks; L3's toggle turns the same fast-forward on and off), Turbo L and R (Game Boy Advance; for handhelds without stick clicks; L2 and R2 then don't fast-forward or change screen layouts) |
 | | L3 Button | Both | Fast-Forward Toggle, Soft Reset (Hold), Off; L3 stays a combo's or the cheat cartridge's button when it's one |

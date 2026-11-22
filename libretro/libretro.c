@@ -749,10 +749,15 @@ static bool buildCorrectedColors(void) {
 	return true;
 }
 
+// Whether the left stick tilts controller 1's motion sensor cartridge, rather than being the D-pad.
+static bool stickTilts(void) {
+	return tiltControl == TILT_LEFT_STICK && (gameBoy ? tiltCartridge : gba && gba->gpio.devices & (HW_TILT | HW_GYRO));
+}
+
 // Names each button for the loaded console, including the tilt sensor's controls.
 static void showButtons(void) {
 	bool const forGameBoy = gameBoy;
-	static struct retro_input_descriptor shown[80];
+	static struct retro_input_descriptor shown[96];
 	size_t n = 0;
 #define BUTTON(device, index, id, name) shown[n++] = (struct retro_input_descriptor) { port, device, index, id, name }
 	unsigned port = 0;
@@ -794,7 +799,13 @@ static void showButtons(void) {
 	if (l3Free()) {
 		BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, l3Button == L3_FAST_FORWARD ? "Fast-Forward Toggle" : "Soft Reset (Hold)");
 	}
-	if (tiltControl != TILT_DPAD && !(tiltControl == TILT_DEVICE && forGameBoy)) {
+	// The left stick as the D-pad (Left Stick as D-Pad), unless it tilts this cartridge
+	bool const stickDpad = leftStickDpad && !stickTilts();
+	if (stickDpad) {
+		BUTTON(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "D-Pad Left / D-Pad Right");
+		BUTTON(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "D-Pad Up / D-Pad Down");
+	}
+	if (tiltControl != TILT_DPAD && !(tiltControl == TILT_DEVICE && forGameBoy) && !(tiltControl == TILT_LEFT_STICK && stickDpad)) {
 		unsigned const stick = tiltControl == TILT_RIGHT_STICK ? RETRO_DEVICE_INDEX_ANALOG_RIGHT : RETRO_DEVICE_INDEX_ANALOG_LEFT;
 		BUTTON(RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_X, "Tilt / Turn (Motion Sensor)");
 		BUTTON(RETRO_DEVICE_ANALOG, stick, RETRO_DEVICE_ID_ANALOG_Y,
@@ -821,6 +832,10 @@ static void showButtons(void) {
 		if (!forGameBoy) {
 			BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "L");
 			BUTTON(RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "R");
+		}
+		if (leftStickDpad) {
+			BUTTON(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "D-Pad Left / D-Pad Right");
+			BUTTON(RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "D-Pad Up / D-Pad Down");
 		}
 	}
 #undef BUTTON
@@ -976,7 +991,13 @@ static void readOptions(void) {
 		{ "select start a b", RESTART_SELECT_START_A_B },
 		{ "off", RESTART_OFF },
 	};
-	leftStickDpad = optionIs("armgba_left_stick_dpad", "enabled");
+	bool const stickDpad = optionIs("armgba_left_stick_dpad", "enabled");
+	if (stickDpad != leftStickDpad) {
+		leftStickDpad = stickDpad;
+		if (gba || gameBoy) {
+			showButtons();
+		}
+	}
 	static const struct Choice tiltChoices[] = { { "right stick", TILT_RIGHT_STICK }, { "d-pad", TILT_DPAD }, { "device", TILT_DEVICE } };
 
 	skipBios = optionIs("armgba_skip_bios", "enabled");
@@ -4126,9 +4147,7 @@ static uint16_t readKeys(unsigned port) {
 	keys |= turbo(port, RETRO_DEVICE_ID_JOYPAD_X, &pressed.turboA[port]) ? KEY_A : 0;
 	keys |= turbo(port, RETRO_DEVICE_ID_JOYPAD_Y, &pressed.turboB[port]) ? KEY_B : 0;
 	// The left stick as the D-pad, unless it tilts controller 1's motion sensor cartridge.
-	bool const tilting = port == 0 && tiltControl == TILT_LEFT_STICK &&
-	                     (gameBoy ? tiltCartridge : gba && gba->gpio.devices & (HW_TILT | HW_GYRO));
-	if (leftStickDpad && !tilting) {
+	if (leftStickDpad && !(port == 0 && stickTilts())) {
 		int const x = inputState(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
 		int const y = inputState(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
 		keys |= (x < -0x4000 ? KEY_LEFT : 0) | (x > 0x4000 ? KEY_RIGHT : 0) | (y < -0x4000 ? KEY_UP : 0) | (y > 0x4000 ? KEY_DOWN : 0);
