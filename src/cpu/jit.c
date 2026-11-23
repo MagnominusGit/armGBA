@@ -203,6 +203,14 @@ static int smcIndex(int kind, uint32_t offset) {
 	return kind == CODE_IWRAM ? (offset >> 2) : (SIZE_IWRAM >> 2) + (offset >> 2);
 }
 
+// The policy of the work RAM kilobyte an offset is in, or NULL elsewhere.
+static struct PagePolicy* pagePolicy(struct Jit* jit, int kind, uint32_t offset) {
+	if (kind != CODE_IWRAM && kind != CODE_EWRAM) {
+		return NULL;
+	}
+	return &jit->policy[smcIndex(kind, offset) >> 8];
+}
+
 // How a block depends on a word it covers: its bits are compiled in, it's a patchable load or
 // store, it's checked when it runs, or it's one of the two words past the end that are only
 // prefetched.
@@ -875,6 +883,7 @@ void jitForgetRewrites(struct GBA* gba) {
 	memset(jit->smcCount, 0, sizeof(jit->smcCount));
 	memset(jit->smcShapes, 0, sizeof(jit->smcShapes));
 	memset(jit->formSets, 0, sizeof(jit->formSets));
+	memset(jit->policy, 0, sizeof(jit->policy));
 }
 
 // Whether any block covers the page an address is in.
@@ -1113,6 +1122,7 @@ static void wordWritten(struct GBA* gba, int kind, uint32_t address) {
 		return;
 	}
 	++jit->invalidations;
+	++jit->policy[index >> 8].invalidations;
 	if (debug.smcLog) {
 		static int logged;
 		if (logged++ < 30) {
@@ -1263,6 +1273,15 @@ static bool alone(struct Jit* jit, int kind, uint32_t address, bool thumb) {
 	return reshaped(jit, kind, address) && (thumb || formsKeepChanging(jit, kind, address));
 }
 
+// Whether a rewritten word is compiled for each of its forms: not in a page that does better with
+// its words as they stand (PagePolicy).
+static bool polyWord(struct Jit* jit, int kind, uint32_t address) {
+	if (!reshaped(jit, kind, address)) {
+		return false;
+	}
+	return !pagePolicy(jit, kind, canonical(kind, address))->plain;
+}
+
 // Whether an instruction is compiled to read its offset or constant when it runs, so one form
 // covers them all.
 static bool patchableInst(const struct Inst* in) {
@@ -1285,9 +1304,12 @@ static bool outdated(struct Jit* jit, const struct Block* block) {
 		// A word compiled for each of its forms checks which one it holds as it runs.
 		int i = (address - block->pc) >> 2;
 		if (i < 64 && ((block->polymorphic >> i) & 1)) {
+			if (!polyWord(jit, kind, address)) {
+				return true;
+			}
 			continue;
 		}
-		if (reshaped(jit, kind, address)) {
+		if (polyWord(jit, kind, address)) {
 			return true;
 		}
 		if (i < 64 && !((block->patchable >> i) & 1) && jit->smcCount[smcIndex(kind, canonical(kind, address))] >= PATCH_THRESHOLD) {
@@ -1336,6 +1358,12 @@ static void learnForms(struct Jit* jit, int kind, uint32_t address, uint32_t opc
 		form->patchable = patchableInst(form);
 		poly->masks[i] = form->patchable ? ~patchField(form->opcode) : ~0u;
 	}
+}
+
+// Keeps a block from being brought back (revive), as when it is out of date.
+static void forgetBytes(struct Block* block) {
+	free(block->bytes);
+	block->bytes = NULL;
 }
 
 // A block whose code was copied away and back again doesn't need recompiling.
@@ -1460,7 +1488,7 @@ static struct Block* compileBlockTimed(struct GBA* gba, uint32_t pc, bool thumb,
 			decodeArm(in, address, opcode);
 		}
 		bool ends = instEndsBlock(in) || jitStepOnly(in);
-		if (!thumb && (careful ? (parent->polymorphic >> count) & 1 : reshaped(jit, kind, address))) {
+		if (!thumb && (careful ? (parent->polymorphic >> count) & 1 : polyWord(jit, kind, address))) {
 			// The block continues past a form that ends it, unless all the forms do.
 			struct Poly* poly = &polys[polyCount];
 			learnForms(jit, kind, address, opcode, poly);
@@ -1585,6 +1613,10 @@ static struct Block* compileBlockTimed(struct GBA* gba, uint32_t pc, bool thumb,
 		registerBlock(jit, block);
 	}
 	++jit->compiled;
+	struct PagePolicy* policy = pagePolicy(jit, kind, canonical(kind, pc));
+	if (policy) {
+		++policy->compiles;
+	}
 	if (debug.dumpDir) {
 		char path[512];
 		snprintf(path, sizeof(path), "%s/%08X%s%s.bin", debug.dumpDir, pc, thumb ? "t" : "a", careful ? "c" : "");
@@ -2261,6 +2293,65 @@ static bool idleCheck(struct GBA* gba) {
 	return true;
 }
 
+enum {
+	POLICY_FRAMES = 64,
+	// What a page's rewrites may cost in a window before it tries the other way: twenty form misses
+	// a frame, or ten invalidations, or two compiles.
+	POLICY_CHURN = 20 * POLICY_FRAMES,
+	POLICY_BACKOFF_MOST = 6,
+};
+
+// A form miss throws two blocks away and makes their entries leave until a block is found again;
+// an invalidation throws away those covering one word; compiling costs about as much as stepping a
+// block a hundred times. (Weighed from the games where each way did better: a rally game swapping
+// whole routines through the same memory, and an action game flipping a few words between two
+// forms as its loops run.)
+static uint32_t policyCost(const struct PagePolicy* policy) {
+	return 2 * policy->formMisses + policy->invalidations + 10 * policy->compiles;
+}
+
+// Switches a page's way, throwing its blocks away so they're compiled or brought back for it.
+static void switchPolicy(struct GBA* gba, int page) {
+	struct PagePolicy* policy = &gba->jit->policy[page];
+	policy->plain = !policy->plain;
+	int kind = page < (SIZE_IWRAM >> 10) ? CODE_IWRAM : CODE_EWRAM;
+	uint32_t start = (page < (SIZE_IWRAM >> 10) ? page : page - (SIZE_IWRAM >> 10)) << 10;
+	removeBlocks(gba, kind, start, start + 1024, ~0u);
+}
+
+// Every POLICY_FRAMES frames: ends trials, keeping the cheaper way, and starts them where the code
+// keeps changing. A choice tried either way waits twice as long as before to be tried again.
+static void choosePolicies(struct GBA* gba) {
+	struct Jit* jit = gba->jit;
+	for (int i = 0; i < POLICY_PAGES; ++i) {
+		struct PagePolicy* policy = &jit->policy[i];
+		uint32_t cost = policyCost(policy);
+		policy->formMisses = 0;
+		policy->invalidations = 0;
+		policy->compiles = 0;
+		if (policy->trial) {
+			policy->trial = false;
+			if (cost >= policy->before) {
+				switchPolicy(gba, i);
+			}
+			if (policy->backoff < POLICY_BACKOFF_MOST) {
+				++policy->backoff;
+			}
+			policy->wait = (uint8_t) (1 << policy->backoff);
+			continue;
+		}
+		if (policy->wait) {
+			--policy->wait;
+			continue;
+		}
+		if (cost >= POLICY_CHURN) {
+			policy->before = cost;
+			policy->trial = true;
+			switchPolicy(gba, i);
+		}
+	}
+}
+
 // Runs compiled code where nothing can happen inside its instructions, and the exact CPU around
 // events, DMA, IRQs and anything else compiled code leaves to it.
 void jitRunLoop(struct GBA* gba) {
@@ -2268,6 +2359,10 @@ void jitRunLoop(struct GBA* gba) {
 	struct CPU* cpu = &gba->cpu;
 	uint32_t frame = gba->video.frameCounter;
 	jit->frame = frame;
+	if (frame % POLICY_FRAMES == 0 && frame != jit->policyFrame) {
+		jit->policyFrame = frame;
+		choosePolicies(gba);
+	}
 	// A careful copy to continue in straight away, entered where its block's check fired.
 	void* resume = NULL;
 	uint32_t resumeKey = ~0u;
@@ -2488,14 +2583,17 @@ void jitRunLoop(struct GBA* gba) {
 			}
 			if (link->formMiss) {
 				// When compiled again, the block and any others starting at the word learn the form
-				// it holds now. Both are stepped through first, as new code is: code a game writes
-				// afresh each frame, which a block would only run once or twice, isn't compiled.
+				// it holds now. Their forms are out of date, so they aren't brought back.
 				++jit->formMisses;
-				jit->seenCount[lookupHash(blockKey(link->from->pc, link->from->thumb))] = 0;
-				jit->seenCount[lookupHash(blockKey(next, thumb))] = 0;
+				struct PagePolicy* policy = pagePolicy(jit, codeKindOf(gba, next), canonical(codeKindOf(gba, next), next));
+				if (policy) {
+					++policy->formMisses;
+				}
+				forgetBytes(link->from);
 				removeBlock(jit, link->from);
 				struct Block* at = findBlock(jit, blockKey(next, thumb));
 				if (at) {
+					forgetBytes(at);
 					removeBlock(jit, at);
 				}
 				break;
