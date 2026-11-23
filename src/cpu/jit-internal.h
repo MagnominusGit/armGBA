@@ -440,6 +440,8 @@ struct Jit {
 	uint32_t warmWaits;
 
 	bool flushRequested;
+	// The table-driven interpreter runs instead of compiled code (jitSetInterpreter)
+	bool interpret;
 	// Set when the wait states changed, for the run loop to look at before compiled code runs again
 	// (jit.c: awayFromWaits).
 	bool waitsChanged;

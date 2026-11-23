@@ -475,6 +475,10 @@ void gbaReset(struct GBA* gba, bool skipBios) {
 }
 
 // Runs until the frame ends or an event asks for control back with returnRequested.
+void gbaSetInterpreter(struct GBA* gba, bool on) {
+	jitSetInterpreter(gba, on);
+}
+
 void gbaRunPart(struct GBA* gba) {
 	jitRunLoop(gba);
 }

@@ -1353,10 +1353,13 @@ static void resetAdvance(struct GBA* machine) {
 
 // Puts the consoles on the CPU Clock chosen, when it changed or a state from another was loaded
 // (loaded).
+// The CPU Clock, and CPU Emulation with it.
 static void applyCpuClock(bool loaded) {
 	libretroGbSetCpuClock(4 + clockNow(), loaded);
+	bool const interpreter = optionIs("armgba_cpu_core", "interpreter");
 	for (int i = 0; !gameBoy && i < playersHere; ++i) {
 		gbaSetOverclock(gbas[i], clockNow());
+		gbaSetInterpreter(gbas[i], interpreter);
 	}
 }
 

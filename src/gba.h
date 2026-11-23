@@ -922,6 +922,9 @@ void gbaWriteIme(struct GBA*, uint16_t value);
 void gbaTestKeypadIrq(struct GBA*, uint32_t late);
 void gbaHalt(struct GBA*);
 void gbaSetOverclock(struct GBA*, int8_t overclock);
+// The table-driven interpreter instead of the recompiler, or the recompiler again; the same machine
+// either way.
+void gbaSetInterpreter(struct GBA*, bool on);
 // Set by the frontend, on the thread that runs the console, for a frame it won't show (Frame Skip):
 // its lines aren't drawn. Kept out of struct GBA, whose state it isn't, and set by a call, as Android's
 // emulated thread-local storage can't link a thread-local variable into code built without LTO.
@@ -1006,6 +1009,7 @@ void stepReset(struct GBA*);
 void stepInstruction(struct GBA*);
 void leanStep(struct GBA*);
 void leanRun(struct GBA*);
+void leanRunLoop(struct GBA*);
 // After a PC write, refills the prefetch from the new PC.
 void stepReload(struct GBA*);
 // Logs each instruction the exact CPU runs, and each compiled block entered, with its start time.

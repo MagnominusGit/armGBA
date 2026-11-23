@@ -117,6 +117,10 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "CPU Clock: from power-on.",
 	  NULL, "system",
 	  { { "stock", "100%" }, { "clock", "CPU Clock" }, { NULL, NULL } }, "stock" },
+	{ "armgba_cpu_core", "CPU Emulation", NULL,
+	  "Recompiler: fastest. Interpreter: runs the game one instruction at a time, with the same timing "
+	  "and results and no generated code; slower, for systems that don't allow generated code.",
+	  NULL, "system", { { "recompiler", "Recompiler" }, { "interpreter", "Interpreter" }, { NULL, NULL } }, "recompiler" },
 	{ "armgba_low_memory", "Low Memory", NULL,
 	  "Reads the game from its file as needed instead of loading it all, for devices short of memory. Use "
 	  "unzipped games: zipped ones lose their patch. Applies when a game is opened.",
@@ -587,6 +591,7 @@ bool showOptions(void) {
 		{ "armgba_bios", !gameBoy },
 		{ "armgba_cpu_clock", true },
 		{ "armgba_cpu_clock_boot", !optionIs("armgba_cpu_clock", "100") },
+		{ "armgba_cpu_core", !gameBoy },
 		{ "armgba_low_memory", !gameBoy },
 		{ "armgba_clock_source", clock },
 		{ "armgba_clock_speed", clock && gameTime },

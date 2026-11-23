@@ -935,3 +935,21 @@ void leanRun(struct GBA* gba) {
 		leanOne(gba);
 	}
 }
+
+// Runs until the frame ends or something asks for control back: the table-driven CPU, and a halted
+// CPU's waits for events.
+void leanRunLoop(struct GBA* gba) {
+	struct CPU* cpu = &gba->cpu;
+	uint32_t frame = gba->video.frameCounter;
+	while (gba->video.frameCounter == frame && !gba->returnRequested) {
+		if (cpu->halted) {
+			if (cpu->cycles < cpu->nextEvent) {
+				cpu->cycles = cpu->nextEvent;
+			}
+			processEvents(gba);
+			continue;
+		}
+		leanRun(gba);
+	}
+	gba->returnRequested = false;
+}

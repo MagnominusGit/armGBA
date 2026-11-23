@@ -74,6 +74,7 @@ standalone frontend shows as one page with headers.
 | | BIOS (applies on restart) | Game Boy Advance | Nintendo's (System Folder), armGBA's (Built In) |
 | | CPU Clock | Both | 100%, 25% to 400% in steps of 25% |
 | | CPU Clock During Boot | Both | 100%, CPU Clock (with CPU Clock not at 100%) |
+| | CPU Emulation | Game Boy Advance | Recompiler, Interpreter |
 | | Low Memory (applies when a game is opened) | Game Boy Advance | Off, On |
 | | Game Boy Model (applies on restart) | Game Boy | Auto, Game Boy, Game Boy Pocket / Light, Game Boy Color, Game Boy Advance |
 | | Game Boy Boot ROM (applies on restart) | Game Boy | Nintendo's (System Folder), armGBA's (Built In), Off |
@@ -180,6 +181,13 @@ as 3D ones, run smoother. A faster clock uses more of the host's CPU while a gam
   on an overclocked console. Set CPU Clock back to 100% for those.
 - In netplay, CPU Clock and CPU Clock During Boot are the host's as the session starts, so every
   device runs the game alike (see Netplay).
+
+### CPU Emulation
+
+The recompiler turns the game's code into the host's own and is the fastest. The interpreter runs
+the game one instruction at a time and generates no code, for systems that don't allow it; it is
+slower. Both have the same timing, so the game runs the same way on either, save states move between
+them, and netplay players can use different ones. The setting can be changed while a game runs.
 
 ### Low Memory
 

@@ -857,6 +857,19 @@ static void setAsideCartridge(struct GBA* gba);
 
 // Called after a save state is loaded: compiled code carries on unless what it was compiled from
 // changed, and the run loop starts afresh.
+// The recompiler keeps track of code written while the interpreter runs, so either can take over
+// between frames; compiled code starts again as after a loaded state.
+void jitSetInterpreter(struct GBA* gba, bool on) {
+	struct Jit* jit = gba->jit;
+	if (!jit || jit->interpret == on) {
+		return;
+	}
+	jit->interpret = on;
+	if (!on) {
+		jitStateLoaded(gba, false);
+	}
+}
+
 void jitStateLoaded(struct GBA* gba, bool codeChanged) {
 	struct Jit* jit = gba->jit;
 	if (!jit) {
@@ -2314,6 +2327,10 @@ static void applyPolicies(struct GBA* gba) {
 // events, DMA, IRQs and anything else compiled code leaves to it.
 void jitRunLoop(struct GBA* gba) {
 	struct Jit* jit = gba->jit;
+	if (jit->interpret) {
+		leanRunLoop(gba);
+		return;
+	}
 	struct CPU* cpu = &gba->cpu;
 	uint32_t frame = gba->video.frameCounter;
 	jit->frame = frame;
