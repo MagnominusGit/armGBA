@@ -97,7 +97,7 @@ standalone frontend shows as one page with headers.
 | | Clock Offset: Hours | Both (not HuC3) | -23 to +23 hours, 0 by default |
 | | Allow Clock Reset | Both (Game Boy: MBC3) | Off, On (back to Off after a reset) |
 | | Reset Clock (with Allow Clock Reset on) | Both (Game Boy: MBC3) | Off, Reset |
-| Video | Threaded Video | Game Boy Advance | Auto (On where the device has more than one core), Off, On, One Frame Late; Off with HD Affine Backgrounds |
+| Video | Threaded Video | Game Boy Advance | Off, Auto (On where the device has more than one core), On, One Frame Late; Off with HD Affine Backgrounds |
 | | Video Threads (with Threaded Video) | Game Boy Advance | 1, 2 |
 | | GBA Color Correction | Game Boy Advance | Off, On |
 | | Game Boy Color Correction | Game Boy | Off, On |

@@ -228,7 +228,7 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "Draws on a second CPU core for speed. Auto does where the device has more than one core. One "
 	  "Frame Late is faster but a frame behind. Off with HD Affine Backgrounds.",
 	  NULL, "video",
-	  { { "auto", "Auto" }, { "disabled", "Off" }, { "enabled", "On" }, { "one frame late", "One Frame Late" }, { NULL, NULL } }, "auto" },
+	  { { "disabled", "Off" }, { "auto", "Auto" }, { "enabled", "On" }, { "one frame late", "One Frame Late" }, { NULL, NULL } }, "disabled" },
 	{ "armgba_threaded_audio", "Threaded Audio", NULL,
 	  "Mixes the sound on another CPU core for speed. The sound is the same.", NULL, "audio",
 	  { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },

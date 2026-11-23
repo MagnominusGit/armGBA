@@ -1022,7 +1022,7 @@ static void readOptions(void) {
 	dolphinSetHost(gamecubeWanted() && !gameBoy ? (address ? address : "auto") : NULL);
 	static const struct Choice hdChoices[] = { { "2", 2 }, { "3", 3 }, { "4", 4 }, { "5", 5 }, { "6", 6 }, { "7", 7 }, { "8", 8 } };
 	hdChosen = optionChoice("armgba_hd_affine", hdChoices, COUNT(hdChoices), 1);
-	int threaded = optionChoice("armgba_threaded_video", threadedChoices, COUNT(threadedChoices), THREADED_AUTO);
+	int threaded = optionChoice("armgba_threaded_video", threadedChoices, COUNT(threadedChoices), THREADED_OFF);
 	if (threaded == THREADED_AUTO) {
 		static long cores;
 		if (!cores) {
