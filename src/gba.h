@@ -915,7 +915,7 @@ void gbaRaiseIrq(struct GBA*, int irq, uint32_t late);
 bool gbaQuietHblank(struct GBA*);
 bool gbaHblankHeard(struct GBA*);
 void gbaIrqSync(struct GBA*);
-void gbaIrqQuietChanged(struct GBA*, bool wasQuiet);
+void gbaIrqQuietChanged(struct GBA*, bool wasQuiet, uint32_t late);
 void gbaWriteIe(struct GBA*, uint16_t value);
 void gbaWriteIf(struct GBA*, uint16_t value);
 void gbaWriteIme(struct GBA*, uint16_t value);

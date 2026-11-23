@@ -540,10 +540,10 @@ static void startQuiet(struct GBA* gba, uint32_t from) {
 	irq->ifStable = timingCpuAt(gba, videoNextHblank(gba, from) + 2);
 }
 
-// Called after DISPSTAT's H-blank IRQ enable or IE changed. When leaving quiet mode, a request
-// under way continues as events: the IF update one cycle after an H-blank that just happened, or
-// the register's one cycle after that.
-void gbaIrqQuietChanged(struct GBA* gba, bool wasQuiet) {
+// Called after DISPSTAT's H-blank IRQ enable or IE changed, late cycles after it did (an event run
+// late). When leaving quiet mode, a request under way continues as events: the IF update one cycle
+// after an H-blank that just happened, or the register's one cycle after that.
+void gbaIrqQuietChanged(struct GBA* gba, bool wasQuiet, uint32_t late) {
 	struct Irq* irq = &gba->irq;
 	bool quiet = gbaQuietHblank(gba);
 	if (quiet == wasQuiet) {
@@ -551,7 +551,7 @@ void gbaIrqQuietChanged(struct GBA* gba, bool wasQuiet) {
 	}
 	if (quiet) {
 		// An H-blank that just happened went by as an event, before the change.
-		startQuiet(gba, timingCurrentTime(gba) + 1);
+		startQuiet(gba, timingCurrentTime(gba) - late + 1);
 		return;
 	}
 	if (irq->quietPending) {
@@ -589,7 +589,7 @@ void gbaWriteIe(struct GBA* gba, uint16_t value) {
 		// leaves it out of IE while its handler runs and puts it back had the video events planned
 		// again twice a line.
 		gba->irq.quietLater = !(gba->irq.ie & (1 << IRQ_HBLANK)) && !wasQuiet && (gba->io[IO(REG_DISPSTAT)] & 0x0010);
-		gbaIrqQuietChanged(gba, wasQuiet);
+		gbaIrqQuietChanged(gba, wasQuiet, 0);
 		if (gbaHblankHeard(gba) != wasHeard) {
 			// H-blank events on every line, or not.
 			videoHblankDmaArmed(gba);

@@ -453,7 +453,7 @@ static void startHblank(struct GBA* gba, void* context, uint32_t late) {
 		gba->irq.quietLater = false;
 		if (dispstat & 0x0010) {
 			scheduleIrq(gba, 1, late);
-			gbaIrqQuietChanged(gba, false);
+			gbaIrqQuietChanged(gba, false, late);
 		}
 	}
 	scheduleVideo(gba, timingCurrentTime(gba) - late);
@@ -472,7 +472,7 @@ uint16_t videoWriteDispstat(struct GBA* gba, uint16_t value) {
 	bool wasQuiet = gbaQuietHblank(gba);
 	uint16_t old = gba->io[IO(REG_DISPSTAT)];
 	gba->io[IO(REG_DISPSTAT)] = (old & 0x7) | (value & 0xFFF8);
-	gbaIrqQuietChanged(gba, wasQuiet);
+	gbaIrqQuietChanged(gba, wasQuiet, 0);
 	updateMatch(gba, 0);
 	if ((old ^ value) & 0xFF00) {
 		scheduleAhead(gba, &gba->video.matchEvent, 1, matchLine, true);
