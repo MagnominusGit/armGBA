@@ -282,10 +282,24 @@ uint32_t busFetch(struct GBA* gba, uint32_t address, bool thumb) {
 	if (inRom(address)) {
 		cartridge(gba, address, size, &seq, false);
 		busTick(gba, prefetcherFetch(gba, address, size, seq));
+		gba->lastAccessDma = false;
+		// The game's own ROM, read straight from it; anything else there (an empty slot, a cheat
+		// cartridge's own code) by what it shows.
+		uint32_t const offset = address & (SIZE_ROM - 1);
+		if (offset < gba->romSize) {
+			if (thumb) {
+				uint16_t value;
+				memcpy(&value, &gba->rom[offset], 2);
+				return value;
+			}
+			uint32_t value;
+			memcpy(&value, &gba->rom[offset], 4);
+			return value;
+		}
 	} else {
 		busTick(gba, busCycles(gba, address, size, seq));
+		gba->lastAccessDma = false;
 	}
-	gba->lastAccessDma = false;
 	return thumb ? codeFetch16(gba, address) : codeFetch32(gba, address);
 }
 
