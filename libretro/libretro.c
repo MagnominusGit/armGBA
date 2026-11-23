@@ -971,7 +971,11 @@ static void readOptions(void) {
 			showButtons();
 		}
 	}
-	static const struct Choice threadedChoices[] = { { "disabled", THREADED_OFF }, { "enabled", THREADED_ON }, { "one frame late", THREADED_LATE } };
+	// Auto: On where there is a core to spare.
+	enum { THREADED_AUTO = -1 };
+	static const struct Choice threadedChoices[] = {
+		{ "auto", THREADED_AUTO }, { "disabled", THREADED_OFF }, { "enabled", THREADED_ON }, { "one frame late", THREADED_LATE }
+	};
 	static const struct Choice modelChoices[] = {
 		{ "Game Boy", LIBRETRO_GB_DMG },
 		{ "Game Boy Pocket", LIBRETRO_GB_MGB },
@@ -1020,14 +1024,17 @@ static void readOptions(void) {
 	dolphinSetHost(gamecubeWanted() && !gameBoy ? (address ? address : "auto") : NULL);
 	static const struct Choice hdChoices[] = { { "2", 2 }, { "3", 3 }, { "4", 4 }, { "5", 5 }, { "6", 6 }, { "7", 7 }, { "8", 8 } };
 	hdChosen = optionChoice("armgba_hd_affine", hdChoices, COUNT(hdChoices), 1);
-	int threaded = optionChoice("armgba_threaded_video", threadedChoices, COUNT(threadedChoices), THREADED_ON);
-	// Linked consoles run in turns, which a render thread would only slow, a single core has none to
-	// spare, and HD Affine Backgrounds are drawn on this thread.
-	static long cores;
-	if (!cores) {
-		cores = sysconf(_SC_NPROCESSORS_ONLN);
+	int threaded = optionChoice("armgba_threaded_video", threadedChoices, COUNT(threadedChoices), THREADED_AUTO);
+	if (threaded == THREADED_AUTO) {
+		static long cores;
+		if (!cores) {
+			cores = sysconf(_SC_NPROCESSORS_ONLN);
+		}
+		threaded = cores > 1 ? THREADED_ON : THREADED_OFF;
 	}
-	threaded = gbaTogether || cores < 2 || hdChosen > 1 ? THREADED_OFF : threaded;
+	// Linked consoles run in turns, which a render thread would only slow, and HD Affine Backgrounds
+	// are drawn on this thread.
+	threaded = gbaTogether || hdChosen > 1 ? THREADED_OFF : threaded;
 	// Linked consoles and HD Affine Backgrounds draw each line here as it comes.
 	bool const batched = !threaded && !gbaTogether && hdChosen < 2;
 	int const threads = optionIs("armgba_video_threads", "2") ? 2 : 1;

@@ -225,9 +225,10 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "(see Cheat Cartridge Button Press). Off leaves both clicks to their usual uses.",
 	  NULL, "system", { { "r3", "R3" }, { "l3", "L3" }, { "off", "Off" }, { NULL, NULL } }, "r3" },
 	{ "armgba_threaded_video", "Threaded Video", NULL,
-	  "Draws on a second CPU core for speed. One Frame Late is faster but a frame behind. Off on a "
-	  "single-core device and with HD Affine Backgrounds.",
-	  NULL, "video", { { "disabled", "Off" }, { "enabled", "On" }, { "one frame late", "One Frame Late" }, { NULL, NULL } }, "enabled" },
+	  "Draws on a second CPU core for speed. Auto does where the device has more than one core. One "
+	  "Frame Late is faster but a frame behind. Off with HD Affine Backgrounds.",
+	  NULL, "video",
+	  { { "auto", "Auto" }, { "disabled", "Off" }, { "enabled", "On" }, { "one frame late", "One Frame Late" }, { NULL, NULL } }, "auto" },
 	{ "armgba_threaded_audio", "Threaded Audio", NULL,
 	  "Mixes the sound on another CPU core for speed. The sound is the same.", NULL, "audio",
 	  { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
@@ -617,7 +618,7 @@ bool showOptions(void) {
 		{ "armgba_channel_direct_a", !gameBoy && channels },
 		{ "armgba_channel_direct_b", !gameBoy && channels },
 		{ "armgba_fast_flash_saves", !gameBoy },
-		{ "armgba_video_threads", !gameBoy && !optionIs("armgba_threaded_video", "disabled") },
+		{ "armgba_video_threads", !gameBoy && threadedVideo },
 		{ "armgba_lcd_ghosting", effects },
 		{ "armgba_lcd_grid", effects },
 		{ "armgba_lcd_screen", effects && optionIs("armgba_lcd_grid", "fit") },
