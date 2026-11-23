@@ -1824,12 +1824,17 @@ static bool romEntryOk(struct GBA* gba, uint32_t pc, bool thumb) {
 
 // Compiled code assumes the bus is as it leaves it: no DMA waiting or just finished, no IRQ to
 // take, the prefetch holding what memory holds, and the prefetch buffer as compiled for.
-static bool compiledMayRun(struct GBA* gba, uint32_t pc, bool thumb) {
+// stray is set when there is no compiling from pc at all.
+static bool compiledMayRun(struct GBA* gba, uint32_t pc, bool thumb, bool* stray) {
 	struct CPU* cpu = &gba->cpu;
 	if (gba->dmaRunnable || gba->lastAccessDma || (gba->irq.line && (!cpu->irqMasked || !(cpu->cpsr & PSR_I)))) {
 		return false;
 	}
-	if (!compilable(gba, pc, thumb) || (inRom(pc) && !romEntryOk(gba, pc, thumb))) {
+	if (!compilable(gba, pc, thumb)) {
+		*stray = true;
+		return false;
+	}
+	if (inRom(pc) && !romEntryOk(gba, pc, thumb)) {
 		return false;
 	}
 	// Compiled code updates the active region only when it changes, since PC writes go between
@@ -2094,7 +2099,7 @@ static void idleProbe(struct GBA* gba, const struct IdleState* start) {
 			indirect += in.kind == I_BX || (in.kind == I_MEM && in.load && in.rd == 15) ||
 			            (in.kind == I_BLOCK && in.load && (in.list & 0x8000));
 		}
-		stepInstruction(gba);
+		leanStep(gba);
 		if (gba->eventRuns != runs || cpu->halted || gba->dmaRunnable || (cpu->cpsr & 0x1F) != (start->cpsr & 0x1F)) {
 			break;
 		}
@@ -2386,16 +2391,23 @@ void jitRunLoop(struct GBA* gba) {
 			--jit->coldLeft;
 			jit->coldPc = pc + width;
 			++jit->stepped;
-			stepInstruction(gba);
+			leanStep(gba);
 			continue;
 		}
 		jit->coldLeft = 0;
-		if (jit->steps || jit->stepping || jit->away || !compiledMayRun(gba, pc, thumb)) {
+		bool stray = false;
+		if (jit->steps || jit->stepping || jit->away || !compiledMayRun(gba, pc, thumb, &stray)) {
 			if (jit->steps) {
 				--jit->steps;
 			}
 			++jit->stepped;
-			stepInstruction(gba);
+			// The table-driven CPU hands open-bus opcodes and cheat cartridge triggers to step.c, so
+			// code the recompiler can't compile from at all runs there directly.
+			if (stray) {
+				stepInstruction(gba);
+			} else {
+				leanStep(gba);
+			}
 			continue;
 		}
 		if (head) {
@@ -2431,14 +2443,14 @@ void jitRunLoop(struct GBA* gba) {
 				jit->coldLeft = (int) ((within->end - pc) / (uint32_t) width) - 1;
 				++jit->stepped;
 				++jit->midSteps;
-				stepInstruction(gba);
+				leanStep(gba);
 				continue;
 			}
 		}
 		if (!entry) {
 			struct Block* block = getBlock(gba, pc, thumb);
 			if (!block) {
-				stepInstruction(gba);
+				leanStep(gba);
 				continue;
 			}
 			entry = block->entry;
@@ -2543,7 +2555,8 @@ void jitRunLoop(struct GBA* gba) {
 					twin = twinOf(gba, link->from);
 					if (twin && epoch == jit->codeEpoch && link->index < twin->count) {
 						linkExit(jit, link, twin);
-						if (compiledMayRun(gba, next, thumb)) {
+						bool stray = false;
+						if (compiledMayRun(gba, next, thumb, &stray)) {
 							resume = twin->entries[link->index];
 							resumeKey = blockKey(next, thumb);
 						}
@@ -2869,7 +2882,7 @@ uint32_t jitHelperStepOne(struct GBA* gba, uint32_t pc) {
 		}
 		timingResetNextEvent(gba);
 		++jit->carefulSteps;
-		stepInstruction(gba);
+		leanStep(gba);
 		thumb = cpu->cpsr & PSR_T;
 		width = thumb ? 2 : 4;
 		uint32_t next = cpu->r[15] - width;
