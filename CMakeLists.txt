@@ -42,6 +42,7 @@ set(CORE_SOURCES
 	src/cpu/arm.c
 	src/cpu/decode.c
 	src/cpu/step.c
+	src/cpu/lean.c
 	src/io/dma.c
 	src/io/io.c
 	src/io/rfu.c
@@ -94,6 +95,10 @@ if(ipo)
 	set_property(TARGET armgba PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 target_include_directories(armgba PUBLIC src)
+
+# The table-driven CPU against the exact one, an instruction at a time
+add_executable(leancmp EXCLUDE_FROM_ALL tests/leancmp.c)
+target_link_libraries(leancmp armgba m pthread z)
 
 # Differential tests against mGBA: -DMGBA_DIR=<mGBA source tree> -DMGBA_LIB=<libmgba.a built with -DCOLOR_16_BIT>,
 # from a tree with tests/mgba-oracle.patch applied (flash saves complete instantly, as in armGBA)

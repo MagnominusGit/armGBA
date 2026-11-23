@@ -1004,6 +1004,8 @@ void processEvents(struct GBA*);
 // step.c: the exact CPU, used for the instructions around events.
 void stepReset(struct GBA*);
 void stepInstruction(struct GBA*);
+void leanStep(struct GBA*);
+void leanRun(struct GBA*);
 // After a PC write, refills the prefetch from the new PC.
 void stepReload(struct GBA*);
 // Logs each instruction the exact CPU runs, and each compiled block entered, with its start time.

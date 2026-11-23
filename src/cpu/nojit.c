@@ -28,7 +28,7 @@ void jitRunLoop(struct GBA* gba) {
 			processEvents(gba);
 			continue;
 		}
-		stepInstruction(gba);
+		leanRun(gba);
 	}
 	gba->returnRequested = false;
 }
