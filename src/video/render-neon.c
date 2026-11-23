@@ -299,6 +299,16 @@ static inline uint16x8_t bankColorsH(const uint8_t (*bank)[16], uint8x8_t indice
 	return vreinterpretq_u16_u8(vcombine_u8(vzip1_u8(lo, hi), vzip2_u8(lo, hi)));
 }
 
+// Eight colors from a palette, by the eight index bytes of a word: loaded into integer registers,
+// which an in-order core does without waiting on each lane of a vector in turn.
+static inline uint16x8_t paletteEight(const uint16_t* palette, uint64_t bytes) {
+	uint64_t lo = palette[bytes & 0xFF] | (uint64_t) palette[(bytes >> 8) & 0xFF] << 16 | (uint64_t) palette[(bytes >> 16) & 0xFF] << 32 |
+	              (uint64_t) palette[(bytes >> 24) & 0xFF] << 48;
+	uint64_t hi = palette[(bytes >> 32) & 0xFF] | (uint64_t) palette[(bytes >> 40) & 0xFF] << 16 | (uint64_t) palette[(bytes >> 48) & 0xFF] << 32 |
+	              (uint64_t) palette[bytes >> 56] << 48;
+	return vcombine_u16(vcreate_u16(lo), vcreate_u16(hi));
+}
+
 // Composites palette indices onto the row: render.c's BACKGROUND_DRAW_PIXEL with
 // COMPOSITE_*_NO_OBJWIN. index[i] holds the palette index of pixel start + i; 0 draws nothing.
 static void compositeIndices(struct GBA* gba, const uint8_t* index, uint32_t flags, bool variant) {
@@ -309,33 +319,29 @@ static void compositeIndices(struct GBA* gba, const uint8_t* index, uint32_t fla
 	const uint16x8_t writable = vdupq_n_u16(0xFE000000 >> 16);
 	const uint16x8_t reblendMask = vdupq_n_u16((FLAG_IS_BACKGROUND | FLAG_REBLEND) >> 16);
 	const uint16x8_t reblend = vdupq_n_u16(FLAG_REBLEND >> 16);
-	const uint16_t laneNumbers16[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
-	const uint16x8_t lanes16 = vld1q_u16(laneNumbers16);
 	bool blend = flags & FLAG_TARGET_2;
 	int length = renderer->end - renderer->start;
 	int start = renderer->start;
 	for (int i = 0; i < length; i += 8) {
 		int left = length - i;
 		int to = left < 8 ? left : 8;
-		h8 current = to < 8 ? loadRowPartH8(renderer, start + i, 0, to) : loadRowH8(renderer, start + i);
-		uint16x8_t indices = vmovl_u8(vld1_u8(&index[i]));
-		uint16x8_t drawn = vandq_u16(vtstq_u16(indices, indices), vcltq_u16(lanes16, vdupq_n_u16(to)));
-		drawn = vandq_u16(drawn, vtstq_u16(current.hi, writable));
-		if (noneH(drawn)) {
+		// Eight transparent pixels are passed over by the indices as one word, without asking the
+		// vector unit, whose answers reach the integer side slowly on in-order cores.
+		uint64_t bytes;
+		memcpy(&bytes, &index[i], sizeof(bytes));
+		if (to < 8) {
+			bytes &= ~0ull >> (64 - 8 * to);
+		}
+		if (!bytes) {
 			continue;
 		}
-		uint16_t colors[8];
-		for (int k = 0; k < 8; ++k) {
-			colors[k] = palette[index[i + k]];
-		}
-		uint16x8_t color = vld1q_u16(colors);
+		h8 current = to < 8 ? loadRowPartH8(renderer, start + i, 0, to) : loadRowH8(renderer, start + i);
+		uint16x8_t indices = vmovl_u8(vcreate_u8(bytes));
+		uint16x8_t drawn = vandq_u16(vtstq_u16(indices, indices), vtstq_u16(current.hi, writable));
+		uint16x8_t color = paletteEight(palette, bytes);
 		if (variant) {
-			uint16_t normals[8];
-			for (int k = 0; k < 8; ++k) {
-				normals[k] = normal[index[i + k]];
-			}
 			uint16x8_t useNormal = vceqq_u16(vandq_u16(current.hi, reblendMask), reblend);
-			color = vbslq_u16(useNormal, vld1q_u16(normals), color);
+			color = vbslq_u16(useNormal, paletteEight(normal, bytes), color);
 		}
 		h8 result = compositeEightH(renderer, current, (h8) { color, flagsHi }, drawn, blend);
 		if (to < 8) {
@@ -362,18 +368,24 @@ static void compositeIndicesObjwin(struct GBA* gba, const uint8_t* index, const 
 	const uint16x8_t writable = vdupq_n_u16(0xFE000000 >> 16);
 	const uint16x8_t reblendMask = vdupq_n_u16((FLAG_IS_BACKGROUND | FLAG_REBLEND) >> 16);
 	const uint16x8_t reblend = vdupq_n_u16(FLAG_REBLEND >> 16);
-	const uint16_t laneNumbers16[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
-	const uint16x8_t lanes16 = vld1q_u16(laneNumbers16);
 	bool const blend = background->flags & FLAG_TARGET_2;
 	int length = renderer->end - renderer->start;
 	int start = renderer->start;
 	for (int i = 0; i < length; i += 8) {
 		int left = length - i;
 		int to = left < 8 ? left : 8;
+		// As in compositeIndices.
+		uint64_t bytes;
+		memcpy(&bytes, &index[i], sizeof(bytes));
+		if (to < 8) {
+			bytes &= ~0ull >> (64 - 8 * to);
+		}
+		if (!bytes) {
+			continue;
+		}
 		h8 current = to < 8 ? loadRowPartH8(renderer, start + i, 0, to) : loadRowH8(renderer, start + i);
-		uint16x8_t indices = vmovl_u8(vld1_u8(&index[i]));
-		uint16x8_t drawn = vandq_u16(vtstq_u16(indices, indices), vcltq_u16(lanes16, vdupq_n_u16(to)));
-		drawn = vandq_u16(drawn, vtstq_u16(current.hi, writable));
+		uint16x8_t indices = vmovl_u8(vcreate_u8(bytes));
+		uint16x8_t drawn = vandq_u16(vtstq_u16(indices, indices), vtstq_u16(current.hi, writable));
 		uint16x8_t underObjwin = vtstq_u16(current.hi, vdupq_n_u16(FLAG_OBJWIN >> 16));
 		if (!background->objwinForceEnable) {
 			// (!(current & FLAG_OBJWIN)) == objwinOnly
@@ -382,25 +394,15 @@ static void compositeIndicesObjwin(struct GBA* gba, const uint8_t* index, const 
 		if (noneH(drawn)) {
 			continue;
 		}
-		uint16_t colors[8];
-		for (int k = 0; k < 8; ++k) {
-			colors[k] = palette[index[i + k]];
-		}
-		uint16x8_t color = vld1q_u16(colors);
+		uint16x8_t color = paletteEight(palette, bytes);
 		uint16x8_t objwinColor = color;
 		if (palette != normal || objwinPalette != normal) {
 			// The variant palette, here or under the window: pixels to blend again take the normal one.
-			uint16_t normals[8];
-			uint16_t objwinColors[8];
-			for (int k = 0; k < 8; ++k) {
-				normals[k] = normal[index[i + k]];
-				objwinColors[k] = objwinPalette[index[i + k]];
-			}
 			if (background->variant) {
 				uint16x8_t useNormal = vceqq_u16(vandq_u16(current.hi, reblendMask), reblend);
-				color = vbslq_u16(useNormal, vld1q_u16(normals), color);
+				color = vbslq_u16(useNormal, paletteEight(normal, bytes), color);
 			}
-			objwinColor = vld1q_u16(objwinColors);
+			objwinColor = paletteEight(objwinPalette, bytes);
 		}
 		h8 merged = { vbslq_u16(underObjwin, objwinColor, color), vbslq_u16(underObjwin, objwinFlagsHi, flagsHi) };
 		h8 result = compositeEightObjwinH(renderer, current, merged, drawn, blend);
