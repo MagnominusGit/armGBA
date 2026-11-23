@@ -140,8 +140,13 @@ static bool inCartTrap(struct GBA* gba, uint32_t address) {
 // buffer, its cost is the buffer's; without the buffer, only the exact CPU counts it. The
 // instruction before that one also goes to the exact CPU: if compiled, a data access in it would
 // count that fetch's nonsequential part early, and the exact CPU would count it again.
-static bool burstEdge(struct GBA* gba, uint32_t pc, bool thumb) {
-	int width = thumb ? 2 : 4;
+static bool fetchEdge(struct GBA* gba, uint32_t pc, bool thumb) {
+	uint32_t width = thumb ? 2 : 4;
+	// Compiled code prices fetches using the region of the block. The prefetch can already
+	// reach the next region while the last instructions of this one are still executing.
+	if ((pc ^ (pc + 2 * width)) >> 24) {
+		return true;
+	}
 	return inRom(pc) && !gba->prefetchEnabled && (!((pc + 2 * width) & 0x1FFFF) || !((pc + 3 * width) & 0x1FFFF));
 }
 
@@ -1533,7 +1538,7 @@ static struct Block* compileBlockTimed(struct GBA* gba, uint32_t pc, bool thumb,
 			break;
 		}
 		address += width;
-		if (codeKindOf(gba, address) != kind || ((address ^ pc) & ~mask) || address == limit || burstEdge(gba, address, thumb) ||
+		if (codeKindOf(gba, address) != kind || ((address ^ pc) & ~mask) || address == limit || fetchEdge(gba, address, thumb) ||
 		    inCartTrap(gba, address)) {
 			break;
 		}
@@ -1811,7 +1816,7 @@ static bool compilable(struct GBA* gba, uint32_t pc, bool thumb) {
 			return false;
 		}
 	}
-	return memoryCanFetch(gba, pc) && !burstEdge(gba, pc, thumb);
+	return memoryCanFetch(gba, pc) && !fetchEdge(gba, pc, thumb);
 }
 
 // Compiled cartridge code with the prefetch buffer assumes it reads ahead of the next fetch at the
@@ -2496,7 +2501,8 @@ void jitRunLoop(struct GBA* gba) {
 		if (gba->jitDeferred) {
 			// Events put off by a branch or block end run before the next instruction.
 			gba->jitDeferred = false;
-			if (!cpu->halted && cpu->cycles >= cpu->nextEvent) {
+			if (!cpu->halted && cpu->cycles >= cpu->nextEvent &&
+			    gba->video.frameCounter == frame && !gba->returnRequested) {
 				processEvents(gba);
 			}
 		}
@@ -2892,7 +2898,8 @@ uint32_t jitHelperStepOne(struct GBA* gba, uint32_t pc) {
 	// Events put off by the branch or block end that led here run before this instruction.
 	if (gba->jitDeferred) {
 		gba->jitDeferred = false;
-		if (cpu->cycles >= cpu->nextEvent) {
+		if (cpu->cycles >= cpu->nextEvent &&
+		    gba->video.frameCounter == jit->frame && !gba->returnRequested) {
 			processEvents(gba);
 		}
 	}

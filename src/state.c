@@ -135,7 +135,18 @@ static void leaveOutHost(const struct GBA* gba, struct GBA* saved) {
 	saved->renderer.palette32Stale = 0xFFFFFFFF;
 	// With no H-blank request pending, IF's stable time only means far off, from whenever it was last set.
 	if (!saved->irq.quietPending) {
+		saved->irq.quietFrom = 0;
 		saved->irq.ifStable = timingCpuTime(saved) + INT32_MAX;
+	}
+	// Inactive IRQ stages acquire their time and value when queued again.
+	for (int i = 0; i < 4; ++i) {
+		struct IrqChange* stages[] = { &saved->irq.apply[i], &saved->irq.availableChange[i], &saved->irq.lineChange[i] };
+		for (int stage = 0; stage < 3; ++stage) {
+			if (!stages[stage]->busy) {
+				stages[stage]->event.when = 0;
+				stages[stage]->value = false;
+			}
+		}
 	}
 	saved->idleMark = 0;
 	saved->idleCycles = 0;
@@ -260,6 +271,14 @@ void gbaSaveState(struct GBA* gba, void* state) {
 	struct GBA* saved = (struct GBA*) ((uint8_t*) state + sizeof(header));
 	memcpy(state, &header, sizeof(header));
 	memcpy(saved, gba, sizeof(*gba));
+	// Different run loops can fold elapsed CPU cycles into the clock at different times.
+	int32_t const elapsed = saved->cpu.cycles;
+	saved->timing.masterCycles += elapsed;
+	saved->timing.globalCycles += elapsed;
+	if (saved->cpu.nextEvent != INT32_MAX) {
+		saved->cpu.nextEvent -= elapsed;
+	}
+	saved->cpu.cycles = 0;
 	takeRenderer(gba, &saved->renderer);
 	// What the renderer keeps from the lines it drew depends on which copy drew which line only
 	// with two render workers, and their merged renderer has none of it already
