@@ -1008,10 +1008,15 @@ void processEvents(struct GBA*);
 void stepReset(struct GBA*);
 void stepInstruction(struct GBA*);
 void leanStep(struct GBA*);
+void leanExecute(struct GBA*, uint32_t opcode, uint32_t address);
 void leanRun(struct GBA*);
 void leanRunLoop(struct GBA*);
 // After a PC write, refills the prefetch from the new PC.
 void stepReload(struct GBA*);
+// Enters an exception, with the return address lr.
+void stepException(struct GBA*, unsigned mode, uint32_t vector, uint32_t lr);
+// Takes the IRQ that is waiting, at an instruction boundary.
+void stepTakeIrq(struct GBA*);
 // Logs each instruction the exact CPU runs, and each compiled block entered, with its start time.
 // Starts at TRACE_FROM=<hex pc> or TRACE_TIME=<cycle>, for TRACE_COUNT=<n> lines.
 void stepTraceOpen(struct GBA*, const char* path);

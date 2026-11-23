@@ -328,14 +328,11 @@ static void thumbAlu(struct GBA* gba, uint32_t opcode, uint32_t address) {
 	setNz(cpu, d);
 }
 
-// ADD, CMP and MOV reaching r8-r15, where the PC isn't written: ADD and MOV set no flags.
+// ADD, CMP and MOV reaching r8-r15: ADD and MOV set no flags, and a PC they write refills the pipeline.
 static void thumbHiReg(struct GBA* gba, uint32_t opcode, uint32_t address) {
 	struct CPU* cpu = &gba->cpu;
+	(void) address;
 	int hd = (opcode & 7) | ((opcode >> 4) & 8);
-	if (hd == 15) {
-		thumbGeneric(gba, opcode, address);
-		return;
-	}
 	uint32_t m = cpu->r[(opcode >> 3) & 0xF];
 	switch ((opcode >> 8) & 3) {
 	case 0:
@@ -343,10 +340,13 @@ static void thumbHiReg(struct GBA* gba, uint32_t opcode, uint32_t address) {
 		break;
 	case 1:
 		sub(cpu, cpu->r[hd], m);
-		break;
+		return;
 	default:
 		cpu->r[hd] = m;
 		break;
+	}
+	if (hd == 15) {
+		stepReload(gba);
 	}
 }
 
@@ -451,15 +451,29 @@ static inline __attribute__((always_inline)) void dataProcessing(struct CPU* cpu
 	}
 }
 
-// ARM data processing with a constant or a register shifted by a constant, writing a register other
-// than the PC; anything else goes through step.c.
-static inline __attribute__((always_inline)) void armDataProcessingAs(struct GBA* gba, uint32_t opcode, uint32_t address, uint32_t fixed) {
+// Data processing that writes the PC, as step.c's alu() runs it: with S, the SPSR comes back into
+// the CPSR (an exception return) in a mode that has one. TST, TEQ, CMP and CMN with the PC as
+// the destination go through step.c.
+static __attribute__((noinline, cold)) void armDataProcessingPc(struct GBA* gba, uint32_t opcode, uint32_t address, uint32_t fixed, uint32_t m,
+                                                                 bool c, bool carry) {
 	struct CPU* cpu = &gba->cpu;
-	int rd = (opcode >> 12) & 0xF;
-	if (rd == 15) {
+	unsigned const op = (fixed >> 21) & 0xF;
+	if (op >= ALU_TST && op <= ALU_CMN) {
 		armGeneric(gba, opcode, address);
 		return;
 	}
+	bool const spsrBack = (fixed & 0x00100000) && cpuModeHasSpsr(cpu->cpsr & 0x1F);
+	dataProcessing(cpu, fixed, 15, cpu->r[(opcode >> 16) & 0xF], m, c, carry);
+	if (spsrBack) {
+		cpuWriteCpsr(gba, cpu->spsr);
+	}
+	stepReload(gba);
+}
+
+// ARM data processing with a constant or a register shifted by a constant.
+static inline __attribute__((always_inline)) void armDataProcessingAs(struct GBA* gba, uint32_t opcode, uint32_t address, uint32_t fixed) {
+	struct CPU* cpu = &gba->cpu;
+	int rd = (opcode >> 12) & 0xF;
 	bool const c = cpu->cpsr & PSR_C;
 	bool carry;
 	uint32_t m;
@@ -489,11 +503,15 @@ static inline __attribute__((always_inline)) void armDataProcessingAs(struct GBA
 			break;
 		}
 	}
+	if (rd == 15) {
+		armDataProcessingPc(gba, opcode, address, fixed, m, c, carry);
+		return;
+	}
 	dataProcessing(cpu, fixed, rd, cpu->r[(opcode >> 16) & 0xF], m, c, carry);
 }
 
-// ARM LDR, STR, LDRB and STRB, as step.c's mem() makes them: loads into the PC, and write-back to
-// it, go through step.c.
+// ARM LDR, STR, LDRB and STRB, as step.c's mem() makes them: write-back to the PC goes through
+// step.c.
 static inline __attribute__((always_inline)) void armMemAs(struct GBA* gba, uint32_t opcode, uint32_t address, uint32_t fixed) {
 	struct CPU* cpu = &gba->cpu;
 	int rd = (opcode >> 12) & 0xF;
@@ -501,7 +519,7 @@ static inline __attribute__((always_inline)) void armMemAs(struct GBA* gba, uint
 	bool const pre = fixed & 0x01000000;
 	bool const writeback = !pre || (fixed & 0x00200000);
 	bool const load = fixed & 0x00100000;
-	if (rd == 15 || (rn == 15 && writeback)) {
+	if (rn == 15 && writeback) {
 		armGeneric(gba, opcode, address);
 		return;
 	}
@@ -538,9 +556,13 @@ static inline __attribute__((always_inline)) void armMemAs(struct GBA* gba, uint
 		}
 		busIdle(gba);
 		cpu->r[rd] = value;
+		if (rd == 15) {
+			stepReload(gba);
+		}
 		return;
 	}
-	busWrite(gba, at, cpu->r[rd], size, false);
+	// A stored PC is 12 ahead of the instruction.
+	busWrite(gba, at, cpu->r[rd] + (rd == 15 ? 4 : 0), size, false);
 	if (writeback) {
 		cpu->r[rn] = moved;
 	}
@@ -601,6 +623,57 @@ static void armMultiply(struct GBA* gba, uint32_t opcode, uint32_t address) {
 	}
 	cpu->fetchSeq = false;
 	multiply(gba, rd, cpu->r[(opcode >> 8) & 0xF], cpu->r[opcode & 0xF], accumulate ? cpu->r[rn] : 0, accumulate, opcode & 0x00100000);
+}
+
+// UMULL, UMLAL, SMULL and SMLAL, as step.c's mulLong() runs them.
+static void armMultiplyLong(struct GBA* gba, uint32_t opcode, uint32_t address) {
+	(void) address;
+	struct CPU* cpu = &gba->cpu;
+	int const rd = (opcode >> 12) & 0xF;
+	int const rdHi = (opcode >> 16) & 0xF;
+	bool const signedMul = opcode & 0x00400000;
+	bool const accumulate = opcode & 0x00200000;
+	cpu->fetchSeq = false;
+	if (rd == 15 || rdHi == 15) {
+		return;
+	}
+	uint32_t const multiplicand = cpu->r[opcode & 0xF];
+	uint32_t const multiplier = cpu->r[(opcode >> 8) & 0xF];
+	uint32_t const accumLo = accumulate ? cpu->r[rd] : 0;
+	uint32_t const accumHi = accumulate ? cpu->r[rdHi] : 0;
+	int const stages = signedMul ? multiplyStages(multiplier) : (31 - __builtin_clz(multiplier | 1)) / 8 + 1;
+	uint64_t d = signedMul ? (uint64_t) ((int64_t) (int32_t) multiplicand * (int32_t) multiplier) : (uint64_t) multiplicand * multiplier;
+	d += ((uint64_t) accumHi << 32) | accumLo;
+	for (int i = 0; i < stages + 1 + accumulate; ++i) {
+		busIdle(gba);
+	}
+	cpu->r[rd] = d;
+	cpu->r[rdHi] = d >> 32;
+	if (opcode & 0x00100000) {
+		bool carry = stages == 4 ? cpuMultiplyCarryHigh(multiplicand, multiplier, accumHi, signedMul) : cpuMultiplyCarryLow(multiplicand, multiplier, accumLo);
+		cpu->cpsr = (cpu->cpsr & ~(PSR_N | PSR_Z | PSR_C)) | ((d >> 32) & PSR_N) | (d ? 0 : PSR_Z) | (carry ? PSR_C : 0);
+	}
+}
+
+// Undefined instructions (the coprocessor ones too: a GBA has none) and SWI.
+static void armUndefined(struct GBA* gba, uint32_t opcode, uint32_t address) {
+	(void) opcode;
+	stepException(gba, MODE_UNDEFINED, 0x04, address + 4);
+}
+
+static void armSwi(struct GBA* gba, uint32_t opcode, uint32_t address) {
+	(void) opcode;
+	stepException(gba, MODE_SUPERVISOR, 0x08, address + 4);
+}
+
+static void thumbUndefined(struct GBA* gba, uint32_t opcode, uint32_t address) {
+	(void) opcode;
+	stepException(gba, MODE_UNDEFINED, 0x04, address + 2);
+}
+
+static void thumbSwi(struct GBA* gba, uint32_t opcode, uint32_t address) {
+	(void) opcode;
+	stepException(gba, MODE_SUPERVISOR, 0x08, address + 2);
 }
 
 // Thumb's MUL multiplies by the destination's old value.
@@ -841,10 +914,11 @@ static LeanHandler armHandler(int i) {
 		if (bit4 && bit7) {
 			// Multiplies, SWP, and the halfword and signed transfers (bits 6-5 not both clear).
 			if (!(i & 6)) {
-				return (bits27to20 & 0x18) == 0 ? armMultiply : armGeneric;
+				return (bits27to20 & 0x18) == 0 ? armMultiply : (bits27to20 & 0x18) == 0x08 ? armMultiplyLong : armGeneric;
 			}
+			// Stores with sign extension are undefined.
 			bool const load = bits27to20 & 1;
-			return load || ((i >> 1) & 3) == 1 ? armMemHalf : armGeneric;
+			return load || ((i >> 1) & 3) == 1 ? armMemHalf : armUndefined;
 		}
 		if (statusOp) {
 			return armStatus;
@@ -855,14 +929,17 @@ static LeanHandler armHandler(int i) {
 	case 2:
 		return armMemBy[bits27to20 & 0x3F];
 	case 3:
-		return bit4 ? armGeneric : armMemBy[bits27to20 & 0x3F];
+		return bit4 ? armUndefined : armMemBy[bits27to20 & 0x3F];
 	case 4:
 		return armBlock;
 	case 5:
 		return armBranch;
+	case 6:
+		return armUndefined;
 	default:
+		// Bit 24 clear: CDP, which may be a Wii U Virtual Console call, or MRC/MCR.
 		(void) bit7;
-		return armGeneric;
+		return (bits27to20 & 0x10) ? armSwi : armGeneric;
 	}
 }
 
@@ -905,8 +982,7 @@ static LeanHandler thumbHandler(int i) {
 		if (!(i & 0x10)) {
 			return (i & 0xF) == 0xD ? thumbMultiply : thumbAlu;
 		}
-		// Bits 9-8 pick ADD, CMP, MOV or BX; bit 7 is the destination's high bit, and with bits 2-0
-		// (not part of i) it might be the PC, so these are only taken when the high bit is clear.
+		// Bits 9-8 pick ADD, CMP, MOV or BX.
 		return ((i >> 2) & 3) != 3 ? thumbHiReg : thumbBx;
 	case 0x09:
 		return thumbLdrPc;
@@ -936,7 +1012,7 @@ static LeanHandler thumbHandler(int i) {
 		return thumbBlock;
 	case 0x1A:
 	case 0x1B:
-		return ((i >> 2) & 0xF) < 0xE ? thumbBranchCond : thumbGeneric;
+		return ((i >> 2) & 0xF) < 0xE ? thumbBranchCond : ((i >> 2) & 0xF) == 0xE ? thumbUndefined : thumbSwi;
 	case 0x1C:
 		return thumbBranch;
 	case 0x1E:
@@ -957,13 +1033,16 @@ static void fillTables(void) {
 	}
 }
 
-// One instruction, as step.c's step() runs it: an IRQ to take, tracing or a cheat cartridge's trigger
-// go through step() itself.
+// One instruction, as step.c's step() runs it: tracing or a cheat cartridge's trigger go through
+// step() itself.
 static inline void leanOne(struct GBA* gba) {
 	struct CPU* cpu = &gba->cpu;
-	if ((gba->irq.line && !cpu->irqMasked) || gba->traceFile || gba->cartTrapped) {
+	if (gba->traceFile || gba->cartTrapped) {
 		stepInstruction(gba);
 		return;
+	}
+	if (gba->irq.line && !cpu->irqMasked) {
+		stepTakeIrq(gba);
 	}
 	uint32_t const opcode = cpu->prefetch[0];
 	// The I flag as it is before the instruction decides whether an IRQ is taken after it.
@@ -979,6 +1058,19 @@ static inline void leanOne(struct GBA* gba) {
 		if ((opcode >> 28) == COND_AL || passes(cpu->cpsr, opcode >> 28)) {
 			armTable[((opcode >> 16) & 0xFF0) | ((opcode >> 4) & 0xF)](gba, opcode, cpu->r[15] - 8);
 		}
+	}
+}
+
+// An instruction compiled code leaves to the CPU, with its fetch counted and its condition passed:
+// an ARM one at address, or a Thumb one at address - 1. As step.c's stepExecute() runs it.
+void leanExecute(struct GBA* gba, uint32_t opcode, uint32_t address) {
+	if (!armTable[0]) {
+		fillTables();
+	}
+	if (address & 1) {
+		thumbTable[(opcode >> 6) & 0x3FF](gba, opcode, address & ~1u);
+	} else {
+		armTable[((opcode >> 16) & 0xFF0) | ((opcode >> 4) & 0xF)](gba, opcode, address);
 	}
 }
 

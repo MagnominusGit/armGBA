@@ -2658,7 +2658,7 @@ uint32_t jitHelperExecute(struct GBA* gba, uint32_t opcode, uint32_t address) {
 	struct CPU* cpu = &gba->cpu;
 	uint32_t runs = gba->eventRuns;
 	const struct Inst* in = decodeCached(gba->jit, opcode, address);
-	stepExecute(gba, in);
+	leanExecute(gba, opcode, address);
 	// Compiled code counts the nonsequential fetch after it.
 	cpu->fetchSeq = true;
 	// Events that ran inside it may need the exact CPU next.
@@ -2692,7 +2692,7 @@ uint32_t jitHelperSystem(struct GBA* gba, uint32_t opcode, uint32_t address) {
 	uint32_t runs = gba->eventRuns;
 	uint32_t before = cpu->cpsr;
 	const struct Inst* in = decodeCached(gba->jit, opcode, address);
-	stepExecute(gba, in);
+	leanExecute(gba, opcode, address);
 	cpu->fetchSeq = true;
 	if (runs != gba->eventRuns) {
 		yield(gba);
