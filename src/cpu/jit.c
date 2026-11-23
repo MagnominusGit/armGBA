@@ -1824,17 +1824,12 @@ static bool romEntryOk(struct GBA* gba, uint32_t pc, bool thumb) {
 
 // Compiled code assumes the bus is as it leaves it: no DMA waiting or just finished, no IRQ to
 // take, the prefetch holding what memory holds, and the prefetch buffer as compiled for.
-// stray is set when there is no compiling from pc at all.
-static bool compiledMayRun(struct GBA* gba, uint32_t pc, bool thumb, bool* stray) {
+static bool compiledMayRun(struct GBA* gba, uint32_t pc, bool thumb) {
 	struct CPU* cpu = &gba->cpu;
 	if (gba->dmaRunnable || gba->lastAccessDma || (gba->irq.line && (!cpu->irqMasked || !(cpu->cpsr & PSR_I)))) {
 		return false;
 	}
-	if (!compilable(gba, pc, thumb)) {
-		*stray = true;
-		return false;
-	}
-	if (inRom(pc) && !romEntryOk(gba, pc, thumb)) {
+	if (!compilable(gba, pc, thumb) || (inRom(pc) && !romEntryOk(gba, pc, thumb))) {
 		return false;
 	}
 	// Compiled code updates the active region only when it changes, since PC writes go between
@@ -2395,19 +2390,12 @@ void jitRunLoop(struct GBA* gba) {
 			continue;
 		}
 		jit->coldLeft = 0;
-		bool stray = false;
-		if (jit->steps || jit->stepping || jit->away || !compiledMayRun(gba, pc, thumb, &stray)) {
+		if (jit->steps || jit->stepping || jit->away || !compiledMayRun(gba, pc, thumb)) {
 			if (jit->steps) {
 				--jit->steps;
 			}
 			++jit->stepped;
-			// The table-driven CPU hands open-bus opcodes and cheat cartridge triggers to step.c, so
-			// code the recompiler can't compile from at all runs there directly.
-			if (stray) {
-				stepInstruction(gba);
-			} else {
-				leanStep(gba);
-			}
+			leanStep(gba);
 			continue;
 		}
 		if (head) {
@@ -2555,8 +2543,7 @@ void jitRunLoop(struct GBA* gba) {
 					twin = twinOf(gba, link->from);
 					if (twin && epoch == jit->codeEpoch && link->index < twin->count) {
 						linkExit(jit, link, twin);
-						bool stray = false;
-						if (compiledMayRun(gba, next, thumb, &stray)) {
+						if (compiledMayRun(gba, next, thumb)) {
 							resume = twin->entries[link->index];
 							resumeKey = blockKey(next, thumb);
 						}
