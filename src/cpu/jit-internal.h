@@ -53,20 +53,15 @@ enum {
 	CODE_MAP_CHECKED = 4,
 };
 
-// How a kilobyte of work RAM handles words the game rewrites: compiled for each of their forms, or
-// (plain) as they stand, their blocks thrown away and brought back as they change. What each way
-// cost there is counted, and every POLICY_FRAMES frames a page whose code keeps changing tries the
-// other way for that long, keeping whichever cost less.
+// How a kilobyte of work RAM handles words the game rewrites: compiled for each of their forms, until
+// one of them goes through more forms than its FormSet keeps; from then on (plain) as they stand,
+// their blocks thrown away and brought back as they change. A game that flips a few words between
+// two forms as its loops run does best with the first; one that copies whole routines in and out of
+// the same memory with the second.
 struct PagePolicy {
-	uint32_t formMisses;
-	uint32_t invalidations;
-	uint32_t compiles;
-	// What the way it had before a trial cost
-	uint32_t before;
 	bool plain;
-	bool trial;
-	uint8_t backoff;
-	uint8_t wait;
+	// A word here dropped a form: the page turns plain when the run loop next starts
+	bool dropped;
 };
 
 enum {
@@ -508,7 +503,7 @@ struct Jit {
 	// frame of the last one.
 	uint8_t smcShapes[(SIZE_IWRAM + SIZE_EWRAM) / 4];
 	struct PagePolicy policy[POLICY_PAGES];
-	uint32_t policyFrame;
+	bool policyDue;
 	uint16_t smcShapeFrame[(SIZE_IWRAM + SIZE_EWRAM) / 4];
 
 	uint64_t compiled;

@@ -1122,7 +1122,6 @@ static void wordWritten(struct GBA* gba, int kind, uint32_t address) {
 		return;
 	}
 	++jit->invalidations;
-	++jit->policy[index >> 8].invalidations;
 	if (debug.smcLog) {
 		static int logged;
 		if (logged++ < 30) {
@@ -1346,6 +1345,11 @@ static void learnForms(struct Jit* jit, int kind, uint32_t address, uint32_t opc
 			--at;
 			if (set->dropped < 255) {
 				++set->dropped;
+			}
+			struct PagePolicy* policy = pagePolicy(jit, kind, canonical(kind, address));
+			if (!policy->dropped) {
+				policy->dropped = true;
+				jit->policyDue = true;
 			}
 		}
 	}
@@ -1613,10 +1617,6 @@ static struct Block* compileBlockTimed(struct GBA* gba, uint32_t pc, bool thumb,
 		registerBlock(jit, block);
 	}
 	++jit->compiled;
-	struct PagePolicy* policy = pagePolicy(jit, kind, canonical(kind, pc));
-	if (policy) {
-		++policy->compiles;
-	}
 	if (debug.dumpDir) {
 		char path[512];
 		snprintf(path, sizeof(path), "%s/%08X%s%s.bin", debug.dumpDir, pc, thumb ? "t" : "a", careful ? "c" : "");
@@ -2293,62 +2293,20 @@ static bool idleCheck(struct GBA* gba) {
 	return true;
 }
 
-enum {
-	POLICY_FRAMES = 64,
-	// What a page's rewrites may cost in a window before it tries the other way: twenty form misses
-	// a frame, or ten invalidations, or two compiles.
-	POLICY_CHURN = 20 * POLICY_FRAMES,
-	POLICY_BACKOFF_MOST = 6,
-};
-
-// A form miss throws two blocks away and makes their entries leave until a block is found again;
-// an invalidation throws away those covering one word; compiling costs about as much as stepping a
-// block a hundred times. (Weighed from the games where each way did better: a rally game swapping
-// whole routines through the same memory, and an action game flipping a few words between two
-// forms as its loops run.)
-static uint32_t policyCost(const struct PagePolicy* policy) {
-	return 2 * policy->formMisses + policy->invalidations + 10 * policy->compiles;
-}
-
-// Switches a page's way, throwing its blocks away so they're compiled or brought back for it.
-static void switchPolicy(struct GBA* gba, int page) {
-	struct PagePolicy* policy = &gba->jit->policy[page];
-	policy->plain = !policy->plain;
-	int kind = page < (SIZE_IWRAM >> 10) ? CODE_IWRAM : CODE_EWRAM;
-	uint32_t start = (page < (SIZE_IWRAM >> 10) ? page : page - (SIZE_IWRAM >> 10)) << 10;
-	removeBlocks(gba, kind, start, start + 1024, ~0u);
-}
-
-// Every POLICY_FRAMES frames: ends trials, keeping the cheaper way, and starts them where the code
-// keeps changing. A choice tried either way waits twice as long as before to be tried again.
-static void choosePolicies(struct GBA* gba) {
+// Turns the pages where a word dropped a form plain, throwing their blocks away so they're compiled
+// or brought back as they stand.
+static void applyPolicies(struct GBA* gba) {
 	struct Jit* jit = gba->jit;
-	for (int i = 0; i < POLICY_PAGES; ++i) {
-		struct PagePolicy* policy = &jit->policy[i];
-		uint32_t cost = policyCost(policy);
-		policy->formMisses = 0;
-		policy->invalidations = 0;
-		policy->compiles = 0;
-		if (policy->trial) {
-			policy->trial = false;
-			if (cost >= policy->before) {
-				switchPolicy(gba, i);
-			}
-			if (policy->backoff < POLICY_BACKOFF_MOST) {
-				++policy->backoff;
-			}
-			policy->wait = (uint8_t) (1 << policy->backoff);
+	jit->policyDue = false;
+	for (int page = 0; page < POLICY_PAGES; ++page) {
+		struct PagePolicy* policy = &jit->policy[page];
+		if (!policy->dropped || policy->plain) {
 			continue;
 		}
-		if (policy->wait) {
-			--policy->wait;
-			continue;
-		}
-		if (cost >= POLICY_CHURN) {
-			policy->before = cost;
-			policy->trial = true;
-			switchPolicy(gba, i);
-		}
+		policy->plain = true;
+		int kind = page < (SIZE_IWRAM >> 10) ? CODE_IWRAM : CODE_EWRAM;
+		uint32_t start = (page < (SIZE_IWRAM >> 10) ? page : page - (SIZE_IWRAM >> 10)) << 10;
+		removeBlocks(gba, kind, start, start + 1024, ~0u);
 	}
 }
 
@@ -2359,9 +2317,8 @@ void jitRunLoop(struct GBA* gba) {
 	struct CPU* cpu = &gba->cpu;
 	uint32_t frame = gba->video.frameCounter;
 	jit->frame = frame;
-	if (frame % POLICY_FRAMES == 0 && frame != jit->policyFrame) {
-		jit->policyFrame = frame;
-		choosePolicies(gba);
+	if (jit->policyDue) {
+		applyPolicies(gba);
 	}
 	// A careful copy to continue in straight away, entered where its block's check fired.
 	void* resume = NULL;
@@ -2585,10 +2542,6 @@ void jitRunLoop(struct GBA* gba) {
 				// When compiled again, the block and any others starting at the word learn the form
 				// it holds now. Their forms are out of date, so they aren't brought back.
 				++jit->formMisses;
-				struct PagePolicy* policy = pagePolicy(jit, codeKindOf(gba, next), canonical(codeKindOf(gba, next), next));
-				if (policy) {
-					++policy->formMisses;
-				}
 				forgetBytes(link->from);
 				removeBlock(jit, link->from);
 				struct Block* at = findBlock(jit, blockKey(next, thumb));
