@@ -759,6 +759,66 @@ static void armBlock(struct GBA* gba, uint32_t opcode, uint32_t address) {
 	              opcode & 0x00200000, false);
 }
 
+// BX: bit 0 of the target picks ARM or Thumb.
+static inline void branchExchange(struct GBA* gba, uint32_t target) {
+	struct CPU* cpu = &gba->cpu;
+	if (target & 1) {
+		cpu->cpsr |= PSR_T;
+	} else {
+		cpu->cpsr &= ~PSR_T;
+	}
+	cpu->r[15] = target & ~1u;
+	stepReload(gba);
+}
+
+// MRS, MSR and BX, which share the encoding of TST, TEQ, CMP and CMN without S, as step.c's decoder
+// tells them apart; anything else there goes through step.c. MSR to the CPSR refills the pipeline
+// as mGBA does, and after a switch to Thumb a NOP fills the gap.
+static void armStatus(struct GBA* gba, uint32_t opcode, uint32_t address) {
+	struct CPU* cpu = &gba->cpu;
+	bool const imm = opcode & 0x02000000;
+	if (!imm) {
+		if ((opcode & 0x0FFFFFF0) == 0x012FFF10) {
+			branchExchange(gba, cpu->r[opcode & 0xF]);
+			return;
+		}
+		if (opcode & 0x10) {
+			armGeneric(gba, opcode, address);
+			return;
+		}
+	}
+	if (opcode & 0x00200000) {
+		uint32_t value;
+		if (imm) {
+			unsigned rotate = (opcode >> 7) & 0x1E;
+			value = rotate ? ((opcode & 0xFF) >> rotate) | ((opcode & 0xFF) << (32 - rotate)) : opcode & 0xFF;
+		} else {
+			value = cpu->r[opcode & 0xF];
+		}
+		bool const spsr = opcode & 0x00400000;
+		uint32_t const fieldMask = ((opcode & 0x00010000) ? 0xFF : 0) | ((opcode & 0x00080000) ? 0xFF000000 : 0);
+		jitHelperMsr(gba, value, fieldMask | (spsr ? 0x100 : 0));
+		if (spsr) {
+			return;
+		}
+		if (cpu->cpsr & PSR_T) {
+			cpu->prefetch[0] = 0x46C0;
+			cpu->prefetch[1] &= 0xFFFF;
+			cpu->r[15] += 2;
+		} else {
+			cpu->prefetch[0] = codeFetch32(gba, cpu->r[15] - 4);
+			cpu->prefetch[1] = codeFetch32(gba, cpu->r[15]);
+		}
+		return;
+	}
+	int rd = (opcode >> 12) & 0xF;
+	if (imm || rd == 15) {
+		armGeneric(gba, opcode, address);
+		return;
+	}
+	cpu->r[rd] = (opcode & 0x00400000) ? cpu->spsr : cpu->cpsr;
+}
+
 // B and BL: a signed 24-bit word offset from the PC, which is 8 ahead.
 static void armBranch(struct GBA* gba, uint32_t opcode, uint32_t address) {
 	struct CPU* cpu = &gba->cpu;
@@ -787,11 +847,11 @@ static LeanHandler armHandler(int i) {
 			return load || ((i >> 1) & 3) == 1 ? armMemHalf : armGeneric;
 		}
 		if (statusOp) {
-			return armGeneric;
+			return armStatus;
 		}
 		return bit4 ? armDataProcessingByReg : armDataProcessingBy[bits27to20 & 0x3F];
 	case 1:
-		return statusOp ? armGeneric : armDataProcessingBy[bits27to20 & 0x3F];
+		return statusOp ? armStatus : armDataProcessingBy[bits27to20 & 0x3F];
 	case 2:
 		return armMemBy[bits27to20 & 0x3F];
 	case 3:
@@ -821,6 +881,11 @@ static void thumbBlock(struct GBA* gba, uint32_t opcode, uint32_t address) {
 	blockTransfer(gba, (opcode >> 8) & 7, opcode & 0xFF, opcode & 0x0800, true, false, true, true);
 }
 
+static void thumbBx(struct GBA* gba, uint32_t opcode, uint32_t address) {
+	(void) address;
+	branchExchange(gba, gba->cpu.r[(opcode >> 3) & 0xF]);
+}
+
 // The handler for a Thumb opcode's bits 15-6, i.
 static LeanHandler thumbHandler(int i) {
 	int const format = i >> 5;
@@ -842,7 +907,7 @@ static LeanHandler thumbHandler(int i) {
 		}
 		// Bits 9-8 pick ADD, CMP, MOV or BX; bit 7 is the destination's high bit, and with bits 2-0
 		// (not part of i) it might be the PC, so these are only taken when the high bit is clear.
-		return ((i >> 2) & 3) != 3 ? thumbHiReg : thumbGeneric;
+		return ((i >> 2) & 3) != 3 ? thumbHiReg : thumbBx;
 	case 0x09:
 		return thumbLdrPc;
 	case 0x0A:
