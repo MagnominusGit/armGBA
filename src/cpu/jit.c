@@ -328,13 +328,6 @@ static void removeBlock(struct Jit* jit, struct Block* block) {
 			block->twin = NULL;
 		}
 	}
-	for (int i = 0; i < block->midCount; ++i) {
-		struct LookupEntry* entry = &jit->lookup[lookupHash(block->midKeys[i])];
-		if (entry->key == block->midKeys[i]) {
-			emptyLookup(jit, entry);
-		}
-	}
-	block->midCount = 0;
 	uint32_t key = blockKey(block->pc, block->thumb);
 	if (block->cached) {
 		struct Block** prev = &jit->hash[hashBlock(key)];
@@ -2838,26 +2831,6 @@ int jitHelperDeferred(struct GBA* gba, const struct Block* block) {
 	return 1;
 }
 
-// A lookup finds only blocks' heads. Going on in the middle of a block (after a DMA started there,
-// say, before the next is started), the lookup is given that instruction's entry in the block's
-// careful copy, which goes on from any of its instructions, rather than leaving compiled code for
-// the run loop to do the same. The copy keeps a note of the entries, which go with it.
-static void carefulEntry(struct Jit* jit, uint32_t pc, bool thumb, uint32_t key) {
-	struct LookupEntry* entry = &jit->lookup[lookupHash(key)];
-	if (entry->key == key) {
-		return;
-	}
-	const struct Block* within = blockWithin(jit, pc, thumb);
-	struct Block* twin = within ? within->twin : NULL;
-	unsigned const index = within ? (pc - within->pc) / (thumb ? 2u : 4u) : 0;
-	if (!twin || !twin->valid || index >= (unsigned) twin->count || twin->midCount == CAREFUL_ENTRIES) {
-		return;
-	}
-	entry->key = key;
-	entry->entry = twin->entries[index];
-	twin->midKeys[twin->midCount++] = key;
-}
-
 // Called when a careful copy's check fires because an event falls inside the instruction at pc. The
 // exact CPU runs that instruction, and any after it compiled code can't, then returns the block key
 // to go on at, or ~0 to leave the state to the run loop.
@@ -2904,9 +2877,7 @@ uint32_t jitHelperStepOne(struct GBA* gba, uint32_t pc) {
 			gba->dmaIdleCredit = 0;
 			gba->jitLeave = false;
 			gba->jitRunning = true;
-			uint32_t const key = blockKey(next, thumb);
-			carefulEntry(jit, next, thumb, key);
-			return key;
+			return blockKey(next, thumb);
 		}
 	}
 	return ~0u;
