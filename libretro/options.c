@@ -225,8 +225,9 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "(see Cheat Cartridge Button Press). Off leaves both clicks to their usual uses.",
 	  NULL, "system", { { "r3", "R3" }, { "l3", "L3" }, { "off", "Off" }, { NULL, NULL } }, "r3" },
 	{ "armgba_threaded_video", "Threaded Video", NULL,
-	  "Draws on a second CPU core for speed. One Frame Late is faster but a frame behind.", NULL, "video",
-	  { { "disabled", "Off" }, { "enabled", "On" }, { "one frame late", "One Frame Late" }, { NULL, NULL } }, "disabled" },
+	  "Draws on a second CPU core for speed. One Frame Late is faster but a frame behind. Off on a "
+	  "single-core device and with HD Affine Backgrounds.",
+	  NULL, "video", { { "disabled", "Off" }, { "enabled", "On" }, { "one frame late", "One Frame Late" }, { NULL, NULL } }, "enabled" },
 	{ "armgba_threaded_audio", "Threaded Audio", NULL,
 	  "Mixes the sound on another CPU core for speed. The sound is the same.", NULL, "audio",
 	  { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
@@ -239,8 +240,8 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	{ "armgba_hd_affine", "HD Affine Backgrounds", NULL,
 	  "Draws rotating and scaling backgrounds (tracks, world maps, perspective floors) at 2x to 8x "
 	  "resolution, like bsnes's HD Mode 7. Costs speed; 5x and up need a fast computer. In RetroArch, above "
-	  "4x (2x on 32-bit ARM) applies the next time the game starts. Not with Threaded Video or linked "
-	  "consoles; hidden while LCD Scale is on.",
+	  "4x (2x on 32-bit ARM) applies the next time the game starts. Turns Threaded Video off. Not with "
+	  "linked consoles; hidden while LCD Scale is on.",
 	  NULL, "video",
 	  { { "disabled", "Off" }, { "2", "2x" }, { "3", "3x" }, { "4", "4x" }, { "5", "5x" }, { "6", "6x" }, { "7", "7x" }, { "8", "8x" },
 	    { NULL, NULL } },

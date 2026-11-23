@@ -969,7 +969,7 @@ static void readOptions(void) {
 			showButtons();
 		}
 	}
-	static const struct Choice threadedChoices[] = { { "enabled", THREADED_ON }, { "one frame late", THREADED_LATE } };
+	static const struct Choice threadedChoices[] = { { "disabled", THREADED_OFF }, { "enabled", THREADED_ON }, { "one frame late", THREADED_LATE } };
 	static const struct Choice modelChoices[] = {
 		{ "Game Boy", LIBRETRO_GB_DMG },
 		{ "Game Boy Pocket", LIBRETRO_GB_MGB },
@@ -1016,9 +1016,16 @@ static void readOptions(void) {
 	}
 	const char* address = option("armgba_gamecube_address");
 	dolphinSetHost(gamecubeWanted() && !gameBoy ? (address ? address : "auto") : NULL);
-	int threaded = optionChoice("armgba_threaded_video", threadedChoices, COUNT(threadedChoices), THREADED_OFF);
-	// Linked consoles run in turns, which a render thread would only slow.
-	threaded = gbaTogether ? THREADED_OFF : threaded;
+	static const struct Choice hdChoices[] = { { "2", 2 }, { "3", 3 }, { "4", 4 }, { "5", 5 }, { "6", 6 }, { "7", 7 }, { "8", 8 } };
+	hdChosen = optionChoice("armgba_hd_affine", hdChoices, COUNT(hdChoices), 1);
+	int threaded = optionChoice("armgba_threaded_video", threadedChoices, COUNT(threadedChoices), THREADED_ON);
+	// Linked consoles run in turns, which a render thread would only slow, a single core has none to
+	// spare, and HD Affine Backgrounds are drawn on this thread.
+	static long cores;
+	if (!cores) {
+		cores = sysconf(_SC_NPROCESSORS_ONLN);
+	}
+	threaded = gbaTogether || cores < 2 || hdChosen > 1 ? THREADED_OFF : threaded;
 	int const threads = optionIs("armgba_video_threads", "2") ? 2 : 1;
 	if (gba && (threaded != threadedVideo || (threaded && threads != videoThreads))) {
 		renderThreadStop(gba);
@@ -1040,8 +1047,6 @@ static void readOptions(void) {
 	threadedAudio = audioThread;
 	videoThreads = threads;
 	colorCorrection = optionIs("armgba_color_correction", "enabled") && buildCorrectedColors();
-	static const struct Choice hdChoices[] = { { "2", 2 }, { "3", 3 }, { "4", 4 }, { "5", 5 }, { "6", 6 }, { "7", 7 }, { "8", 8 } };
-	hdChosen = optionChoice("armgba_hd_affine", hdChoices, COUNT(hdChoices), 1);
 	// LCD Effects off leaves each effect's setting as it is, and off.
 	bool const effects = optionIs("armgba_lcd_effects", "enabled");
 	static const struct Choice ghostingChoices[] = { { "25", 1 }, { "half", 2 }, { "75", 3 }, { "enabled", 4 } };
