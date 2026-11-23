@@ -701,9 +701,9 @@ static void drawBackgroundMode4Reference(struct GBA* gba, struct RenderBackgroun
 static void drawBackgroundMode0(struct GBA* gba, struct RenderBackground* background, int y) {
 #if RENDER_SIMD
 	struct Renderer* renderer = &gba->renderer;
-	// Horizontal mosaic needs mGBA's own loop; the 256-color fast path has no object window
-	// support.
-	bool fast = !(background->mosaic && MOSAIC_BG_H(renderer->mosaic)) && (!DISPCNT_OBJWIN_ENABLE(renderer->dispcnt) || !background->multipalette);
+	// Horizontal mosaic needs mGBA's own loop; the 256-color fast path handles the object window
+	// only on NEON.
+	bool fast = !(background->mosaic && MOSAIC_BG_H(renderer->mosaic)) && (!DISPCNT_OBJWIN_ENABLE(renderer->dispcnt) || !background->multipalette || RENDER_SIMD_OBJWIN);
 	int fastY = y;
 	if (background->mosaic) {
 		fastY -= y % (MOSAIC_BG_V(renderer->mosaic) + 1);
@@ -913,7 +913,7 @@ static void drawBackgroundMode2(struct GBA* gba, struct RenderBackground* backgr
 	(void) variant;
 
 #if RENDER_SIMD
-	if (useSimd && !objwinSlowPath && mosaicH <= 1) {
+	if (useSimd && (!objwinSlowPath || RENDER_SIMD_OBJWIN) && mosaicH <= 1) {
 		if (!checkFast) {
 			renderAffineSimd(gba, background, x, y);
 			return;
@@ -1561,6 +1561,21 @@ static int preprocessSprite(struct GBA* gba, const struct RenderSprite* sprite, 
 	return 1;
 }
 
+// postprocessSprite under the object window: sprites drawn outside it, inside it, or everywhere.
+static void postprocessSpriteObjwin(struct Renderer* renderer, unsigned priority, uint32_t flags, bool objwinDisable, bool objwinOnly) {
+	for (int x = renderer->start; x < renderer->end; ++x) {
+		uint32_t color = renderer->spriteLayer[x] & ~FLAG_OBJWIN;
+		uint32_t current = rowGet(renderer, x);
+		if ((color & FLAG_UNWRITTEN) == FLAG_UNWRITTEN || (color & FLAG_PRIORITY) >> OFFSET_PRIORITY != priority) {
+			continue;
+		}
+		if ((objwinDisable && (current & FLAG_OBJWIN)) || (objwinOnly && !(current & FLAG_OBJWIN))) {
+			continue;
+		}
+		compositeBlendObjwin(renderer, x, color | flags, current);
+	}
+}
+
 // Merges the sprite layer's pixels of one priority into the row, under the window's rules.
 static void postprocessSprite(struct GBA* gba, unsigned priority) {
 	struct Renderer* renderer = &gba->renderer;
@@ -1578,34 +1593,29 @@ static void postprocessSprite(struct GBA* gba, unsigned priority) {
 			return;
 		}
 
-		if (objwinDisable) {
-			for (x = renderer->start; x < renderer->end; ++x, ++pixel) {
-				uint32_t color = renderer->spriteLayer[x] & ~FLAG_OBJWIN;
-				uint32_t current = rowGet(renderer, pixel);
-				if ((color & FLAG_UNWRITTEN) != FLAG_UNWRITTEN && !(current & FLAG_OBJWIN) && (color & FLAG_PRIORITY) >> OFFSET_PRIORITY == priority) {
-					compositeBlendObjwin(renderer, pixel, color | flags, current);
-				}
+#if RENDER_SIMD_OBJWIN
+		if (useSimd) {
+			int const mode = objwinDisable ? SPRITES_OUTSIDE_OBJWIN : objwinOnly ? SPRITES_INSIDE_OBJWIN : SPRITES_EVERYWHERE;
+			if (!checkFast) {
+				renderSpritesObjwinSimd(gba, priority, renderer->spriteFrom, renderer->spriteTo, mode);
+				return;
 			}
-			return;
-		} else if (objwinOnly) {
-			for (x = renderer->start; x < renderer->end; ++x, ++pixel) {
-				uint32_t color = renderer->spriteLayer[x] & ~FLAG_OBJWIN;
-				uint32_t current = rowGet(renderer, pixel);
-				if ((color & FLAG_UNWRITTEN) != FLAG_UNWRITTEN && (current & FLAG_OBJWIN) && (color & FLAG_PRIORITY) >> OFFSET_PRIORITY == priority) {
-					compositeBlendObjwin(renderer, pixel, color | flags, current);
-				}
-			}
-			return;
-		} else {
-			for (x = renderer->start; x < renderer->end; ++x, ++pixel) {
-				uint32_t color = renderer->spriteLayer[x] & ~FLAG_OBJWIN;
-				uint32_t current = rowGet(renderer, pixel);
-				if ((color & FLAG_UNWRITTEN) != FLAG_UNWRITTEN && (color & FLAG_PRIORITY) >> OFFSET_PRIORITY == priority) {
-					compositeBlendObjwin(renderer, pixel, color | flags, current);
-				}
+			uint32_t before[SCREEN_WIDTH];
+			uint32_t fastRow[SCREEN_WIDTH];
+			rowSave(renderer, before);
+			renderSpritesObjwinSimd(gba, priority, renderer->spriteFrom, renderer->spriteTo, mode);
+			rowSave(renderer, fastRow);
+			rowRestore(renderer, before);
+			postprocessSpriteObjwin(renderer, priority, flags, objwinDisable, objwinOnly);
+			if (rowDiffers(renderer, fastRow, 0, SCREEN_WIDTH)) {
+				fprintf(stderr, "sprite merge under the object window differs, priority %u [%d,%d)\n", priority, renderer->start, renderer->end);
+				abort();
 			}
 			return;
 		}
+#endif
+		postprocessSpriteObjwin(renderer, priority, flags, objwinDisable, objwinOnly);
+		return;
 	} else if (!WIN_OBJ_ENABLE(renderer->currentWindow.packed)) {
 		return;
 	}
