@@ -9,6 +9,7 @@
 // so the machine ends up exactly where step.c leaves it. Kinds without a handler of their own yet
 // go through step.c's decoder and executor.
 
+#include "bus-inline.h"
 #include "decode.h"
 #include "gba.h"
 
@@ -19,7 +20,7 @@ static LeanHandler armTable[4096];
 static LeanHandler thumbTable[1024];
 
 // Whether the flags satisfy an instruction's condition field, as step.c's passes().
-static inline bool passes(uint32_t cpsr, int cond) {
+static inline __attribute__((always_inline)) bool passes(uint32_t cpsr, int cond) {
 	bool n = cpsr & PSR_N;
 	bool z = cpsr & PSR_Z;
 	bool c = cpsr & PSR_C;
@@ -329,9 +330,12 @@ static void thumbAlu(struct GBA* gba, uint32_t opcode, uint32_t address) {
 
 // ADD, CMP and MOV reaching r8-r15, where the PC isn't written: ADD and MOV set no flags.
 static void thumbHiReg(struct GBA* gba, uint32_t opcode, uint32_t address) {
-	(void) address;
 	struct CPU* cpu = &gba->cpu;
 	int hd = (opcode & 7) | ((opcode >> 4) & 8);
+	if (hd == 15) {
+		thumbGeneric(gba, opcode, address);
+		return;
+	}
 	uint32_t m = cpu->r[(opcode >> 3) & 0xF];
 	switch ((opcode >> 8) & 3) {
 	case 0:
@@ -364,45 +368,10 @@ static void thumbBl2(struct GBA* gba, uint32_t opcode, uint32_t address) {
 	stepReload(gba);
 }
 
-// ARM data processing with a constant or a register shifted by a constant, writing a register other
-// than the PC; anything else goes through step.c.
-static void armDataProcessing(struct GBA* gba, uint32_t opcode, uint32_t address) {
-	struct CPU* cpu = &gba->cpu;
-	int rd = (opcode >> 12) & 0xF;
-	if (rd == 15) {
-		armGeneric(gba, opcode, address);
-		return;
-	}
-	bool const c = cpu->cpsr & PSR_C;
-	bool carry;
-	uint32_t m;
-	if (opcode & 0x02000000) {
-		unsigned rotate = (opcode >> 7) & 0x1E;
-		m = rotate ? ((opcode & 0xFF) >> rotate) | ((opcode & 0xFF) << (32 - rotate)) : opcode & 0xFF;
-		carry = rotate ? m >> 31 : c;
-	} else {
-		uint32_t v = cpu->r[opcode & 0xF];
-		unsigned a = (opcode >> 7) & 0x1F;
-		switch ((opcode >> 5) & 3) {
-		case SHIFT_LSL:
-			carry = a ? (v >> (32 - a)) & 1 : c;
-			m = v << a;
-			break;
-		case SHIFT_LSR:
-			carry = a ? (v >> (a - 1)) & 1 : v >> 31;
-			m = a ? v >> a : 0;
-			break;
-		case SHIFT_ASR:
-			carry = a ? (v >> (a - 1)) & 1 : v >> 31;
-			m = (uint32_t) ((int32_t) v >> (a ? a : 31));
-			break;
-		default:
-			carry = a ? (v >> (a - 1)) & 1 : v & 1;
-			m = a ? (v >> a) | (v << (32 - a)) : ((uint32_t) c << 31) | (v >> 1);
-			break;
-		}
-	}
-	uint32_t const n = cpu->r[(opcode >> 16) & 0xF];
+// The operation of ARM data processing, on its operands; carry is what the shifter left for the
+// logical operations' flag.
+static inline __attribute__((always_inline)) void dataProcessing(struct CPU* cpu, uint32_t opcode, int rd, uint32_t n, uint32_t m, bool c,
+                                                                  bool carry) {
 	bool const setFlags = opcode & 0x00100000;
 	uint32_t d;
 	switch ((opcode >> 21) & 0xF) {
@@ -482,21 +451,62 @@ static void armDataProcessing(struct GBA* gba, uint32_t opcode, uint32_t address
 	}
 }
 
+// ARM data processing with a constant or a register shifted by a constant, writing a register other
+// than the PC; anything else goes through step.c.
+static inline __attribute__((always_inline)) void armDataProcessingAs(struct GBA* gba, uint32_t opcode, uint32_t address, uint32_t fixed) {
+	struct CPU* cpu = &gba->cpu;
+	int rd = (opcode >> 12) & 0xF;
+	if (rd == 15) {
+		armGeneric(gba, opcode, address);
+		return;
+	}
+	bool const c = cpu->cpsr & PSR_C;
+	bool carry;
+	uint32_t m;
+	if (fixed & 0x02000000) {
+		unsigned rotate = (opcode >> 7) & 0x1E;
+		m = rotate ? ((opcode & 0xFF) >> rotate) | ((opcode & 0xFF) << (32 - rotate)) : opcode & 0xFF;
+		carry = rotate ? m >> 31 : c;
+	} else {
+		uint32_t v = cpu->r[opcode & 0xF];
+		unsigned a = (opcode >> 7) & 0x1F;
+		switch ((opcode >> 5) & 3) {
+		case SHIFT_LSL:
+			carry = a ? (v >> (32 - a)) & 1 : c;
+			m = v << a;
+			break;
+		case SHIFT_LSR:
+			carry = a ? (v >> (a - 1)) & 1 : v >> 31;
+			m = a ? v >> a : 0;
+			break;
+		case SHIFT_ASR:
+			carry = a ? (v >> (a - 1)) & 1 : v >> 31;
+			m = (uint32_t) ((int32_t) v >> (a ? a : 31));
+			break;
+		default:
+			carry = a ? (v >> (a - 1)) & 1 : v & 1;
+			m = a ? (v >> a) | (v << (32 - a)) : ((uint32_t) c << 31) | (v >> 1);
+			break;
+		}
+	}
+	dataProcessing(cpu, fixed, rd, cpu->r[(opcode >> 16) & 0xF], m, c, carry);
+}
+
 // ARM LDR, STR, LDRB and STRB, as step.c's mem() makes them: loads into the PC, and write-back to
 // it, go through step.c.
-static void armMem(struct GBA* gba, uint32_t opcode, uint32_t address) {
+static inline __attribute__((always_inline)) void armMemAs(struct GBA* gba, uint32_t opcode, uint32_t address, uint32_t fixed) {
 	struct CPU* cpu = &gba->cpu;
 	int rd = (opcode >> 12) & 0xF;
 	int rn = (opcode >> 16) & 0xF;
-	bool const pre = opcode & 0x01000000;
-	bool const writeback = !pre || (opcode & 0x00200000);
-	bool const load = opcode & 0x00100000;
+	bool const pre = fixed & 0x01000000;
+	bool const writeback = !pre || (fixed & 0x00200000);
+	bool const load = fixed & 0x00100000;
 	if (rd == 15 || (rn == 15 && writeback)) {
 		armGeneric(gba, opcode, address);
 		return;
 	}
 	uint32_t offset;
-	if (opcode & 0x02000000) {
+	if (fixed & 0x02000000) {
 		uint32_t v = cpu->r[opcode & 0xF];
 		unsigned a = (opcode >> 7) & 0x1F;
 		switch ((opcode >> 5) & 3) {
@@ -517,9 +527,9 @@ static void armMem(struct GBA* gba, uint32_t opcode, uint32_t address) {
 		offset = opcode & 0xFFF;
 	}
 	uint32_t const base = cpu->r[rn];
-	uint32_t const moved = (opcode & 0x00800000) ? base + offset : base - offset;
+	uint32_t const moved = (fixed & 0x00800000) ? base + offset : base - offset;
 	uint32_t const at = pre ? moved : base;
-	int const size = (opcode & 0x00400000) ? 1 : 4;
+	int const size = (fixed & 0x00400000) ? 1 : 4;
 	cpu->fetchSeq = false;
 	if (load) {
 		uint32_t value = busRead(gba, at, size, false);
@@ -534,6 +544,156 @@ static void armMem(struct GBA* gba, uint32_t opcode, uint32_t address) {
 	if (writeback) {
 		cpu->r[rn] = moved;
 	}
+}
+
+
+// One copy of each for every combination of the opcode bits 25-20 the table already picks by (the
+// operand form, the operation or transfer kind, S, P, U, B, W, L), so none of them is tested as it
+// runs.
+#define LEAN_ALL_64(X) X(0) X(1) X(2) X(3) X(4) X(5) X(6) X(7) X(8) X(9) X(10) X(11) X(12) X(13) X(14) X(15) X(16) X(17) X(18) X(19) X(20) X(21) X(22) X(23) X(24) X(25) X(26) X(27) X(28) X(29) X(30) X(31) X(32) X(33) X(34) X(35) X(36) X(37) X(38) X(39) X(40) X(41) X(42) X(43) X(44) X(45) X(46) X(47) X(48) X(49) X(50) X(51) X(52) X(53) X(54) X(55) X(56) X(57) X(58) X(59) X(60) X(61) X(62) X(63)
+#define LEAN_DP(n) \
+	static void armDataProcessing##n(struct GBA* gba, uint32_t opcode, uint32_t address) { \
+		armDataProcessingAs(gba, opcode, address, (uint32_t) (n) << 20); \
+	}
+#define LEAN_MEM(n) \
+	static void armMem##n(struct GBA* gba, uint32_t opcode, uint32_t address) { \
+		armMemAs(gba, opcode, address, (uint32_t) (n) << 20); \
+	}
+#define LEAN_ENTRY_DP(n) armDataProcessing##n,
+#define LEAN_ENTRY_MEM(n) armMem##n,
+LEAN_ALL_64(LEAN_DP)
+LEAN_ALL_64(LEAN_MEM)
+static const LeanHandler armDataProcessingBy[64] = { LEAN_ALL_64(LEAN_ENTRY_DP) };
+static const LeanHandler armMemBy[64] = { LEAN_ALL_64(LEAN_ENTRY_MEM) };
+
+// The multiplier stops early once the rest of the operand is all zeros or all ones.
+static inline int multiplyStages(uint32_t value) {
+	value ^= (uint32_t) ((int32_t) value >> 31);
+	return (31 - __builtin_clz(value | 1)) / 8 + 1;
+}
+
+// MUL and MLA, as step.c's mul() runs them: an internal cycle for each byte of the multiplier the
+// early-out doesn't skip, and one more to accumulate.
+static inline void multiply(struct GBA* gba, int rd, uint32_t multiplier, uint32_t multiplicand, uint32_t accum, bool accumulate,
+                            bool setFlags) {
+	struct CPU* cpu = &gba->cpu;
+	int stages = multiplyStages(multiplier);
+	uint32_t d = multiplicand * multiplier + accum;
+	for (int i = 0; i < stages + accumulate; ++i) {
+		busIdle(gba);
+	}
+	cpu->r[rd] = d;
+	if (setFlags) {
+		setNz(cpu, d);
+		bool carry = stages == 4 ? cpuMultiplyCarryFull(multiplier) : cpuMultiplyCarryLow(multiplicand, multiplier, accum);
+		cpu->cpsr = (cpu->cpsr & ~PSR_C) | (carry ? PSR_C : 0);
+	}
+}
+
+static void armMultiply(struct GBA* gba, uint32_t opcode, uint32_t address) {
+	struct CPU* cpu = &gba->cpu;
+	int rd = (opcode >> 16) & 0xF;
+	int rn = (opcode >> 12) & 0xF;
+	bool accumulate = opcode & 0x00200000;
+	if (rd == 15 || (accumulate && rn == 15)) {
+		armGeneric(gba, opcode, address);
+		return;
+	}
+	cpu->fetchSeq = false;
+	multiply(gba, rd, cpu->r[(opcode >> 8) & 0xF], cpu->r[opcode & 0xF], accumulate ? cpu->r[rn] : 0, accumulate, opcode & 0x00100000);
+}
+
+// Thumb's MUL multiplies by the destination's old value.
+static void thumbMultiply(struct GBA* gba, uint32_t opcode, uint32_t address) {
+	(void) address;
+	struct CPU* cpu = &gba->cpu;
+	int rd = opcode & 7;
+	cpu->fetchSeq = false;
+	multiply(gba, rd, cpu->r[rd], cpu->r[(opcode >> 3) & 7], 0, false, true);
+}
+
+// ARM's halfword and signed transfers, as step.c's mem() makes them; loads into the PC, and
+// write-back to it, go through step.c.
+static void armMemHalf(struct GBA* gba, uint32_t opcode, uint32_t address) {
+	struct CPU* cpu = &gba->cpu;
+	int rd = (opcode >> 12) & 0xF;
+	int rn = (opcode >> 16) & 0xF;
+	bool const pre = opcode & 0x01000000;
+	bool const writeback = !pre || (opcode & 0x00200000);
+	if (rd == 15 || (rn == 15 && writeback)) {
+		armGeneric(gba, opcode, address);
+		return;
+	}
+	uint32_t offset = (opcode & 0x00400000) ? ((opcode >> 4) & 0xF0) | (opcode & 0xF) : cpu->r[opcode & 0xF];
+	uint32_t const base = cpu->r[rn];
+	uint32_t const moved = (opcode & 0x00800000) ? base + offset : base - offset;
+	uint32_t const at = pre ? moved : base;
+	int const sh = (opcode >> 5) & 3;
+	int const size = sh == 2 ? 1 : 2;
+	cpu->fetchSeq = false;
+	if (opcode & 0x00100000) {
+		uint32_t value = busRead(gba, at, size, false);
+		if (sh != 1) {
+			value = (size == 1 || (at & 1)) ? (uint32_t) (int8_t) value : (uint32_t) (int16_t) value;
+		}
+		if (writeback) {
+			cpu->r[rn] = moved;
+		}
+		busIdle(gba);
+		cpu->r[rd] = value;
+		return;
+	}
+	busWrite(gba, at, cpu->r[rd], size, false);
+	if (writeback) {
+		cpu->r[rn] = moved;
+	}
+}
+
+// ARM data processing with a register shifted by another register's low byte, writing a register
+// other than the PC: the shift takes an internal cycle, after which the fetch is nonsequential, and
+// a PC operand is read 12 ahead instead of 8.
+static void armDataProcessingByReg(struct GBA* gba, uint32_t opcode, uint32_t address) {
+	struct CPU* cpu = &gba->cpu;
+	int rd = (opcode >> 12) & 0xF;
+	if (rd == 15) {
+		armGeneric(gba, opcode, address);
+		return;
+	}
+	busIdle(gba);
+	cpu->fetchSeq = false;
+	bool const c = cpu->cpsr & PSR_C;
+	int rm = opcode & 0xF;
+	uint32_t v = cpu->r[rm] + (rm == 15 ? 4 : 0);
+	unsigned s = cpu->r[(opcode >> 8) & 0xF] & 0xFF;
+	bool carry = c;
+	uint32_t m = v;
+	if (s) {
+		switch ((opcode >> 5) & 3) {
+		case SHIFT_LSL:
+			carry = s < 32 ? (v >> (32 - s)) & 1 : s == 32 ? v & 1 : 0;
+			m = s < 32 ? v << s : 0;
+			break;
+		case SHIFT_LSR:
+			carry = s < 32 ? (v >> (s - 1)) & 1 : s == 32 ? v >> 31 : 0;
+			m = s < 32 ? v >> s : 0;
+			break;
+		case SHIFT_ASR:
+			carry = s < 32 ? (v >> (s - 1)) & 1 : v >> 31;
+			m = s < 32 ? (uint32_t) ((int32_t) v >> s) : (uint32_t) ((int32_t) v >> 31);
+			break;
+		default:
+			if (s & 31) {
+				carry = (v >> ((s & 31) - 1)) & 1;
+				m = (v >> (s & 31)) | (v << (32 - (s & 31)));
+			} else {
+				carry = v >> 31;
+			}
+			break;
+		}
+	}
+	int rn = (opcode >> 16) & 0xF;
+	uint32_t const n = cpu->r[rn] + (rn == 15 ? 4 : 0);
+	dataProcessing(cpu, opcode, rd, n, m, c, carry);
 }
 
 // LDM and STM without the S bit, and Thumb's PUSH, POP, LDMIA and STMIA, as step.c's block() makes
@@ -618,16 +778,24 @@ static LeanHandler armHandler(int i) {
 	bool const statusOp = (bits27to20 & 0x19) == 0x10;
 	switch (bits27to20 >> 5) {
 	case 0:
-		if (bit4 || statusOp) {
+		if (bit4 && bit7) {
+			// Multiplies, SWP, and the halfword and signed transfers (bits 6-5 not both clear).
+			if (!(i & 6)) {
+				return (bits27to20 & 0x18) == 0 ? armMultiply : armGeneric;
+			}
+			bool const load = bits27to20 & 1;
+			return load || ((i >> 1) & 3) == 1 ? armMemHalf : armGeneric;
+		}
+		if (statusOp) {
 			return armGeneric;
 		}
-		return armDataProcessing;
+		return bit4 ? armDataProcessingByReg : armDataProcessingBy[bits27to20 & 0x3F];
 	case 1:
-		return statusOp ? armGeneric : armDataProcessing;
+		return statusOp ? armGeneric : armDataProcessingBy[bits27to20 & 0x3F];
 	case 2:
-		return armMem;
+		return armMemBy[bits27to20 & 0x3F];
 	case 3:
-		return bit4 ? armGeneric : armMem;
+		return bit4 ? armGeneric : armMemBy[bits27to20 & 0x3F];
 	case 4:
 		return armBlock;
 	case 5:
@@ -670,15 +838,11 @@ static LeanHandler thumbHandler(int i) {
 		return thumbImm8;
 	case 0x08:
 		if (!(i & 0x10)) {
-			// Bits 9-6: MUL stays generic.
-			return (i & 0xF) == 0xD ? thumbGeneric : thumbAlu;
+			return (i & 0xF) == 0xD ? thumbMultiply : thumbAlu;
 		}
 		// Bits 9-8 pick ADD, CMP, MOV or BX; bit 7 is the destination's high bit, and with bits 2-0
 		// (not part of i) it might be the PC, so these are only taken when the high bit is clear.
-		if (((i >> 2) & 3) != 3 && !(i & 2)) {
-			return thumbHiReg;
-		}
-		return thumbGeneric;
+		return ((i >> 2) & 3) != 3 ? thumbHiReg : thumbGeneric;
 	case 0x09:
 		return thumbLdrPc;
 	case 0x0A:
@@ -742,11 +906,11 @@ static inline void leanOne(struct GBA* gba) {
 	cpu->prefetch[0] = cpu->prefetch[1];
 	if (cpu->cpsr & PSR_T) {
 		cpu->r[15] += 2;
-		cpu->prefetch[1] = busFetch(gba, cpu->r[15], true);
+		cpu->prefetch[1] = busFetchInline(gba, cpu->r[15], true);
 		thumbTable[(opcode >> 6) & 0x3FF](gba, opcode, cpu->r[15] - 4);
 	} else {
 		cpu->r[15] += 4;
-		cpu->prefetch[1] = busFetch(gba, cpu->r[15], false);
+		cpu->prefetch[1] = busFetchInline(gba, cpu->r[15], false);
 		if ((opcode >> 28) == COND_AL || passes(cpu->cpsr, opcode >> 28)) {
 			armTable[((opcode >> 16) & 0xFF0) | ((opcode >> 4) & 0xF)](gba, opcode, cpu->r[15] - 8);
 		}
