@@ -98,8 +98,6 @@ static struct {
 static retro_set_rumble_state_t setRumble;
 static bool rumbling;
 int threadedVideo;
-// Threaded Video off draws a frame's lines together, from the same log, on this thread.
-static bool batchedVideo;
 static bool threadedAudio;
 int videoThreads = 1;
 // Color correction: each RGB565 color, green's low bit ignored, to its corrected color.
@@ -1035,18 +1033,15 @@ static void readOptions(void) {
 	// Linked consoles run in turns, which a render thread would only slow, and HD Affine Backgrounds
 	// are drawn on this thread.
 	threaded = gbaTogether || hdChosen > 1 ? THREADED_OFF : threaded;
-	// Linked consoles and HD Affine Backgrounds draw each line here as it comes.
-	bool const batched = !threaded && !gbaTogether && hdChosen < 2;
 	int const threads = optionIs("armgba_video_threads", "2") ? 2 : 1;
-	if (gba && (threaded != threadedVideo || batched != batchedVideo || (threaded && threads != videoThreads))) {
+	if (gba && (threaded != threadedVideo || (threaded && threads != videoThreads))) {
 		renderThreadStop(gba);
 		unhookLayers();
-		if (threaded || batched) {
-			renderThreadStart(gba, threaded == THREADED_LATE, threads == 2, batched);
+		if (threaded) {
+			renderThreadStart(gba, threaded == THREADED_LATE, threads == 2);
 		}
 	}
 	threadedVideo = threaded;
-	batchedVideo = batched;
 	// The same goes for a sound thread, which serves one console.
 	bool const audioThread = !gbaTogether && optionIs("armgba_threaded_audio", "enabled");
 	if (gba && audioThread != threadedAudio) {
@@ -1530,10 +1525,9 @@ static bool startOtherAdvances(int count, const void* const data[], const size_t
 			return false;
 		}
 	}
-	if (threadedVideo || batchedVideo) {
+	if (threadedVideo) {
 		renderThreadStop(gba);
 		threadedVideo = 0;
-		batchedVideo = false;
 	}
 	audioThreadStop(gba);
 	threadedAudio = false;
@@ -3546,7 +3540,6 @@ static bool loadAdvance(const struct retro_game_info* game, const struct retro_g
 	}
 	showButtons();
 	threadedVideo = 0;
-	batchedVideo = false;
 	threadedAudio = false;
 	readOptions();
 	readClockOptions(false);
