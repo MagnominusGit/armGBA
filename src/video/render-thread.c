@@ -11,6 +11,10 @@
 // for where it ends; or, when started late, the frame before it is handed over there instead, so
 // drawing a frame overlaps the next one's emulation, at the cost of a frame's delay.
 //
+// Without a thread (inlined), the emulation thread plays the log itself where it would wait for the
+// worker, so a frame's lines are drawn together: the renderer's code is brought into the cache once,
+// not again after each line's emulation.
+//
 // With two workers (the New 3DS has two cores to spare), each has a copy and goes through the whole
 // log, one drawing the even lines and the other the odd ones: a line that isn't drawn leaves the
 // renderer as a line that hasn't changed does, so each copy's state stays what one renderer's
@@ -119,6 +123,8 @@ struct RenderThread {
 	uint64_t helperDone;
 	bool helperActive;
 	int idleFrames;
+	// No worker thread: the emulation thread plays the log where it would wait for one.
+	bool inlined;
 };
 
 // Waking a sleeping core takes longer than most waits here, so a thread first spins for a while on
@@ -440,6 +446,17 @@ static void* work(void* context) {
 
 // Waits until the worker has done the log up to target: the end of a frame, or everything logged.
 static void await(struct RenderThread* t, uint64_t target) {
+	if (t->inlined) {
+		struct Worker* w = &t->workers[0];
+		uint64_t done = atomic_load_explicit(&w->done, memory_order_relaxed);
+		while (done < target) {
+			uint32_t size;
+			play(w->copy, &t->log[done & (LOG_SIZE - 1)], &size);
+			done += size;
+		}
+		atomic_store_explicit(&w->done, done, memory_order_relaxed);
+		return;
+	}
 #if defined(__3DS__)
 	uint64_t const began = HOST_TICKS();
 	if (spin(t, NULL, target)) {
@@ -820,8 +837,9 @@ const struct Renderer* renderThreadRenderer(struct GBA* gba) {
 }
 
 // Starts the worker with a copy of the renderer and of video memory as they are now. With late,
-// each frame is handed over one frame after it was made, so the emulation thread never waits.
-bool renderThreadStart(struct GBA* gba, bool late, bool second) {
+// each frame is handed over one frame after it was made, so the emulation thread never waits. With
+// inlined, there is no thread (and neither late nor second).
+bool renderThreadStart(struct GBA* gba, bool late, bool second, bool inlined) {
 	if (gba->renderThread) {
 		return true;
 	}
@@ -842,11 +860,17 @@ bool renderThreadStart(struct GBA* gba, bool late, bool second) {
 	pthread_cond_init(&t->workers[0].wake, NULL);
 	pthread_cond_init(&t->workers[1].wake, NULL);
 	pthread_cond_init(&t->idle, NULL);
-	t->late = late;
+	t->late = late && !inlined;
 	t->count = 1;
 	for (int i = 0; i < 2; ++i) {
 		t->workers[i].owner = t;
 		t->workers[i].index = i;
+	}
+	if (inlined) {
+		t->inlined = true;
+		gba->renderThread = t;
+		renderThreadClone(gba);
+		return true;
 	}
 #if defined(__3DS__)
 	// libctru's pthreads run on the game's own core at the lowest priority, where a renderer can't
@@ -902,7 +926,7 @@ void renderThreadStop(struct GBA* gba) {
 	pthread_cond_signal(&t->workers[0].wake);
 	pthread_cond_signal(&t->workers[1].wake);
 	pthread_mutex_unlock(&t->mutex);
-	for (int i = 0; i < t->count; ++i) {
+	for (int i = 0; !t->inlined && i < t->count; ++i) {
 		pthread_join(t->workers[i].thread, NULL);
 	}
 	struct Renderer* renderer = &gba->renderer;

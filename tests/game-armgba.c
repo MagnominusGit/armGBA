@@ -107,7 +107,7 @@ static bool load(const char* bios, const uint8_t* rom, size_t romSize, bool skip
 	// ARMGBA_THREADED: the renderer on a second thread; 2 shows frames one frame late. ARMGBA_WORKERS2:
 	// two threads, each drawing every other line (and the emulation thread with them, where frames end).
 	if (getenv("ARMGBA_THREADED")) {
-		renderThreadStart(gba, atoi(getenv("ARMGBA_THREADED")) == 2, getenv("ARMGBA_WORKERS2") != NULL);
+		renderThreadStart(gba, atoi(getenv("ARMGBA_THREADED")) == 2, getenv("ARMGBA_WORKERS2") != NULL, false);
 	}
 	// ARMGBA_AUDIO_THREAD: the sound mixed on a thread of its own (bench: the same sound, frame by frame).
 	if (getenv("ARMGBA_AUDIO_THREAD")) {
