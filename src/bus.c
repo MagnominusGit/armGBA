@@ -6,6 +6,8 @@
 #include "gba.h"
 #include "cpu/jit-internal.h"
 
+#include <string.h>
+
 // Timed bus accesses. Each moves the clock on by its own cycles and lets events due by then happen
 // before it reads or writes, so it sees what the hardware would. A DMA waiting for the bus goes
 // before the CPU's next access.
@@ -253,6 +255,26 @@ void busWrite(struct GBA* gba, uint32_t address, uint32_t value, int size, bool 
 // have the word and so make the fetch cost one cycle.
 uint32_t busFetch(struct GBA* gba, uint32_t address, bool thumb) {
 	struct CPU* cpu = &gba->cpu;
+	// Work RAM, with no DMA waiting: what follows without the cartridge's counter and prefetch
+	// buffer, or the search for where the code is.
+	unsigned const region = address >> 24;
+	if ((region == REGION_IWRAM || region == REGION_EWRAM) && !gba->dmaRunnable) {
+		bool const seq = cpu->fetchSeq && !gba->lastAccessDma;
+		gba->dmaIdleCredit = 0;
+		cpu->fetchSeq = true;
+		busTick(gba, 1 + (thumb ? (seq ? gba->waitS16[region] : gba->waitN16[region]) : (seq ? gba->waitS32[region] : gba->waitN32[region])));
+		gba->lastAccessDma = false;
+		const uint8_t* const memory = region == REGION_IWRAM ? &gba->iwram[address & (SIZE_IWRAM - 1) & -(thumb ? 2u : 4u)] :
+		                                                       &gba->ewram[address & (SIZE_EWRAM - 1) & -(thumb ? 2u : 4u)];
+		if (thumb) {
+			uint16_t value;
+			memcpy(&value, memory, 2);
+			return value;
+		}
+		uint32_t value;
+		memcpy(&value, memory, 4);
+		return value;
+	}
 	int size = thumb ? 2 : 4;
 	bool seq = cpuAccess(gba, cpu->fetchSeq);
 	cpu->fetchSeq = true;
