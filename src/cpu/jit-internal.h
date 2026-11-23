@@ -14,6 +14,10 @@
 
 enum {
 	MAX_BLOCK_INSTS = 64,
+	// The lookup entries a careful copy can have in the middle of it, and the bit that sets their keys
+	// apart from the keys of the same instructions (jit.c: carefulEntry)
+	CAREFUL_ENTRIES = 4,
+	CAREFUL_KEY = 0x80000000,
 	// The code memory's stretches come from it in slots of this size (jit-layout.h's STRETCH)
 	JIT_SLOT = 1 << 20,
 	LOOKUP_BITS = 16,
@@ -224,6 +228,9 @@ struct Block {
 	uint32_t codeBytes;
 	// A careful copy's block, for as long as that block keeps it
 	struct Block* parent;
+	// A careful copy's: the instructions in it the lookup was given (see jit.c: carefulEntry)
+	uint32_t midKeys[CAREFUL_ENTRIES];
+	int midCount;
 	// Going away with a slot of the code memory being reclaimed
 	bool evicting;
 };
