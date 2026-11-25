@@ -399,6 +399,7 @@ bool gbRunFor(struct GB* gb, uint32_t* dots) {
 	}
 	if (gb->frameEnded) {
 		gb->frameLimit = gb->now + GB_FRAME_DOTS;
+		gbApplySharkCodes(gb);
 		// The clock counts in a time that wraps after some minutes: up to date every frame.
 		if (gb->cart.hasRtc) {
 			gbRtcSync(gb);

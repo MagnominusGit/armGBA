@@ -403,6 +403,20 @@ enum GBCheatKind {
 	GB_CHEAT_GAME_GENIE,
 };
 
+// Cheat codes typed in (cheats.c): Game Genie's ROM patches and GameShark's writes each frame.
+enum { GB_MAX_CHEATS = 64 };
+
+struct GBGenieCode {
+	uint16_t address;
+	uint8_t value, compare;
+	bool compares;
+};
+
+struct GBSharkCode {
+	uint8_t type, value;
+	uint16_t address;
+};
+
 struct GBCheatState {
 	uint8_t regs[0x20];
 	uint8_t shown, boot;
@@ -527,6 +541,10 @@ struct GB {
 	bool duckLaptop;
 	// A cheat cartridge in front of the game, set by the frontend (and powered on by gbReset).
 	struct GBCheatCart* cheatCart;
+	// Cheat codes, set by the frontend after loading (gbAddCheat).
+	struct GBGenieCode genie[GB_MAX_CHEATS];
+	struct GBSharkCode shark[GB_MAX_CHEATS];
+	uint8_t genieCount, sharkCount;
 };
 
 // gb.c
@@ -552,6 +570,13 @@ void gbSaveState(const struct GB*, void* data);
 bool gbLoadState(struct GB*, const void* data, size_t size);
 // The Mega Duck laptop's slot: the cartridge there takes the running ROM's place (a power of two in
 // size), its mapper as at power on; the memory card's RAM stays.
+// cheats.c
+void gbClearCheats(struct GB*);
+bool gbAddCheat(struct GB*, const char* code);
+bool gbCheatsOnPage(const struct GB*, unsigned page);
+uint8_t gbCheatRomByte(const struct GB*, uint16_t address, uint8_t value);
+void gbApplySharkCodes(struct GB*);
+
 // cheatcart.c
 bool gbCheatCartInit(struct GBCheatCart*, const uint8_t* program, size_t size, bool hasGame);
 void gbCheatCartFree(struct GBCheatCart*);

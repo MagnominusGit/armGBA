@@ -57,8 +57,8 @@ void gbMapRom(struct GB* gb) {
 	if (gb->bootMapped || cart->mapper == GB_SACHEN) {
 		gb->readMap[0] = NULL;
 	}
-	if (gb->cheatCart) {
-		for (int i = 0; i < 8; ++i) {
+	for (int i = 0; i < 8; ++i) {
+		if (gb->cheatCart || (gb->genieCount && gbCheatsOnPage(gb, i))) {
 			gb->readMap[i] = NULL;
 		}
 	}
@@ -380,7 +380,8 @@ uint8_t gbRead(struct GB* gb, uint16_t address) {
 		if (gb->bootMapped && (address < 0x100 || (gb->bootSize > 0x100 && address >= 0x200 && address < 0x900))) {
 			return gb->boot[address];
 		}
-		return gb->cheatCart ? gbCheatCartRead(gb, address, false) : gbCartRomRead(gb, address);
+		uint8_t value = gb->cheatCart ? gbCheatCartRead(gb, address, false) : gbCartRomRead(gb, address);
+		return gb->genieCount ? gbCheatRomByte(gb, address, value) : value;
 	}
 	switch (address >> 12) {
 	case 0x8:
