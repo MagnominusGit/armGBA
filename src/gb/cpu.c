@@ -350,7 +350,7 @@ static void idle(struct GB* gb, uint32_t until) {
 // the end of the M-cycle that saw the interrupt; otherwise moves on to the M-cycle that will.
 static bool wake(struct GB* gb, uint32_t until) {
 	struct GBCpu* cpu = &gb->cpu;
-	unsigned later = gb->model == GB_MODEL_CGB ? 0 : 2;
+	unsigned later = gbColor(gb) ? 0 : 2;
 	unsigned offset = cpu->justHalted ? 0 : later;
 	cpu->justHalted = false;
 	uint32_t start = gb->now;

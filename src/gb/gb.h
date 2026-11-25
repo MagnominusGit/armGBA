@@ -53,9 +53,15 @@ enum {
 	GB_KEY_DOWN = 128,
 };
 
+// The original Game Boy, the Pocket, the Color, and the Color inside a Game Boy Advance.
+// Layer Selection's layers.
+enum { GB_LAYER_BG = 1, GB_LAYER_OBJ = 2, GB_LAYER_WINDOW = 4 };
+
 enum GBModel {
 	GB_MODEL_DMG,
+	GB_MODEL_MGB,
 	GB_MODEL_CGB,
+	GB_MODEL_AGB,
 };
 
 enum GBMapper {
@@ -252,6 +258,7 @@ struct GBApu {
 	// Sample building: the time the sample being built starts, and its mixed sums so far.
 	uint32_t sampleStart;
 	int32_t partialLeft, partialRight;
+	int32_t partialHeardLeft, partialHeardRight;
 };
 
 // OAM DMA (Pan Docs, "OAM DMA Transfer"): written at start, an M-cycle's wait, then a byte an M-cycle.
@@ -359,6 +366,8 @@ struct GB {
 	uint16_t frame[GB_HEIGHT][GB_WIDTH];
 	// The frame's sound, left and right interleaved, at GB_SAMPLE_RATE: the frontend takes it.
 	int16_t audio[4096];
+	// With channels left out (channelsMuted), the same samples as heard; not otherwise.
+	int16_t heard[4096];
 	uint32_t audioCount;
 	// For each sample pair, whether any channel's DAC was on (the console's output capacitor is
 	// connected only then).
@@ -388,6 +397,10 @@ struct GB {
 	// Serial bytes shifted out with no partner, for the test runner.
 	void (*serialOut)(void* user, uint8_t byte);
 	void* user;
+	// Layer Selection's hidden layers and Channel Selection's channels left out (bits 0-3), set by the
+	// frontend: only what's drawn and heard changes.
+	uint8_t layersHidden;
+	uint8_t channelsMuted;
 	// MBC7's accelerometer, set by the frontend: the offsets from lying flat (0x70 a cartridge on its
 	// side, lower to the right and towards the player), and a flick for its next reading.
 	int16_t tiltX, tiltY;
@@ -401,6 +414,10 @@ struct GB {
 
 // gb.c
 bool gbLoad(struct GB*, const uint8_t* rom, size_t size, enum GBModel);
+// Whether the console has the Color's hardware (a Color or an Advance).
+static inline bool gbColor(const struct GB* gb) {
+	return gb->model >= GB_MODEL_CGB;
+}
 void gbReset(struct GB*);
 void gbRunFrame(struct GB*);
 void gbSchedule(struct GB*, int event, uint32_t at);

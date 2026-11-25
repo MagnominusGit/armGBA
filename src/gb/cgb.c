@@ -17,7 +17,7 @@ enum {
 };
 
 static bool colorHardware(const struct GB* gb) {
-	return gb->model == GB_MODEL_CGB;
+	return gbColor(gb);
 }
 
 // The palettes can't be reached while the PPU draws.

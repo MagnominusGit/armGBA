@@ -171,9 +171,9 @@ void gbReset(struct GB* gb) {
 	gb->cart = cart;
 	gbCartInit(gb);
 	// The Color's boot ROM runs in Color mode and leaves it by KEY0; without one, the header decides.
-	gb->cgbMode = model == GB_MODEL_CGB && (gb->boot || (rom[0x143] & 0x80));
+	gb->cgbMode = gbColor(gb) && (gb->boot || (rom[0x143] & 0x80));
 	gbBlankFrame(gb);
-	if (model == GB_MODEL_DMG) {
+	if (!gbColor(gb)) {
 		powerOnRam(gb);
 	}
 	gb->mcycle = 4;
@@ -194,14 +194,17 @@ void gbReset(struct GB* gb) {
 		updateNext(gb);
 		return;
 	}
-	if (model == GB_MODEL_CGB) {
+	// As each model's boot ROM leaves them (Pan Docs, Power Up Sequence): the Advance's B is 1 and
+	// its Z clear, the Pocket's A is FF.
+	if (gbColor(gb)) {
 		cpu->a = 0x11;
-		cpu->f = 0x80;
+		cpu->f = model == GB_MODEL_AGB ? 0x00 : 0x80;
+		cpu->b = model == GB_MODEL_AGB ? 0x01 : 0x00;
 		cpu->d = 0xFF;
 		cpu->e = 0x56;
 		cpu->l = 0x0D;
 	} else {
-		cpu->a = 0x01;
+		cpu->a = model == GB_MODEL_MGB ? 0xFF : 0x01;
 		cpu->f = 0xB0;
 		cpu->c = 0x13;
 		cpu->e = 0xD8;
@@ -226,9 +229,9 @@ void gbReset(struct GB* gb) {
 void gbBlankFrame(struct GB* gb) {
 	for (int y = 0; y < GB_HEIGHT; ++y) {
 		for (int x = 0; x < GB_WIDTH; ++x) {
-			gb->frame[y][x] = gb->model == GB_MODEL_CGB ? 0x7FFF : GB_SHADE_OFF;
+			gb->frame[y][x] = gbColor(gb) ? 0x7FFF : GB_SHADE_OFF;
 			if (gb->video) {
-				gb->video[y * GB_WIDTH + x] = gb->model == GB_MODEL_CGB && gb->videoTable ? gb->videoTable[0x7FFF] : gb->videoColors[4];
+				gb->video[y * GB_WIDTH + x] = gbColor(gb) && gb->videoTable ? gb->videoTable[0x7FFF] : gb->videoColors[4];
 			}
 		}
 	}
@@ -267,6 +270,7 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	size_t bootSize = gb->bootSize;
 	uint32_t* video = gb->video;
 	const uint32_t* videoTable = gb->videoTable;
+	uint8_t layersHidden = gb->layersHidden, channelsMuted = gb->channelsMuted;
 	bool rtcRealTime = gb->rtcRealTime;
 	unsigned rtcPercent = gb->rtcPercent ? gb->rtcPercent : 100;
 	int64_t hostMicros = gb->hostMicros;
@@ -277,6 +281,8 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	gb->bootSize = bootSize;
 	gb->video = video;
 	gb->videoTable = videoTable;
+	gb->layersHidden = layersHidden;
+	gb->channelsMuted = channelsMuted;
 	gb->rtcRealTime = rtcRealTime;
 	gb->rtcPercent = rtcPercent;
 	gb->hostMicros = hostMicros;

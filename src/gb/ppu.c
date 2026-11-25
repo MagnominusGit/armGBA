@@ -160,12 +160,17 @@ static void drawLineDmg(struct GB* gb) {
 			memcpy(&row[t * 8], &pixels, 8);
 		}
 		memcpy(index, &row[ppu->scx & 7], GB_WIDTH);
+		// Layer Selection: a hidden background is colour 0; a hidden window isn't drawn, though its
+		// line still counts.
+		if (gb->layersHidden & GB_LAYER_BG) {
+			memset(index, 0, GB_WIDTH);
+		}
 		if (windowOnLine(gb)) {
 			uint16_t wmap = (ppu->lcdc & LCDC_WINDOW_MAP ? 0x1C00 : 0x1800) + ppu->windowLine / 8 * 32;
 			unsigned wfine = ppu->windowLine & 7;
 			int start = ppu->wx - 7;
 			int first = start < 0 ? 0 : start;
-			for (int t = (first - start) / 8; t * 8 + start < GB_WIDTH; ++t) {
+			for (int t = (first - start) / 8; t * 8 + start < GB_WIDTH && !(gb->layersHidden & GB_LAYER_WINDOW); ++t) {
 				uint64_t pixels = tileRow(gb, tileAddress(ppu, gb->vram[wmap + t]) + wfine * 2);
 				uint8_t tilePixels[8];
 				memcpy(tilePixels, &pixels, 8);
@@ -197,7 +202,7 @@ static void drawLineDmg(struct GB* gb) {
 			out[x] = lut[index[x]];
 		}
 	}
-	if (!(ppu->lcdc & LCDC_OBJ)) {
+	if (!(ppu->lcdc & LCDC_OBJ) || (gb->layersHidden & GB_LAYER_OBJ)) {
 		return;
 	}
 	int height = ppu->lcdc & LCDC_TALL ? 16 : 8;
@@ -298,6 +303,10 @@ static void drawLineCgb(struct GB* gb) {
 			memcpy(indices, &pixels, 8);
 			const uint32_t* colors = bg[a & 7];
 			uint8_t front = a & 0x80 ? 4 : 0;
+			// Layer Selection: a hidden background is colour 0.
+			if (gb->layersHidden & GB_LAYER_BG) {
+				memset(indices, 0, 8);
+			}
 			for (int i = 0; i < 8; ++i) {
 				line[t * 8 + i] = colors[indices[i]];
 				info[t * 8 + i] = indices[i] | front;
@@ -308,7 +317,7 @@ static void drawLineCgb(struct GB* gb) {
 			unsigned wfine = ppu->windowLine & 7;
 			int start = ppu->wx - 7;
 			int first = start < 0 ? 0 : start;
-			for (int t = (first - start) / 8; t * 8 + start < GB_WIDTH; ++t) {
+			for (int t = (first - start) / 8; t * 8 + start < GB_WIDTH && !(gb->layersHidden & GB_LAYER_WINDOW); ++t) {
 				uint8_t tile = gb->vram[wmap + t];
 				uint8_t a = color ? gb->vram[0x2000 + wmap + t] : 0;
 				unsigned row = a & 0x40 ? 7 - wfine : wfine;
@@ -333,7 +342,7 @@ static void drawLineCgb(struct GB* gb) {
 			info[o + x] = 0;
 		}
 	}
-	if ((ppu->lcdc & LCDC_OBJ) && ppu->objectCount) {
+	if ((ppu->lcdc & LCDC_OBJ) && ppu->objectCount && !(gb->layersHidden & GB_LAYER_OBJ)) {
 		uint32_t obj[8][4];
 		uint8_t const objShades[2] = { ppu->obp0, ppu->obp1 };
 		lineColors(gb, cgb->objPalette, color ? 8 : 2, color ? NULL : objShades, obj);
@@ -394,7 +403,7 @@ static void drawLineCgb(struct GB* gb) {
 }
 
 static void drawLine(struct GB* gb) {
-	if (gb->model == GB_MODEL_CGB) {
+	if (gbColor(gb)) {
 		drawLineCgb(gb);
 	} else {
 		drawLineDmg(gb);
@@ -411,7 +420,7 @@ static void updateStat(struct GB* gb) {
 	if (gb->dma.active && ppu->mode == 2) {
 		ppu->mode = 0;
 	}
-	bool single = gb->model != GB_MODEL_CGB || !gb->doubleSpeed;
+	bool single = !gbColor(gb) || !gb->doubleSpeed;
 	if (ppu->lyCompare >= 0 || single) {
 		if (ppu->lyCompare == ppu->lyc) {
 			ppu->lycLine = true;
@@ -459,7 +468,7 @@ static void beginLine(struct GB* gb, uint32_t start) {
 	ppu->lineStart = start;
 	ppu->lineEnd = start + GB_LINE_DOTS;
 	if (ppu->line < GB_HEIGHT) {
-		bool cgb = gb->model == GB_MODEL_CGB;
+		bool cgb = gbColor(gb);
 		ppu->oamWriteBlocked = cgb && !gb->doubleSpeed;
 		next(gb, STEP_OAM_WRITE, start + 2);
 	} else {
@@ -480,10 +489,10 @@ static void startDrawing(struct GB* gb, uint32_t at) {
 // Runs the step due now.
 static void advance(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
-	bool single = gb->model != GB_MODEL_CGB || !gb->doubleSpeed;
+	bool single = !gbColor(gb) || !gb->doubleSpeed;
 	switch (ppu->step) {
 	case STEP_OAM_WRITE:
-		ppu->oamWriteBlocked = gb->model == GB_MODEL_CGB;
+		ppu->oamWriteBlocked = gbColor(gb);
 		next(gb, STEP_LY, ppu->lineStart + 3);
 		break;
 	case STEP_LY:
@@ -493,7 +502,7 @@ static void advance(struct GB* gb) {
 		if (ppu->line) {
 			ppu->modeForInterrupt = 2;
 			ppu->mode = 0;
-		} else if (gb->model != GB_MODEL_CGB) {
+		} else if (!gbColor(gb)) {
 			ppu->mode = 0;
 		}
 		updateStat(gb);
@@ -515,9 +524,9 @@ static void advance(struct GB* gb) {
 		break;
 	case STEP_OAM_LATE:
 		// Near the scan's end, VRAM writes open for a moment, and reads close on the original.
-		ppu->vramReadBlocked = gb->model != GB_MODEL_CGB;
+		ppu->vramReadBlocked = !gbColor(gb);
 		ppu->vramWriteBlocked = false;
-		ppu->oamWriteBlocked = gb->model == GB_MODEL_CGB;
+		ppu->oamWriteBlocked = gbColor(gb);
 		next(gb, STEP_MODE3, ppu->lineStart + 84);
 		break;
 	case STEP_MODE3:
@@ -596,7 +605,7 @@ static void advance(struct GB* gb) {
 		ppu->modeForInterrupt = 3;
 		ppu->oamWriteBlocked = true;
 		ppu->oamReadBlocked = true;
-		ppu->vramReadBlocked = gb->model != GB_MODEL_CGB || gb->doubleSpeed;
+		ppu->vramReadBlocked = !gbColor(gb) || gb->doubleSpeed;
 		ppu->vramWriteBlocked = ppu->vramReadBlocked;
 		next(gb, STEP_FIRST_VRAM, ppu->nextAt + 5);
 		break;
@@ -636,10 +645,10 @@ static void advance(struct GB* gb) {
 		break;
 	case STEP_L153_LY:
 		ppu->ly = 153;
-		next(gb, STEP_L153_ZERO, ppu->lineStart + (gb->model == GB_MODEL_CGB ? 4 : 6));
+		next(gb, STEP_L153_ZERO, ppu->lineStart + (gbColor(gb) ? 4 : 6));
 		break;
 	case STEP_L153_ZERO:
-		if (single && gb->model != GB_MODEL_CGB) {
+		if (single && !gbColor(gb)) {
 			ppu->ly = 0;
 		}
 		ppu->lyCompare = 153;
@@ -648,7 +657,7 @@ static void advance(struct GB* gb) {
 		break;
 	case STEP_L153_LYC0:
 		ppu->ly = 0;
-		ppu->lyCompare = gb->model == GB_MODEL_CGB && gb->doubleSpeed ? 153 : -1;
+		ppu->lyCompare = gbColor(gb) && gb->doubleSpeed ? 153 : -1;
 		updateStat(gb);
 		next(gb, STEP_L153_COMPARE, ppu->lineStart + 12);
 		break;
@@ -710,7 +719,7 @@ static void plan(struct GB* gb) {
 	uint32_t at = ppu->nextAt;
 	uint32_t lineStart = ppu->lineStart;
 	uint32_t lineEnd = ppu->lineEnd;
-	unsigned late153 = gb->model == GB_MODEL_CGB ? 4 : 6;
+	unsigned late153 = gbColor(gb) ? 4 : 6;
 	for (int guard = 0; guard < 2400; ++guard) {
 		if (interrupting(gb, step, line)) {
 			break;
@@ -843,7 +852,7 @@ static void lcdOn(struct GB* gb) {
 	ppu->windowLine = 0;
 	ppu->windowSeen = false;
 	// The first line is 8 dots short, and starts a dot late on the original Game Boy.
-	unsigned late = gb->model == GB_MODEL_CGB ? 0 : 1;
+	unsigned late = gbColor(gb) ? 0 : 1;
 	ppu->lineStart = gb->now + late;
 	ppu->lineEnd = gb->now + late + GB_LINE_DOTS - 8;
 	next(gb, STEP_FIRST, gb->now + late);

@@ -147,27 +147,41 @@ static void render(struct GB* gb, uint32_t end) {
 		int32_t rightVolume = (nr50 & 7) + 1;
 		// Mixed as they stand now; the sample being built carries over what it has, mixed as it was. A
 		// sample is the mean over its 128 dots, times 64: all four channels at full volume reach 30720.
+		uint8_t muted = gb->channelsMuted;
 		for (uint32_t k = 0; k <= complete; ++k) {
-			int32_t left = 0, right = 0;
+			int32_t left = 0, right = 0, heardLeft = 0, heardRight = 0;
 			for (int i = 0; i < 4; ++i) {
 				if (nr51 >> (4 + i) & 1) {
 					left += sums[i][k];
+					heardLeft += muted >> i & 1 ? 0 : sums[i][k];
 				}
 				if (nr51 >> i & 1) {
 					right += sums[i][k];
+					heardRight += muted >> i & 1 ? 0 : sums[i][k];
 				}
 			}
 			left *= leftVolume;
 			right *= rightVolume;
+			heardLeft *= leftVolume;
+			heardRight *= rightVolume;
 			if (!k) {
 				left += apu->partialLeft;
 				right += apu->partialRight;
+				heardLeft += apu->partialHeardLeft;
+				heardRight += apu->partialHeardRight;
 			}
 			if (k == complete) {
 				apu->partialLeft = left;
 				apu->partialRight = right;
+				apu->partialHeardLeft = heardLeft;
+				apu->partialHeardRight = heardRight;
 			} else if (gb->audioCount + 2 <= sizeof(gb->audio) / sizeof(gb->audio[0])) {
 				gb->audioDacs[gb->audioCount / 2] = apu->square[0].dac || apu->square[1].dac || apu->wave.dac || apu->noise.dac;
+				// Channel Selection: what's heard, beside the console's own.
+				if (muted) {
+					gb->heard[gb->audioCount] = heardLeft / 2;
+					gb->heard[gb->audioCount + 1] = heardRight / 2;
+				}
 				gb->audio[gb->audioCount++] = left / 2;
 				gb->audio[gb->audioCount++] = right / 2;
 			}
@@ -360,7 +374,7 @@ static void writeControl(struct GB* gb, uint8_t address, uint8_t value) {
 	} else if (ch == &apu->wave) {
 		// On the original Game Boy, retriggered just as it reads a byte, the channel writes over
 		// the start of wave RAM: byte 0 with that byte, or bytes 0-3 with its aligned four.
-		if (gb->model != GB_MODEL_CGB && ch->on && apu->waveReadAt == gb->now) {
+		if (!gbColor(gb) && ch->on && apu->waveReadAt == gb->now) {
 			unsigned next = ch->position >> 1;
 			if (next < 4) {
 				gb->io[0x30] = gb->io[0x30 + next];
@@ -386,7 +400,7 @@ void gbApuWrite(struct GB* gb, uint8_t address, uint8_t value) {
 		if (apu->wave.on) {
 			// While it plays, the byte being read takes the write; on the original Game Boy, only
 			// if it is read just then.
-			if (gb->model == GB_MODEL_CGB || (gbSince(gb->now, apu->waveReadAt) >= 2 && gbSince(gb->now, apu->waveReadAt) < 4)) {
+			if (gbColor(gb) || (gbSince(gb->now, apu->waveReadAt) >= 2 && gbSince(gb->now, apu->waveReadAt) < 4)) {
 				gb->io[0x30 + (apu->wave.position >> 1)] = value;
 			}
 		} else {
@@ -404,7 +418,7 @@ void gbApuWrite(struct GB* gb, uint8_t address, uint8_t value) {
 			memset(&apu->wave, 0, sizeof(apu->wave));
 			memset(&apu->noise, 0, sizeof(apu->noise));
 			apu->sweepOn = false;
-			if (gb->model != GB_MODEL_CGB) {
+			if (!gbColor(gb)) {
 				apu->square[0].length = lengths[0];
 				apu->square[1].length = lengths[1];
 				apu->wave.length = lengths[2];
@@ -417,7 +431,7 @@ void gbApuWrite(struct GB* gb, uint8_t address, uint8_t value) {
 		return;
 	}
 	bool lengthRegister = address == 0x11 || address == 0x16 || address == 0x1B || address == 0x20;
-	if (!apu->power && (!lengthRegister || gb->model == GB_MODEL_CGB)) {
+	if (!apu->power && (!lengthRegister || gbColor(gb))) {
 		// Off, only the original Game Boy's length counters can be written.
 		return;
 	}
@@ -479,7 +493,7 @@ uint8_t gbApuRead(struct GB* gb, uint8_t address) {
 	if (address >= 0x30) {
 		if (apu->wave.on) {
 			// While it plays, a read gets the byte the channel is reading, if it reads it just then.
-			if (gb->model == GB_MODEL_CGB) {
+			if (gbColor(gb)) {
 				// The Color: the byte being read, the step due this very dot not yet taken.
 				unsigned position = apu->waveReadAt == gb->now ? (apu->wave.position - 1) & 31 : apu->wave.position;
 				return gb->io[0x30 + (position >> 1)];

@@ -73,7 +73,7 @@ static int busOf(const struct GB* gb, uint16_t address) {
 	if (address >= 0x8000 && address < 0xA000) {
 		return BUS_VRAM;
 	}
-	return address >= 0xC000 && gb->model == GB_MODEL_CGB ? BUS_WRAM : BUS_EXTERNAL;
+	return address >= 0xC000 && gbColor(gb) ? BUS_WRAM : BUS_EXTERNAL;
 }
 
 // A byte for OAM DMA, read without the PPU's locks.
