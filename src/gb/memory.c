@@ -221,6 +221,7 @@ void gbIoWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 		break;
 	case 0x0F:
 		gb->ifl = value & 0x1F;
+		gb->attention = true;
 		break;
 	case 0x10 ... 0x3F:
 		gbApuWrite(gb, reg, value);
@@ -353,6 +354,7 @@ void gbWrite(struct GB* gb, uint16_t address, uint8_t value) {
 			gb->hram[address & 0x7F] = value;
 		} else {
 			gb->ie = value;
+			gb->attention = true;
 		}
 		return;
 	}

@@ -631,6 +631,7 @@ static void advance(struct GB* gb) {
 		ppu->modeForInterrupt = 1;
 		updateStat(gb);
 		gb->frameEnded = true;
+		gb->attention = true;
 		++gb->frameCount;
 		next(gb, STEP_LINE_END, ppu->lineEnd);
 		break;

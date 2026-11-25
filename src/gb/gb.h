@@ -264,6 +264,9 @@ struct GB {
 	uint32_t frameCount;
 	// Set when V-blank starts, so a frame's run can end there.
 	bool frameEnded;
+	// Set when the CPU must look again before its next instruction: an interrupt requested or enabled,
+	// HALT, STOP, EI, RETI, a lock-up or the frame's end.
+	bool attention;
 	// Powered on with the LCD off: the first frame runs on to where V-blank would start a second time.
 	bool firstFrame;
 	// When the LCD was last switched off: the frame then ends a frame's length later.

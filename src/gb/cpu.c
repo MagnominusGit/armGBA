@@ -67,7 +67,7 @@ static inline void setHL(struct GBCpu* cpu, uint16_t value) {
 	cpu->l = value;
 }
 
-static uint8_t getR(struct GB* gb, int r) {
+static inline __attribute__((always_inline)) uint8_t getR(struct GB* gb, int r) {
 	struct GBCpu* cpu = &gb->cpu;
 	switch (r) {
 	case 0:
@@ -89,7 +89,7 @@ static uint8_t getR(struct GB* gb, int r) {
 	}
 }
 
-static void setR(struct GB* gb, int r, uint8_t value) {
+static inline __attribute__((always_inline)) void setR(struct GB* gb, int r, uint8_t value) {
 	struct GBCpu* cpu = &gb->cpu;
 	switch (r) {
 	case 0:
@@ -178,7 +178,7 @@ static bool condition(const struct GBCpu* cpu, int cc) {
 }
 
 // The eight ALU operations on A, by the opcode's middle bits.
-static void alu(struct GBCpu* cpu, int op, uint8_t value) {
+static inline __attribute__((always_inline)) void alu(struct GBCpu* cpu, int op, uint8_t value) {
 	uint8_t a = cpu->a;
 	unsigned carry = cpu->f & FLAG_C ? 1 : 0;
 	unsigned result;
@@ -543,6 +543,7 @@ static void step(struct GB* gb) {
 		cpu->f = (cpu->f & FLAG_Z) | ((cpu->f & FLAG_C) ^ FLAG_C);
 		break;
 	case 0x76: { // HALT
+		gb->attention = true;
 		uint8_t pending = gb->ie & gb->ifl & 0x1F;
 		if (!cpu->ime && pending) {
 			cpu->haltBug = true;
@@ -570,6 +571,7 @@ static void step(struct GB* gb) {
 		cpu->pc = pop(gb);
 		tick(gb);
 		cpu->ime = true;
+		gb->attention = true;
 		break;
 	case 0xC1:
 	case 0xD1:
@@ -695,6 +697,7 @@ static void step(struct GB* gb) {
 		break;
 	case 0xFB: // EI
 		cpu->imePending = true;
+		gb->attention = true;
 		break;
 	case 0xD3:
 	case 0xDB:
@@ -708,14 +711,37 @@ static void step(struct GB* gb) {
 	case 0xFC:
 	case 0xFD: // The unused opcodes lock the CPU up.
 		cpu->locked = true;
+		gb->attention = true;
 		break;
-	default:
-		if (op >= 0x40 && op < 0x80) { // LD r,r'
-			setR(gb, op >> 3 & 7, getR(gb, op & 7));
-		} else { // ALU A,r
-			alu(cpu, op >> 3 & 7, getR(gb, op & 7));
-		}
+	// LD r,r' and ALU A,r: a case each, so each knows its registers.
+#define LD_R_R(op) \
+	case op: \
+		setR(gb, (op) >> 3 & 7, getR(gb, (op) & 7)); \
 		break;
+#define ALU_R(op) \
+	case op: \
+		alu(cpu, (op) >> 3 & 7, getR(gb, (op) & 7)); \
+		break;
+#define EIGHT(m, op) m(op) m(op + 1) m(op + 2) m(op + 3) m(op + 4) m(op + 5) m(op + 6) m(op + 7)
+	EIGHT(LD_R_R, 0x40)
+	EIGHT(LD_R_R, 0x48)
+	EIGHT(LD_R_R, 0x50)
+	EIGHT(LD_R_R, 0x58)
+	EIGHT(LD_R_R, 0x60)
+	EIGHT(LD_R_R, 0x68)
+	LD_R_R(0x70) LD_R_R(0x71) LD_R_R(0x72) LD_R_R(0x73) LD_R_R(0x74) LD_R_R(0x75) LD_R_R(0x77)
+	EIGHT(LD_R_R, 0x78)
+	EIGHT(ALU_R, 0x80)
+	EIGHT(ALU_R, 0x88)
+	EIGHT(ALU_R, 0x90)
+	EIGHT(ALU_R, 0x98)
+	EIGHT(ALU_R, 0xA0)
+	EIGHT(ALU_R, 0xA8)
+	EIGHT(ALU_R, 0xB0)
+	EIGHT(ALU_R, 0xB8)
+#undef EIGHT
+#undef ALU_R
+#undef LD_R_R
 	}
 }
 
@@ -724,6 +750,7 @@ static void step(struct GB* gb) {
 void gbCpuRun(struct GB* gb, uint32_t until) {
 	struct GBCpu* cpu = &gb->cpu;
 	while (gbSince(until, gb->now) > 0 && !gb->frameEnded) {
+		gb->attention = false;
 		if (gbSince(gb->now, gb->nextEvent) >= 0) {
 			gbRunEvents(gb);
 		}
@@ -742,7 +769,12 @@ void gbCpuRun(struct GB* gb, uint32_t until) {
 		if (cpu->imePending) {
 			cpu->imePending = false;
 			cpu->ime = true;
+			gb->attention = true;
 		}
 		step(gb);
+		// Then on without the checks above while nothing needs them and no event is due.
+		while (!gb->attention && gbSince(until, gb->now) > 0 && gbSince(gb->nextEvent, gb->now) > 0) {
+			step(gb);
+		}
 	}
 }

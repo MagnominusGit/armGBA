@@ -68,10 +68,12 @@ void gbRunEvents(struct GB* gb) {
 
 void gbRequest(struct GB* gb, uint8_t irq) {
 	gb->ifl |= irq;
+	gb->attention = true;
 }
 
 // STOP: on the Color with a speed switch armed, switches speed; otherwise sleeps until a button.
 void gbStop(struct GB* gb) {
+	gb->attention = true;
 	if (gb->cgbMode && (gb->io[0x4D] & 1)) {
 		gbApuSync(gb);
 		gbTimerSync(gb);
