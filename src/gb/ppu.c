@@ -88,14 +88,27 @@ static unsigned drawLength(struct GB* gb) {
 	if (!(ppu->lcdc & LCDC_OBJ) && !gb->cgbMode) {
 		return length;
 	}
-	bool tileSeen[32] = { false };
-	for (int i = 0; i < ppu->objectCount; ++i) {
-		int x = gb->oam[ppu->objects[i] * 4 + 1];
+	// The objects are reached from left to right: the first in a background tile waits for its fetch.
+	uint8_t xs[10];
+	int count = ppu->objectCount;
+	for (int i = 0; i < count; ++i) {
+		uint8_t x = gb->oam[ppu->objects[i] * 4 + 1];
+		int j = i;
+		for (; j > 0 && xs[j - 1] > x; --j) {
+			xs[j] = xs[j - 1];
+		}
+		xs[j] = x;
+	}
+	bool tileSeen[32] = { false }, leftSeen = false;
+	for (int i = 0; i < count; ++i) {
+		int x = xs[i];
 		if (x >= 168) {
 			continue;
 		}
+		// Wholly off the left edge: the first waits 5 dots for the fetch, as if at its tile's start.
 		if (x == 0) {
-			length += 11;
+			length += leftSeen ? 6 : 11;
+			leftSeen = true;
 			continue;
 		}
 		int pixel = x - 8 + (window && x - 1 >= ppu->wx ? 0 : ppu->scx);
