@@ -1109,7 +1109,7 @@ static void readOptions(void) {
 	lowPass = filter ? atoi(filter) * 0x10000 / 100 : 0;
 	gbModel = optionChoice("armgba_gb_model", modelChoices, COUNT(modelChoices), LIBRETRO_GB_AUTO);
 	libretroGbSetBootRom(optionChoice("armgba_gb_boot_rom", bootChoices, COUNT(bootChoices), LIBRETRO_GB_BOOT_NINTENDO));
-	libretroGbSetArmgb(optionIs("armgba_gb_core", "armgb"));
+	libretroGbSetArmgb(!optionIs("armgba_gb_core", "gambatte"));
 	libretroGbSetAudioFilter(optionChoice("armgba_gb_audio_filter", audioFilterChoices, COUNT(audioFilterChoices), LIBRETRO_GB_FILTER_ACCURATE));
 	int const shades = optionChoice("armgba_gb_screen", shadeChoices, COUNT(shadeChoices), 0);
 	gbShades = shades;

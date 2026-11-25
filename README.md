@@ -77,7 +77,7 @@ standalone frontend shows as one page with headers.
 | | CPU Emulation | Game Boy Advance | Recompiler, Interpreter |
 | | Low Memory (applies when a game is opened) | Game Boy Advance | Off, On |
 | | Game Boy Model (applies on restart) | Game Boy | Auto, Game Boy, Game Boy Pocket / Light, Game Boy Color, Game Boy Advance |
-| | Game Boy Core (applies on restart) | Game Boy | Gambatte, armGB (original Game Boy games on the cartridges it knows, at 100% CPU Clock, one console; the rest stay on Gambatte) |
+| | Game Boy Core (applies on restart) | Game Boy | armGB (default; Game Boy and Game Boy Color games on the cartridges it knows, at 100% CPU Clock, one console; the rest stay on Gambatte), Gambatte |
 | | Game Boy Boot ROM (applies on restart) | Game Boy | Nintendo's (System Folder), armGBA's (Built In), Off |
 | | Mega Duck Laptop (applies on restart) | Mega Duck | Auto (for `.md0`), On, Off |
 | | Mega Duck Laptop Printer (applies on restart) | Mega Duck | Two Pass, One Pass, None |

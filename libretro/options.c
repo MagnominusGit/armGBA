@@ -155,10 +155,10 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  NULL, "system",
 	  { { "Auto", NULL }, { "Game Boy", NULL }, { "Game Boy Pocket", "Game Boy Pocket / Light" }, { "Game Boy Color", NULL }, { "Game Boy Advance", NULL }, { NULL, NULL } }, "Auto" },
 	{ "armgba_gb_core", "Game Boy Core", NULL,
-	  "Which emulator runs original Game Boy games: Gambatte, or armGBA's own armGB, which is faster. Game Boy "
-	  "Color games, the Mega Duck, cheat cartridges, linked consoles, a CPU Clock other than 100% and a few "
-	  "cartridges stay on Gambatte. Applies on Restart.",
-	  NULL, "system", { { "gambatte", "Gambatte" }, { "armgb", "armGB" }, { NULL, NULL } }, "gambatte" },
+	  "Which emulator runs Game Boy and Game Boy Color games: armGBA's own armGB, which is faster, or Gambatte. "
+	  "The Game Boy Advance model, the Mega Duck, cheat cartridges, linked consoles, a CPU Clock other than 100%, "
+	  "cartridges with a clock and a few others stay on Gambatte. Applies on Restart.",
+	  NULL, "system", { { "armgb", "armGB" }, { "gambatte", "Gambatte" }, { NULL, NULL } }, "armgb" },
 	{ "armgba_gb_boot_rom", "Game Boy Boot ROM", NULL,
 	  "The start-up logo: Nintendo's boot ROM (else armGBA's), armGBA's, or none. Applies on Restart.",
 	  NULL, "system",

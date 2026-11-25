@@ -374,6 +374,14 @@ int main(int argc, char** argv) {
 			fclose(o);
 		}
 	}
+	// How many frames' work RAM differs.
+	int ramFrames = 0;
+	for (int i = 0; i < frames; ++i) {
+		ramFrames += memcmp(ourRam[i], theirRam[i], ramBytes) != 0;
+	}
+	if (getenv("RAMFRAMES")) {
+		fprintf(stderr, "work RAM differs in %d frames\n", ramFrames);
+	}
 	// The first frame whose work RAM differs, and where.
 	int ramFirst = -1, ramAt = -1;
 	for (int i = 0; i < frames && ramFirst < 0; ++i) {

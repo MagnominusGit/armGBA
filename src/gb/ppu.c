@@ -251,6 +251,22 @@ static inline uint64_t flipRow(uint64_t pixels, bool flip) {
 // over objects) and colour palettes; LCDC bit 0 only takes the background's priority away. An
 // original Game Boy game on a Color: drawn as on the original, its shades through the colour
 // palettes the boot ROM left.
+// A palette entry as the frame stores it: 15-bit RGB, or the frontend's colour.
+static inline uint32_t paletteColor(const struct GB* gb, const uint8_t* palettes, unsigned entry) {
+	uint16_t rgb = palettes[entry * 2] | (palettes[entry * 2 + 1] & 0x7F) << 8;
+	return gb->video && gb->videoTable ? gb->videoTable[rgb] : rgb;
+}
+
+// Eight palettes' colours for a line: a Color game's own, or for an original Game Boy game palette 0
+// (or 0 and 1 for objects) through its BGP, OBP0 and OBP1 shades.
+static void lineColors(const struct GB* gb, const uint8_t* palettes, int count, const uint8_t* shades, uint32_t colors[8][4]) {
+	for (int p = 0; p < count; ++p) {
+		for (int i = 0; i < 4; ++i) {
+			colors[p][i] = paletteColor(gb, palettes, shades ? p * 4 + (shades[p] >> (i * 2) & 3) : p * 4 + i);
+		}
+	}
+}
+
 static void drawLineCgb(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
 	struct GBCgb* cgb = &gb->cgb;
@@ -260,13 +276,15 @@ static void drawLineCgb(struct GB* gb) {
 	}
 	initSpread();
 	bool const color = gb->cgbMode;
-	uint8_t index[GB_WIDTH + 16];
-	uint8_t attr[GB_WIDTH + 16];
-	memset(attr, 0, sizeof(attr));
-	bool background = color || (ppu->lcdc & LCDC_BG);
-	if (background) {
-		uint8_t row[21 * 8];
-		uint8_t rowAttr[21 * 8];
+	// The line from the first tile's left edge: each pixel's colour, and its colour index with bit 2
+	// set where the tile is in front of objects.
+	uint32_t line[21 * 8];
+	uint8_t info[21 * 8];
+	unsigned const o = ppu->scx & 7;
+	uint32_t bg[8][4];
+	uint8_t const bgShades[1] = { ppu->bgp };
+	lineColors(gb, cgb->bgPalette, color ? 8 : 1, color ? NULL : bgShades, bg);
+	if (color || (ppu->lcdc & LCDC_BG)) {
 		uint16_t map = (ppu->lcdc & LCDC_BG_MAP ? 0x1C00 : 0x1800) + ((ppu->scy + y) & 0xFF) / 8 * 32;
 		unsigned fineY = (ppu->scy + y) & 7;
 		unsigned column = ppu->scx >> 3;
@@ -274,14 +292,17 @@ static void drawLineCgb(struct GB* gb) {
 			uint16_t at = map + ((column + t) & 31);
 			uint8_t tile = gb->vram[at];
 			uint8_t a = color ? gb->vram[0x2000 + at] : 0;
-			unsigned line = a & 0x40 ? 7 - fineY : fineY;
-			uint16_t address = (a & 0x08 ? 0x2000 : 0) + tileAddress(ppu, tile) + line * 2;
-			uint64_t pixels = flipRow(tileRow(gb, address), a & 0x20);
-			memcpy(&row[t * 8], &pixels, 8);
-			memset(&rowAttr[t * 8], a, 8);
+			unsigned row = a & 0x40 ? 7 - fineY : fineY;
+			uint64_t pixels = flipRow(tileRow(gb, (a & 0x08 ? 0x2000 : 0) + tileAddress(ppu, tile) + row * 2), a & 0x20);
+			uint8_t indices[8];
+			memcpy(indices, &pixels, 8);
+			const uint32_t* colors = bg[a & 7];
+			uint8_t front = a & 0x80 ? 4 : 0;
+			for (int i = 0; i < 8; ++i) {
+				line[t * 8 + i] = colors[indices[i]];
+				info[t * 8 + i] = indices[i] | front;
+			}
 		}
-		memcpy(index, &row[ppu->scx & 7], GB_WIDTH);
-		memcpy(attr, &rowAttr[ppu->scx & 7], GB_WIDTH);
 		if (windowOnLine(gb)) {
 			uint16_t wmap = (ppu->lcdc & LCDC_WINDOW_MAP ? 0x1C00 : 0x1800) + ppu->windowLine / 8 * 32;
 			unsigned wfine = ppu->windowLine & 7;
@@ -290,30 +311,32 @@ static void drawLineCgb(struct GB* gb) {
 			for (int t = (first - start) / 8; t * 8 + start < GB_WIDTH; ++t) {
 				uint8_t tile = gb->vram[wmap + t];
 				uint8_t a = color ? gb->vram[0x2000 + wmap + t] : 0;
-				unsigned line = a & 0x40 ? 7 - wfine : wfine;
-				uint64_t pixels = flipRow(tileRow(gb, (a & 0x08 ? 0x2000 : 0) + tileAddress(ppu, tile) + line * 2), a & 0x20);
-				uint8_t tilePixels[8];
-				memcpy(tilePixels, &pixels, 8);
+				unsigned row = a & 0x40 ? 7 - wfine : wfine;
+				uint64_t pixels = flipRow(tileRow(gb, (a & 0x08 ? 0x2000 : 0) + tileAddress(ppu, tile) + row * 2), a & 0x20);
+				uint8_t indices[8];
+				memcpy(indices, &pixels, 8);
+				const uint32_t* colors = bg[a & 7];
+				uint8_t front = a & 0x80 ? 4 : 0;
 				for (int i = 0; i < 8; ++i) {
 					int x = t * 8 + i + start;
 					if (x >= first && x < GB_WIDTH) {
-						index[x] = tilePixels[i];
-						attr[x] = a;
+						line[o + x] = colors[indices[i]];
+						info[o + x] = indices[i] | front;
 					}
 				}
 			}
 			++ppu->windowLine;
 		}
 	} else {
-		memset(index, 0, GB_WIDTH);
+		for (int x = 0; x < GB_WIDTH; ++x) {
+			line[o + x] = bg[0][0];
+			info[o + x] = 0;
+		}
 	}
-	// The background's colours, as 15-bit RGB.
-	uint16_t rgb[GB_WIDTH];
-	for (int x = 0; x < GB_WIDTH; ++x) {
-		unsigned entry = color ? (attr[x] & 7) * 4 + index[x] : ppu->bgp >> (index[x] * 2) & 3;
-		rgb[x] = cgb->bgPalette[entry * 2] | (cgb->bgPalette[entry * 2 + 1] & 0x7F) << 8;
-	}
-	if ((ppu->lcdc & LCDC_OBJ)) {
+	if ((ppu->lcdc & LCDC_OBJ) && ppu->objectCount) {
+		uint32_t obj[8][4];
+		uint8_t const objShades[2] = { ppu->obp0, ppu->obp1 };
+		lineColors(gb, cgb->objPalette, color ? 8 : 2, color ? NULL : objShades, obj);
 		int height = ppu->lcdc & LCDC_TALL ? 16 : 8;
 		// Which object has each pixel: by OAM position in a Color game (unless OPRI says by X), else
 		// the smallest X, then the first in OAM.
@@ -329,21 +352,22 @@ static void drawLineCgb(struct GB* gb) {
 				continue;
 			}
 			uint8_t flags = object[3];
-			int line = y - (object[0] - 16);
+			int row = y - (object[0] - 16);
 			if (flags & 0x40) {
-				line = height - 1 - line;
+				row = height - 1 - row;
 			}
 			uint8_t tile = height == 16 ? object[2] & 0xFE : object[2];
 			uint16_t bank = color && (flags & 0x08) ? 0x2000 : 0;
-			uint64_t pixels = flipRow(tileRow(gb, bank + tile * 16 + line * 2), flags & 0x20);
-			uint8_t colors[8];
-			memcpy(colors, &pixels, 8);
+			uint64_t pixels = flipRow(tileRow(gb, bank + tile * 16 + row * 2), flags & 0x20);
+			uint8_t indices[8];
+			memcpy(indices, &pixels, 8);
+			const uint32_t* colors = obj[color ? flags & 7 : flags >> 4 & 1];
 			for (int px = 0; px < 8; ++px) {
 				int x = left + px;
 				if (x < 0 || x >= GB_WIDTH || (byPosition ? taken[x] : ownerX[x] <= object[1])) {
 					continue;
 				}
-				int c = colors[px];
+				int c = indices[px];
 				if (!c) {
 					continue;
 				}
@@ -351,22 +375,21 @@ static void drawLineCgb(struct GB* gb) {
 				ownerX[x] = object[1];
 				// Behind the background's colours 1 to 3: by the object's flag, or the tile's in a
 				// Color game; LCDC bit 0 off in a Color game puts objects in front regardless.
-				bool behind = index[x] && ((flags & 0x80) || (color && (attr[x] & 0x80)));
+				uint8_t under = info[o + x];
+				bool behind = (under & 3) && ((flags & 0x80) || (under & 4));
 				if (behind && !(color && !(ppu->lcdc & LCDC_BG))) {
 					continue;
 				}
-				unsigned entry = color ? (flags & 7) * 4 + c : (flags & 0x10 ? 4 : 0) + ((flags & 0x10 ? ppu->obp1 : ppu->obp0) >> (c * 2) & 3);
-				rgb[x] = cgb->objPalette[entry * 2] | (cgb->objPalette[entry * 2 + 1] & 0x7F) << 8;
+				line[o + x] = colors[c];
 			}
 		}
 	}
 	if (gb->video && gb->videoTable) {
-		uint32_t* video = gb->video + y * GB_WIDTH;
-		for (int x = 0; x < GB_WIDTH; ++x) {
-			video[x] = gb->videoTable[rgb[x]];
-		}
+		memcpy(gb->video + y * GB_WIDTH, &line[o], GB_WIDTH * sizeof(uint32_t));
 	} else {
-		memcpy(gb->frame[y], rgb, sizeof(rgb));
+		for (int x = 0; x < GB_WIDTH; ++x) {
+			gb->frame[y][x] = line[o + x];
+		}
 	}
 }
 

@@ -215,7 +215,7 @@ static void applyShownAndHeard(gambatte::GB* gb) {
 Console* s = &consoles[0];
 
 // Game Boy Core: armGB for the games it can run.
-static bool armgbWanted;
+static bool armgbWanted = true;
 
 // The Game Boy Audio Filter, and the output capacitor's charge factor a 4 MiHz cycle (Pan Docs, Audio
 // Details): the original Game Boy's 0.999958 (about 28 Hz), the Pocket's and the Color's 0.998943
@@ -822,28 +822,31 @@ bool armgbCartridge(const unsigned char* bytes, size_t size) {
 	}
 }
 
-void startArmgb(std::vector<unsigned char> const& boot) {
+void startArmgb(std::vector<unsigned char> const& boot, bool color) {
 	size_t padded = 0x8000;
 	while (padded < s->game.size()) {
 		padded <<= 1;
 	}
 	s->armgbRom.assign(padded, 0);
 	std::memcpy(&s->armgbRom[0], &s->game[0], s->game.size());
-	s->armgbBoot.assign(boot.begin(), boot.begin() + std::min<size_t>(boot.size(), 0x100));
+	// The Color's boot ROM is $0000-$00FF and $0200-$08FF; the original's $0000-$00FF.
+	size_t const bootSize = color ? 0x900 : 0x100;
+	s->armgbBoot.assign(boot.begin(), boot.begin() + std::min<size_t>(boot.size(), bootSize));
 	s->armgb = static_cast<struct GB*>(std::calloc(1, sizeof(struct GB)));
 	if (!s->armgb) {
 		return;
 	}
-	if (s->armgbBoot.size() == 0x100) {
+	if (s->armgbBoot.size() == bootSize) {
 		s->armgb->boot = &s->armgbBoot[0];
-		s->armgb->bootSize = 0x100;
+		s->armgb->bootSize = bootSize;
 	}
 	s->armgb->video = reinterpret_cast<uint32_t*>(s->pixels);
+	s->armgb->videoTable = cgbColors;
 	for (int i = 0; i < 4; ++i) {
 		s->armgb->videoColors[i] = asShown(shown[i]);
 	}
 	s->armgb->videoColors[4] = asShown(screens[screen].off);
-	if (!gbLoad(s->armgb, &s->armgbRom[0], padded, GB_MODEL_DMG)) {
+	if (!gbLoad(s->armgb, &s->armgbRom[0], padded, color ? GB_MODEL_CGB : GB_MODEL_DMG)) {
 		dropArmgb();
 	}
 }
@@ -946,12 +949,16 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	} else if (needed > s->stateSize) {
 		s->stateSize = needed;
 	}
-	// armGB runs the game instead when chosen and it can: an original Game Boy or Pocket game on a
-	// cartridge it knows, one console, at the console's own clock.
+	// armGB runs the game instead when chosen and it can: as an original Game Boy, Pocket or Game Boy
+	// Color, on a cartridge it knows, one console, at the console's own clock. An original Game Boy
+	// game on the Color without a boot ROM stays on Gambatte, which gives it the screen's shades.
 	dropArmgb();
-	if (armgbWanted && (model == LIBRETRO_GB_DMG || model == LIBRETRO_GB_MGB) && !megaDuck && !sachen && replayProgram.empty()
-	    && players == 1 && !s->linked && cpuQuarters == 4 && armgbCartridge(bytes, size)) {
-		startArmgb(!bootBytes.empty() ? bootBytes : builtIn);
+	bool const color = model == LIBRETRO_GB_CGB;
+	bool const armgbModel = model == LIBRETRO_GB_DMG || model == LIBRETRO_GB_MGB
+	                        || (color && ((size > 0x143 && (bytes[0x143] & 0x80)) || !(s->loadFlags & gambatte::GB::NO_BIOS)));
+	if (armgbWanted && armgbModel && !megaDuck && !sachen && replayProgram.empty() && players == 1 && !s->linked && cpuQuarters == 4
+	    && armgbCartridge(bytes, size)) {
+		startArmgb(!bootBytes.empty() ? bootBytes : builtIn, color);
 	}
 	return true;
 }
@@ -1368,7 +1375,7 @@ void mixDown(std::size_t count) {
 void runArmgb() {
 	struct GB* gb = s->armgb;
 	// armGB draws in the screen's colors straight into the picture.
-	static_assert(LIBRETRO_GB_WIDTH == GB_WIDTH, "a frame's rows are back to back in both");
+	static_assert(static_cast<int>(LIBRETRO_GB_WIDTH) == static_cast<int>(GB_WIDTH), "a frame's rows are back to back in both");
 	gb->video = reinterpret_cast<uint32_t*>(s->pixels);
 	for (int i = 0; i < 4; ++i) {
 		gb->videoColors[i] = asShown(shown[i]);
@@ -1751,7 +1758,7 @@ void* libretroGbSystemRam(size_t* size) {
 	int length = 0;
 	*size = 0;
 	if (s->armgb) {
-		*size = 0x2000;
+		*size = s->armgb->model == GB_MODEL_CGB ? 0x8000 : 0x2000;
 		return s->armgb->wram;
 	}
 	if (!s->gb || !s->gb->getMemoryArea(2, &data, &length)) {
@@ -1781,6 +1788,10 @@ size_t libretroGbMemoryMap(struct retro_memory_descriptor* out) {
 		}
 		if (gb->cart.ramSize) {
 			struct retro_memory_descriptor const area = { 0, gb->sram, 0, 0xA000, ~(std::size_t) 0x1FFF, 0, gb->cart.ramSize, 0 };
+			out[count++] = area;
+		}
+		if (gb->model == GB_MODEL_CGB) {
+			struct retro_memory_descriptor const area = { RETRO_MEMDESC_SYSTEM_RAM, gb->wram, 0x2000, 0x10000, 0xFFFFA000, 0, 0x6000, 0 };
 			out[count++] = area;
 		}
 		return count;
@@ -1824,7 +1835,10 @@ size_t libretroGbMemoryMap(struct retro_memory_descriptor* out) {
 }
 
 bool libretroGbIsColor(void) {
-	return !s->armgb && s->gb && s->gb->isCgb();
+	if (s->armgb) {
+		return s->armgb->model == GB_MODEL_CGB;
+	}
+	return s->gb && s->gb->isCgb();
 }
 
 bool libretroGbBooting(void) {

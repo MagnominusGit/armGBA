@@ -119,7 +119,8 @@ void gbReset(struct GB* gb) {
 	gb->model = model;
 	gb->cart = cart;
 	gbCartInit(gb);
-	gb->cgbMode = model == GB_MODEL_CGB && (rom[0x143] & 0x80);
+	// The Color's boot ROM runs in Color mode and leaves it by KEY0; without one, the header decides.
+	gb->cgbMode = model == GB_MODEL_CGB && (gb->boot || (rom[0x143] & 0x80));
 	gbBlankFrame(gb);
 	if (model == GB_MODEL_DMG) {
 		powerOnRam(gb);
@@ -213,12 +214,14 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	const uint8_t* boot = gb->boot;
 	size_t bootSize = gb->bootSize;
 	uint32_t* video = gb->video;
+	const uint32_t* videoTable = gb->videoTable;
 	uint32_t videoColors[5];
 	memcpy(videoColors, gb->videoColors, sizeof(videoColors));
 	memset(gb, 0, sizeof(*gb));
 	gb->boot = boot;
 	gb->bootSize = bootSize;
 	gb->video = video;
+	gb->videoTable = videoTable;
 	memcpy(gb->videoColors, videoColors, sizeof(videoColors));
 	gb->rom = rom;
 	gb->romSize = size;
