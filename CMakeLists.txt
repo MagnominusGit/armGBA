@@ -96,9 +96,9 @@ if(ipo)
 endif()
 target_include_directories(armgba PUBLIC src)
 
-# armGB, the Game Boy and Game Boy Color (MIT)
+# armGB, the Game Boy and Game Boy Color, built only when asked for until the libretro core uses it
 file(GLOB ARMGB_SOURCES src/gb/*.c)
-add_library(armgb STATIC ${ARMGB_SOURCES})
+add_library(armgb STATIC EXCLUDE_FROM_ALL ${ARMGB_SOURCES})
 set_target_properties(armgb PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_options(armgb PRIVATE -O3)
 if(ipo)
