@@ -109,6 +109,9 @@ target_include_directories(armgb PUBLIC src/gb)
 # Runs a Game Boy test ROM and reports what it says
 add_executable(gbrun EXCLUDE_FROM_ALL tests/gbrun.c)
 target_link_libraries(gbrun armgb)
+# Compares armGB's pictures with another core's, run as a black box through libretro
+add_executable(gbcmp EXCLUDE_FROM_ALL tests/gbcmp.c)
+target_link_libraries(gbcmp armgb ${CMAKE_DL_LIBS})
 
 # The table-driven CPU against the exact one, an instruction at a time
 add_executable(leancmp EXCLUDE_FROM_ALL tests/leancmp.c)

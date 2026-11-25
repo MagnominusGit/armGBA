@@ -143,7 +143,7 @@ static inline uint64_t tileRow(const struct GB* gb, uint16_t address) {
 static void drawLine(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
 	int y = ppu->line;
-	if (y >= GB_HEIGHT) {
+	if (y >= GB_HEIGHT || ppu->hiddenFrame) {
 		return;
 	}
 	initSpread();
@@ -390,6 +390,7 @@ static void advance(struct GB* gb) {
 	case STEP_LINE_END:
 		if (++ppu->line == GB_LINES) {
 			ppu->line = 0;
+			ppu->hiddenFrame = false;
 			ppu->windowLine = 0;
 			ppu->windowSeen = false;
 		}
@@ -637,6 +638,7 @@ static void lcdOn(struct GB* gb) {
 	ppu->line = 0;
 	ppu->ly = 0;
 	ppu->firstLine = true;
+	ppu->hiddenFrame = true;
 	ppu->windowLine = 0;
 	ppu->windowSeen = false;
 	// The first line is 8 dots short, and starts a dot late on the original Game Boy.
@@ -649,6 +651,8 @@ static void lcdOn(struct GB* gb) {
 
 static void lcdOff(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
+	// The screen shows white while the LCD is off.
+	memset(gb->frame, 0, sizeof(gb->frame));
 	ppu->oamReadBlocked = false;
 	ppu->vramReadBlocked = false;
 	ppu->oamWriteBlocked = false;

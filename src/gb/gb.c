@@ -81,6 +81,25 @@ void gbStop(struct GB* gb) {
 	gb->cpu.stopped = true;
 }
 
+// Work RAM as the original Game Boy's tends to come up: 256-byte blocks of mostly 0s and mostly 1s,
+// alternating with address bit 8 and swapped by bit 11, with about one bit in fifty the other way.
+// The stray bits come from a fixed seed, so every run starts alike.
+static void powerOnRam(struct GB* gb) {
+	uint32_t seed = 0x2F6E2B1;
+	for (unsigned i = 0; i < GB_SIZE_WRAM; ++i) {
+		uint8_t value = ((i >> 8) ^ (i >> 11)) & 1 ? 0xFF : 0x00;
+		for (int bit = 0; bit < 8; ++bit) {
+			seed ^= seed << 13;
+			seed ^= seed >> 17;
+			seed ^= seed << 5;
+			if (seed % 50 == 0) {
+				value ^= 1 << bit;
+			}
+		}
+		gb->wram[i] = value;
+	}
+}
+
 // The state the boot ROM leaves (Pan Docs, "Power Up Sequence").
 void gbReset(struct GB* gb) {
 	const uint8_t* rom = gb->rom;
@@ -98,6 +117,9 @@ void gbReset(struct GB* gb) {
 	gb->cart = cart;
 	gbCartInit(gb);
 	gb->cgbMode = model == GB_MODEL_CGB && (rom[0x143] & 0x80);
+	if (model == GB_MODEL_DMG) {
+		powerOnRam(gb);
+	}
 	gb->mcycle = 4;
 	struct GBCpu* cpu = &gb->cpu;
 	gb->joypadSelect = 0;
@@ -170,6 +192,10 @@ void gbRunFrame(struct GB* gb) {
 	gb->audioCount = 0;
 	while (!gb->frameEnded && gbSince(limit, gb->now) > 0) {
 		gbCpuRun(gb, limit);
+		// With the LCD on, a frame goes on to V-blank, however late it started.
+		if (!gb->frameEnded && (gb->ppu.lcdc & 0x80) && gbSince(gb->now, limit) >= 0) {
+			limit = gb->now + GB_FRAME_DOTS;
+		}
 	}
 	gbApuSync(gb);
 }
