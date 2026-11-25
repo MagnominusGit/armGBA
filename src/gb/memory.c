@@ -100,7 +100,7 @@ static uint8_t dmaByte(struct GB* gb, uint16_t address) {
 
 // Which byte the DMA moves in the M-cycle ending now: -1 while it waits, 160 when it's done.
 static int dmaIndex(const struct GB* gb) {
-	int32_t cycles = gbSince(gb->now, gb->dma.start) / gb->mcycle;
+	int32_t cycles = gbSince(gb->now, gb->dma.start) / gb->dma.step;
 	if (cycles < 2) {
 		return -1;
 	}
@@ -136,7 +136,10 @@ void gbDmaStart(struct GB* gb, uint8_t page) {
 	dma->source = page << 8;
 	dma->start = gb->now;
 	dma->done = 0;
-	gbSchedule(gb, GB_EVENT_DMA, gb->now + 162 * gb->mcycle);
+	// A byte per M-cycle of the CPU's, at the CPU Clock (armGBA's): 16 / quarters T-cycles, whole ones.
+	unsigned quarters = gb->doubleSpeed && gb->cpuQuarters > 8 ? 8 : gb->cpuQuarters;
+	dma->step = gb->cpuQuarters == 4 ? gb->mcycle : gb->doubleSpeed ? 8 / quarters : 16 / quarters;
+	gbSchedule(gb, GB_EVENT_DMA, gb->now + 162 * dma->step);
 	gbMapRom(gb);
 }
 

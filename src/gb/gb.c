@@ -271,6 +271,7 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	uint32_t* video = gb->video;
 	const uint32_t* videoTable = gb->videoTable;
 	uint8_t layersHidden = gb->layersHidden, channelsMuted = gb->channelsMuted;
+	unsigned cpuQuarters = gb->cpuQuarters ? gb->cpuQuarters : 4;
 	bool rtcRealTime = gb->rtcRealTime;
 	unsigned rtcPercent = gb->rtcPercent ? gb->rtcPercent : 100;
 	int64_t hostMicros = gb->hostMicros;
@@ -282,6 +283,7 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	gb->video = video;
 	gb->videoTable = videoTable;
 	gb->layersHidden = layersHidden;
+	gb->cpuQuarters = cpuQuarters;
 	gb->channelsMuted = channelsMuted;
 	gb->rtcRealTime = rtcRealTime;
 	gb->rtcPercent = rtcPercent;

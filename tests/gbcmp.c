@@ -296,6 +296,9 @@ int main(int argc, char** argv) {
 		fprintf(stderr, "armGB can't load it\n");
 		return 2;
 	}
+	// armgba_cpu_clock (as the other core's option): armGB's CPU Clock too, from when the boot ROM
+	// hands over (the option's CPU Clock During Boot at 100%).
+	unsigned quarters = getenv("armgba_cpu_clock") ? atoi(getenv("armgba_cpu_clock")) / 25 : 4;
 	if (getenv("RAMOUT")) {
 		FILE* o = fopen(getenv("RAMOUT"), "wb");
 		fwrite(theirRam[0], 1, ramBytes, o);
@@ -305,6 +308,9 @@ int main(int argc, char** argv) {
 	// leaves work RAM alone), so games that read it before writing it run alike. For this test only.
 	memcpy(gb.wram, theirRam[0], ramBytes);
 	for (int i = 0; i < frames; ++i) {
+		if (!gb.bootMapped && gb.cpuQuarters != quarters) {
+			gbSetCpuQuarters(&gb, quarters, false);
+		}
 		gb.keys = buttonsAt(script, i);
 		uint32_t started = gb.now;
 		gbRunFrame(&gb);

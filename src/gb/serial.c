@@ -38,8 +38,51 @@ void gbSerialWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 
 void gbSerialEvent(struct GB* gb) {
 	struct GBSerial* serial = &gb->serial;
-	serial->sb = 0xFF;
 	serial->bits = 0;
 	serial->sc &= 0x7F;
 	gbRequest(gb, GB_IRQ_SERIAL);
+	if (!serial->linked) {
+		serial->sb = 0xFF;
+		return;
+	}
+	serial->clocked = true;
+	if (gb->linkClocked) {
+		gb->linkClocked(gb->user);
+	}
+}
+
+int gbLinkStatus(struct GB* gb, int request) {
+	struct GBSerial* serial = &gb->serial;
+	switch (request) {
+	case GB_LINK_CLOCKED:
+		return serial->clocked;
+	case GB_LINK_ACK:
+		serial->clocked = false;
+		return 0;
+	case GB_LINK_OUT:
+		return serial->sb;
+	case GB_LINK_ON:
+	case GB_LINK_OFF:
+		serial->linked = request == GB_LINK_ON;
+		return 0;
+	case GB_LINK_STOP:
+		if (serial->sc & 0x80) {
+			serial->sc &= 0x7F;
+			gbUnschedule(gb, GB_EVENT_SERIAL);
+		}
+		return 0;
+	case GB_LINK_CONTROL:
+		return serial->sc;
+	case GB_LINK_LEFT:
+		return (gb->eventsOn >> GB_EVENT_SERIAL & 1) ? gbSince(gb->events[GB_EVENT_SERIAL], gb->now) : -1;
+	default:
+		// The other end's byte: the transfer under way ends with it.
+		serial->sb = request;
+		if (serial->sc & 0x80) {
+			serial->sc &= 0x7F;
+			gbUnschedule(gb, GB_EVENT_SERIAL);
+			gbRequest(gb, GB_IRQ_SERIAL);
+		}
+		return 0;
+	}
 }

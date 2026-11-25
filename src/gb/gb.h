@@ -221,6 +221,23 @@ struct GBSerial {
 	uint8_t sb, sc;
 	uint8_t bits;
 	uint32_t nextBit;
+	// On a cable: a transfer on the console's own clock ends with nothing shifted in, for the other
+	// end to give its byte (gbLinkStatus); clocked says one has ended.
+	bool linked;
+	bool clocked;
+};
+
+// gbLinkStatus's requests (the frontend's link code asks these); a value below 256 shifts that byte in,
+// ending a transfer under way.
+enum {
+	GB_LINK_CLOCKED = 256, // whether a transfer on the console's own clock has ended
+	GB_LINK_ACK = 257,     // clears that
+	GB_LINK_OUT = 258,     // the byte being sent (SB)
+	GB_LINK_ON = 264,
+	GB_LINK_OFF = 265,
+	GB_LINK_STOP = 266,    // ends the transfer under way, stopping the console's own clock
+	GB_LINK_CONTROL = 267, // SC
+	GB_LINK_LEFT = 268,    // dots until the transfer under way on the console's own clock ends, or -1
 };
 
 // A sound channel. The timer counts dots to the next step of the waveform; length, envelope and
@@ -269,6 +286,8 @@ struct GBDma {
 	uint8_t done;
 	// Restarted while moving bytes: the old transfer keeps OAM locked while the new one waits.
 	bool overlap;
+	// Dots a byte takes: an M-cycle of the CPU's, at the CPU Clock.
+	uint8_t step;
 };
 
 // The Game Boy Color's own hardware (Pan Docs, "CGB Registers").
@@ -340,6 +359,10 @@ struct GB {
 	bool doubleSpeed;
 	// Dots per M-cycle: 4, or 2 at double speed.
 	uint8_t mcycle;
+	// The CPU Clock above 100%: the part of a dot carried to the next M-cycle, and the dots the CPU
+	// still keeps the console's own pace for after reading STAT or LY.
+	uint32_t cpuCarry;
+	uint32_t cpuPaced;
 	uint32_t now;
 	uint32_t events[GB_EVENTS];
 	uint32_t eventsOn;
@@ -397,6 +420,10 @@ struct GB {
 	// Serial bytes shifted out with no partner, for the test runner.
 	void (*serialOut)(void* user, uint8_t byte);
 	void* user;
+	// The CPU Clock, in quarters of the console's own (4), set by the frontend.
+	uint8_t cpuQuarters;
+	// Called when a transfer on the console's own clock ends on a cable, for the other end's byte.
+	void (*linkClocked)(void* user);
 	// Layer Selection's hidden layers and Channel Selection's channels left out (bits 0-3), set by the
 	// frontend: only what's drawn and heard changes.
 	uint8_t layersHidden;
@@ -469,6 +496,11 @@ void gbApuWrite(struct GB*, uint8_t reg, uint8_t value);
 // serial.c
 void gbSerialWrite(struct GB*, uint8_t reg, uint8_t value);
 void gbSerialEvent(struct GB*);
+// The CPU Clock: quarters of the console's own (4 to 16); keepCarry when a state loaded was run at it.
+void gbSetCpuQuarters(struct GB*, unsigned quarters, bool keepCarry);
+// An M-cycle of the CPU's when overclocked.
+void gbCpuOverclockedCycle(struct GB*);
+int gbLinkStatus(struct GB*, int request);
 
 // cgb.c
 uint8_t gbCgbRead(struct GB*, uint8_t reg);

@@ -891,12 +891,18 @@ uint8_t gbPpuRead(struct GB* gb, uint8_t reg) {
 	case 0x40:
 		return ppu->lcdc;
 	case 0x41:
+		if (gb->cpuQuarters != 4) {
+			gb->cpuPaced = 2 * GB_LINE_DOTS;
+		}
 		return 0x80 | (ppu->stat & 0x78) | (ppu->coincidence ? 4 : 0) | (ppu->lcdc & LCDC_ON ? ppu->mode : 0);
 	case 0x42:
 		return ppu->scy;
 	case 0x43:
 		return ppu->scx;
 	case 0x44:
+		if (gb->cpuQuarters != 4) {
+			gb->cpuPaced = 2 * GB_LINE_DOTS;
+		}
 		return ppu->ly;
 	case 0x45:
 		return ppu->lyc;

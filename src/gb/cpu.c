@@ -19,7 +19,11 @@ enum {
 };
 
 static inline void tick(struct GB* gb) {
-	gb->now += gb->mcycle;
+	if (gb->cpuQuarters == 4) {
+		gb->now += gb->mcycle;
+	} else {
+		gbCpuOverclockedCycle(gb);
+	}
 }
 
 static inline uint8_t readNow(struct GB* gb, uint16_t address) {
@@ -795,6 +799,39 @@ void gbCpuRun(struct GB* gb, uint32_t until) {
 		// Then on without the checks above while nothing needs them and no event is due.
 		while (!gb->attention && gbSince(until, gb->now) > 0 && gbSince(gb->nextEvent, gb->now) > 0) {
 			step(gb);
+		}
+	}
+}
+
+// The CPU Clock above 100% (armGBA's, as its Gambatte-based core had it): an M-cycle takes 16 / quarters
+// of the console's T-cycles, the part left over carried to the next; in double speed the CPU moves a
+// whole dot at a time and goes no faster than 200%, as the picture can't take more than one of its
+// accesses in a dot. The rest of the console keeps its own pace. For two lines after a read of STAT or
+// LY the CPU keeps the console's pace too, for code timed against the picture.
+void gbCpuOverclockedCycle(struct GB* gb) {
+	if (gb->cpuPaced) {
+		gb->cpuPaced = gb->cpuPaced > gb->mcycle ? gb->cpuPaced - gb->mcycle : 0;
+		gb->now += gb->mcycle;
+		return;
+	}
+	gb->cpuCarry += 16;
+	if (!gb->doubleSpeed) {
+		uint32_t dots = gb->cpuCarry / gb->cpuQuarters;
+		gb->cpuCarry -= dots * gb->cpuQuarters;
+		gb->now += dots;
+	} else {
+		unsigned quarters = gb->cpuQuarters > 8 ? 8 : gb->cpuQuarters;
+		uint32_t halves = gb->cpuCarry / (2 * quarters) * 2;
+		gb->cpuCarry -= halves * quarters;
+		gb->now += halves / 2;
+	}
+}
+
+void gbSetCpuQuarters(struct GB* gb, unsigned quarters, bool keepCarry) {
+	if (quarters != gb->cpuQuarters) {
+		gb->cpuQuarters = quarters;
+		if (!keepCarry) {
+			gb->cpuCarry = 0;
 		}
 	}
 }
