@@ -96,6 +96,20 @@ if(ipo)
 endif()
 target_include_directories(armgba PUBLIC src)
 
+# armGB, the Game Boy and Game Boy Color (MIT)
+file(GLOB ARMGB_SOURCES src/gb/*.c)
+add_library(armgb STATIC ${ARMGB_SOURCES})
+set_target_properties(armgb PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_options(armgb PRIVATE -O3)
+if(ipo)
+	set_property(TARGET armgb PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
+target_include_directories(armgb PUBLIC src/gb)
+
+# Runs a Game Boy test ROM and reports what it says
+add_executable(gbrun EXCLUDE_FROM_ALL tests/gbrun.c)
+target_link_libraries(gbrun armgb)
+
 # The table-driven CPU against the exact one, an instruction at a time
 add_executable(leancmp EXCLUDE_FROM_ALL tests/leancmp.c)
 target_link_libraries(leancmp armgba m pthread z)
