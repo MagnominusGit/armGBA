@@ -29,6 +29,31 @@ static void serialOut(void* user, uint8_t byte) {
 	}
 }
 
+static void saveShot(const struct GB* gb, const char* path) {
+	FILE* o = fopen(path, "wb");
+	if (gb->model == GB_MODEL_CGB) {
+		// The Color's picture as 8-bit RGB (P6).
+		fprintf(o, "P6\n%d %d\n255\n", GB_WIDTH, GB_HEIGHT);
+		for (int y = 0; y < GB_HEIGHT; ++y) {
+			for (int x = 0; x < GB_WIDTH; ++x) {
+				uint16_t v = gb->frame[y][x];
+				fputc((v & 31) * 255 / 31, o);
+				fputc((v >> 5 & 31) * 255 / 31, o);
+				fputc((v >> 10 & 31) * 255 / 31, o);
+			}
+		}
+	} else {
+		fprintf(o, "P5\n%d %d\n255\n", GB_WIDTH, GB_HEIGHT);
+		for (int y = 0; y < GB_HEIGHT; ++y) {
+			for (int x = 0; x < GB_WIDTH; ++x) {
+				uint16_t v = gb->frame[y][x] == GB_SHADE_OFF ? 0 : gb->frame[y][x];
+				fputc(255 - v * 85, o);
+			}
+		}
+	}
+	fclose(o);
+}
+
 int main(int argc, char** argv) {
 	if (argc < 2) {
 		fprintf(stderr, "usage: %s rom [frames] [dmg|cgb]\n", argv[0]);
@@ -64,6 +89,25 @@ int main(int argc, char** argv) {
 		return 2;
 	}
 	gb.serialOut = serialOut;
+	// CHEAT=program: a cheat cartridge in front of the game (NOGAME=1: with nothing on top).
+	static struct GBCheatCart cheat;
+	if (getenv("CHEAT")) {
+		FILE* c = fopen(getenv("CHEAT"), "rb");
+		static uint8_t program[0x80000];
+		size_t n = c ? fread(program, 1, sizeof(program), c) : 0;
+		if (c) {
+			fclose(c);
+		}
+		if (!gbCheatCartInit(&cheat, program, n, !getenv("NOGAME"))) {
+			fprintf(stderr, "can't use the cheat cartridge\n");
+			return 2;
+		}
+		gb.cheatCart = &cheat;
+		gbReset(&gb);
+	}
+	// PRESS="frame:keys,...": holds keys (gb.keys bits) for 6 frames from each frame given.
+	// SHOTS="frame,...": with SHOT, also saves those frames, as SHOT-frame.
+	const char* press = getenv("PRESS");
 	const char* result = "none";
 	// MARK=n: times frames n to the end, and runs them all (no stopping at a result).
 	int mark = getenv("MARK") ? atoi(getenv("MARK")) : -1;
@@ -74,7 +118,27 @@ int main(int argc, char** argv) {
 		if (frame == mark) {
 			marked = now();
 		}
+		gb.keys = 0;
+		for (const char* p = press; p && *p;) {
+			int at = atoi(p), keys = (int) strtol(strchr(p, ':') + 1, NULL, 0);
+			if (frame >= at && frame < at + 6) {
+				gb.keys = keys;
+			}
+			p = strchr(p, ',');
+			p = p ? p + 1 : NULL;
+		}
 		gbRunFrame(&gb);
+		if (getenv("SHOTS") && getenv("SHOT")) {
+			for (const char* p = getenv("SHOTS"); p && *p;) {
+				if (atoi(p) == frame) {
+					char path[512];
+					snprintf(path, sizeof(path), "%s-%d.pgm", getenv("SHOT"), frame);
+					saveShot(&gb, path);
+				}
+				p = strchr(p, ',');
+				p = p ? p + 1 : NULL;
+			}
+		}
 		for (uint32_t i = 0; i < gb.audioCount; ++i) {
 			audioHash = (audioHash ^ (uint16_t) gb.audio[i]) * 1099511628211ULL;
 		}
@@ -124,29 +188,8 @@ int main(int argc, char** argv) {
 			hash = (hash ^ (gb.frame[y][x] == GB_SHADE_OFF ? 0 : gb.frame[y][x])) * 1099511628211ULL;
 		}
 	}
-	if (getenv("SHOT") && gb.model == GB_MODEL_CGB) {
-		// The Color's picture as 8-bit RGB (P6).
-		FILE* o = fopen(getenv("SHOT"), "wb");
-		fprintf(o, "P6\n%d %d\n255\n", GB_WIDTH, GB_HEIGHT);
-		for (int y = 0; y < GB_HEIGHT; ++y) {
-			for (int x = 0; x < GB_WIDTH; ++x) {
-				uint16_t v = gb.frame[y][x];
-				fputc((v & 31) * 255 / 31, o);
-				fputc((v >> 5 & 31) * 255 / 31, o);
-				fputc((v >> 10 & 31) * 255 / 31, o);
-			}
-		}
-		fclose(o);
-	} else if (getenv("SHOT")) {
-		FILE* o = fopen(getenv("SHOT"), "wb");
-		fprintf(o, "P5\n%d %d\n255\n", GB_WIDTH, GB_HEIGHT);
-		for (int y = 0; y < GB_HEIGHT; ++y) {
-			for (int x = 0; x < GB_WIDTH; ++x) {
-				uint16_t v = gb.frame[y][x] == GB_SHADE_OFF ? 0 : gb.frame[y][x];
-				fputc(gb.cgbMode ? (((v & 31) + (v >> 5 & 31) + (v >> 10 & 31)) * 255 / 93) : 255 - v * 85, o);
-			}
-		}
-		fclose(o);
+	if (getenv("SHOT")) {
+		saveShot(&gb, getenv("SHOT"));
 	}
 	for (size_t i = 0; i < serialLength; ++i) {
 		if (serialText[i] == '\n' || (serialText[i] >= 32 && serialText[i] < 127)) {

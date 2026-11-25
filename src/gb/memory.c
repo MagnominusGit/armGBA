@@ -57,6 +57,11 @@ void gbMapRom(struct GB* gb) {
 	if (gb->bootMapped || cart->mapper == GB_SACHEN) {
 		gb->readMap[0] = NULL;
 	}
+	if (gb->cheatCart) {
+		for (int i = 0; i < 8; ++i) {
+			gb->readMap[i] = NULL;
+		}
+	}
 	if (cart->romTransformed) {
 		for (int i = 4; i < 8; ++i) {
 			gb->readMap[i] = NULL;
@@ -104,8 +109,14 @@ static uint8_t dmaByte(struct GB* gb, uint16_t address) {
 	case 0x5:
 	case 0x6:
 	case 0x7:
+		if (gb->cheatCart) {
+			return gbCheatCartRead(gb, address, true);
+		}
 		return gbCartRomByte(gb, gb->memMap[address >> 12][address & 0xFFF]);
 	default:
+		if (address < 0x4000 && gb->cheatCart) {
+			return gbCheatCartRead(gb, address, true);
+		}
 		return gb->memMap[address >> 12][address & 0xFFF];
 	}
 }
@@ -365,18 +376,13 @@ uint8_t gbRead(struct GB* gb, uint16_t address) {
 	if (gb->dma.active && dmaConflict(gb, address, &conflict)) {
 		return conflict;
 	}
-	if (address < 0x8000 && gb->cart.variant == GB_VAST_FAME && !gb->bootMapped) {
-		return gbCartReadVastFame(gb, address);
-	}
-	switch (address >> 12) {
-	case 0x0:
+	if (address < 0x8000) {
 		if (gb->bootMapped && (address < 0x100 || (gb->bootSize > 0x100 && address >= 0x200 && address < 0x900))) {
 			return gb->boot[address];
 		}
-		if (gb->cart.mapper == GB_SACHEN && address >= 0x100 && address < 0x200) {
-			return gb->memMap[0][gbCartSachenAddress(address)];
-		}
-		return gb->memMap[0][address];
+		return gb->cheatCart ? gbCheatCartRead(gb, address, false) : gbCartRomRead(gb, address);
+	}
+	switch (address >> 12) {
 	case 0x8:
 	case 0x9:
 		gbPpuSync(gb);
@@ -408,14 +414,23 @@ uint8_t gbRead(struct GB* gb, uint16_t address) {
 			return gb->hram[address & 0x7F];
 		}
 		return gb->ie;
-	case 0x4:
-	case 0x5:
-	case 0x6:
-	case 0x7:
-		return gbCartRomByte(gb, gb->memMap[address >> 12][address & 0xFFF]);
 	default:
 		return gb->memMap[address >> 12][address & 0xFFF];
 	}
+}
+
+// The game's ROM as the CPU reads it through its mapper.
+uint8_t gbCartRomRead(struct GB* gb, uint16_t address) {
+	if (gb->cart.variant == GB_VAST_FAME && !gb->bootMapped) {
+		return gbCartReadVastFame(gb, address);
+	}
+	if (address >= 0x4000) {
+		return gbCartRomByte(gb, gb->memMap[address >> 12][address & 0xFFF]);
+	}
+	if (gb->cart.mapper == GB_SACHEN && address >= 0x100 && address < 0x200) {
+		return gb->memMap[0][gbCartSachenAddress(address)];
+	}
+	return gb->memMap[address >> 12][address & 0xFFF];
 }
 
 void gbWrite(struct GB* gb, uint16_t address, uint8_t value) {
@@ -428,7 +443,11 @@ void gbWrite(struct GB* gb, uint16_t address, uint8_t value) {
 	case 0x5:
 	case 0x6:
 	case 0x7:
-		gbCartWrite(gb, address, value);
+		if (gb->cheatCart) {
+			gbCheatCartWrite(gb, address, value);
+		} else {
+			gbCartWrite(gb, address, value);
+		}
 		return;
 	case 0x8:
 	case 0x9:

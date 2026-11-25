@@ -1192,6 +1192,10 @@ static void cameraWrite(struct GB* gb, uint16_t address, uint8_t value) {
 }
 
 uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
+	uint8_t cheat;
+	if (gb->cheatCart && gbCheatCartReadRam(gb, address, &cheat)) {
+		return cheat;
+	}
 	if (gb->cart.mapper == GB_TAMA5) {
 		return gbTama5Read(gb, address);
 	}
@@ -1243,6 +1247,9 @@ uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
 }
 
 void gbCartWriteRam(struct GB* gb, uint16_t address, uint8_t value) {
+	if (gb->cheatCart && gbCheatCartWriteRam(gb, address, value)) {
+		return;
+	}
 	if (gb->cart.mapper == GB_MEGADUCK && !gb->cart.hasRam) {
 		gbMegaDuckWrite(gb, address, value);
 		return;

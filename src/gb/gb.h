@@ -395,6 +395,44 @@ struct GBCart {
 	uint8_t duckKind;
 };
 
+// A cheat cartridge in front of the game (cheatcart.c): what a state keeps of it, the frontend's
+// controls, and its flash chip (or the Game Genie's program) as it is and as it was built.
+enum GBCheatKind {
+	GB_CHEAT_ACTION_REPLAY,
+	GB_CHEAT_XPLODER,
+	GB_CHEAT_GAME_GENIE,
+};
+
+struct GBCheatState {
+	uint8_t regs[0x20];
+	uint8_t shown, boot;
+	uint8_t flashStep, flashId, flashLoad;
+	uint8_t pageHigh, pageLow;
+	// The first Action Replay: the game's first 512 bytes show for its program to look at.
+	uint8_t lowPage;
+	// The Xploder: the last byte the game wrote to 4000-5FFF, which 0004 reads.
+	uint8_t gameBank;
+	// The Game Genie: codes chosen in the frontend's options, nine digits (0-15, 0x10 past the end)
+	// and a count of 6 or 9 (0 for none) for each of the three slots.
+	uint8_t fill[27];
+	uint8_t fillCount[3];
+	// The Action Replay's 32 KiB, the Xploder's 128 KiB; a state holds as much as the cartridge has.
+	uint8_t ram[0x20000];
+};
+
+struct GBCheatCart {
+	struct GBCheatState s;
+	uint8_t kind;
+	// The first Action Replay; whether a game is on top, else the cartridge space behind is empty.
+	bool first, hasGame;
+	bool button, switchOn;
+	// Whether what it keeps with the power off was written since the frontend last cleared this.
+	bool flashChanged;
+	uint8_t* flash;
+	uint8_t* factory;
+	size_t flashSize;
+};
+
 struct GB {
 	struct GBCpu cpu;
 	uint8_t model;
@@ -487,6 +525,8 @@ struct GB {
 	// whether it is the laptop, whose system ROM starts with SP at FFFF.
 	uint8_t megaDuck;
 	bool duckLaptop;
+	// A cheat cartridge in front of the game, set by the frontend (and powered on by gbReset).
+	struct GBCheatCart* cheatCart;
 };
 
 // gb.c
@@ -512,6 +552,18 @@ void gbSaveState(const struct GB*, void* data);
 bool gbLoadState(struct GB*, const void* data, size_t size);
 // The Mega Duck laptop's slot: the cartridge there takes the running ROM's place (a power of two in
 // size), its mapper as at power on; the memory card's RAM stays.
+// cheatcart.c
+bool gbCheatCartInit(struct GBCheatCart*, const uint8_t* program, size_t size, bool hasGame);
+void gbCheatCartFree(struct GBCheatCart*);
+void gbCheatCartReset(struct GBCheatCart*);
+uint8_t gbCheatCartRead(struct GB*, uint16_t address, bool dma);
+void gbCheatCartWrite(struct GB*, uint16_t address, uint8_t value);
+bool gbCheatCartReadRam(struct GB*, uint16_t address, uint8_t* value);
+bool gbCheatCartWriteRam(struct GB*, uint16_t address, uint8_t value);
+uint8_t* gbCheatCartKept(struct GBCheatCart*, size_t* size);
+size_t gbCheatCartStateSize(const struct GBCheatCart*);
+void gbCheatCartSaveState(const struct GBCheatCart*, uint8_t* data);
+void gbCheatCartLoadState(struct GBCheatCart*, const uint8_t* data);
 void gbSwapMegaDuckRom(struct GB*, const uint8_t* rom, size_t size, enum GBDuckKind);
 
 // cpu.c
@@ -521,6 +573,7 @@ void gbCpuRun(struct GB*, uint32_t until);
 void gbDmaSync(struct GB*);
 void gbDmaStart(struct GB*, uint8_t page);
 uint8_t gbRead(struct GB*, uint16_t address);
+uint8_t gbCartRomRead(struct GB*, uint16_t address);
 void gbWrite(struct GB*, uint16_t address, uint8_t value);
 void gbMapRom(struct GB*);
 uint8_t gbIoRead(struct GB*, uint8_t reg);

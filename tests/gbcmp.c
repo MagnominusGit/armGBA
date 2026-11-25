@@ -299,13 +299,23 @@ int main(int argc, char** argv) {
 		}
 	}
 	// NOBOOT=1: armGB without a boot ROM, as the other core runs Sachen's cartridges.
-	if (!getenv("NOBOOT") && !gb.megaDuck) {
+	// CHEATCART=1: the ROM is a cheat cartridge with nothing on top, which runs with no boot ROM.
+	if (!getenv("NOBOOT") && !gb.megaDuck && !getenv("CHEATCART")) {
 		gb.boot = colorModel ? armgba_cgb_boot : armgba_dmg_boot;
 		gb.bootSize = colorModel ? sizeof(armgba_cgb_boot) : sizeof(armgba_dmg_boot);
 	}
 	if (!gbLoad(&gb, rom, padded, colorModel ? GB_MODEL_CGB : GB_MODEL_DMG)) {
 		fprintf(stderr, "armGB can't load it\n");
 		return 2;
+	}
+	static struct GBCheatCart cheat;
+	if (getenv("CHEATCART")) {
+		if (!gbCheatCartInit(&cheat, rom, size, false)) {
+			fprintf(stderr, "armGB can't use it as a cheat cartridge\n");
+			return 2;
+		}
+		gb.cheatCart = &cheat;
+		gbReset(&gb);
 	}
 	// armgba_cpu_clock (as the other core's option): armGB's CPU Clock too, from when the boot ROM
 	// hands over (the option's CPU Clock During Boot at 100%).

@@ -210,6 +210,9 @@ void gbReset(struct GB* gb) {
 	gb->frameLimit = GB_FRAME_DOTS;
 	// A reset starts the cartridge's mapper over; its battery-backed RAM and clocks run on.
 	gbCartInit(gb);
+	if (gb->cheatCart) {
+		gbCheatCartReset(gb->cheatCart);
+	}
 	gb->cart.rtc = cart.rtc;
 	gb->cart.huc3.minutes = cart.huc3.minutes;
 	gb->cart.huc3.days = cart.huc3.days;
@@ -264,11 +267,18 @@ void gbReset(struct GB* gb) {
 	}
 	if (!gbColor(gb)) {
 		bootLogo(gb);
-	} else {
+	} else if (gb->cgbMode) {
 		// The Color's boot ROM leaves the background's palettes white.
 		for (int i = 0; i < 64; i += 2) {
 			gb->cgb.bgPalette[i] = 0xFF;
 			gb->cgb.bgPalette[i + 1] = 0x7F;
+		}
+	} else {
+		// An original Game Boy game on the Color: the four shades as grays, for the background and both
+		// sprite palettes, where the boot ROM would have chosen colors.
+		static const uint16_t grays[4] = { 0x7FFF, 0x5294, 0x294A, 0x0000 };
+		for (int i = 0; i < 8; ++i) {
+			gb->cgb.bgPalette[i] = gb->cgb.objPalette[i] = gb->cgb.objPalette[8 + i] = grays[i >> 1] >> (i & 1 ? 8 : 0);
 		}
 	}
 	cpu->sp = 0xFFFE;

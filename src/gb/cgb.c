@@ -33,7 +33,7 @@ static void copyBlocks(struct GB* gb, unsigned blocks) {
 	for (unsigned b = 0; b < blocks && cgb->hdmaBlocks; ++b) {
 		for (int i = 0; i < 16; ++i) {
 			uint16_t from = cgb->hdmaSource + i;
-			uint8_t value = from >= 0xE000 || (from >= 0x8000 && from < 0xA000) ? 0xFF : gbRead(gb, from);
+			uint8_t value = from >= 0xE000 || (from >= 0x8000 && from < 0xA000) ? 0xFF : from < 0x8000 && gb->cheatCart ? gbCheatCartRead(gb, from, true) : gbRead(gb, from);
 			gb->vram[(gb->vramBank & 1) * 0x2000 + ((cgb->hdmaDest + i) & 0x1FFF)] = value;
 		}
 		cgb->hdmaSource += 16;
