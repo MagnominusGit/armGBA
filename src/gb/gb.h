@@ -268,38 +268,58 @@ enum {
 	GB_LINK_LEFT = 268,    // dots until the transfer under way on the console's own clock ends, or -1
 };
 
-// A sound channel. The timer counts dots to the next step of the waveform; length, envelope and
-// sweep are clocked by the frame sequencer.
+// A sound channel; length, envelope and sweep are clocked by the frame sequencer.
 struct GBChannel {
 	bool on;
 	bool dac;
 	bool lengthOn;
 	uint16_t length;
 	uint16_t frequency;
-	uint32_t nextStep;
+	// The squares and the wave channel: 2 MHz cycles to the next step, less one.
+	uint16_t countdown;
 	uint8_t position;
 	uint8_t volume;
+	// What the channel puts out now, 0 to 15 (held between its steps).
+	uint8_t level;
 	// The envelope (SameBoy's): its 3-bit countdown, its clock, and whether that clock locked it.
 	uint8_t envCountdown;
 	bool envClock, envShouldLock, envLocked;
+	// The squares (SameBoy's): the output held at 0 after a start until the first step, whether a
+	// step was taken since the start, whether one was taken on the last cycle, and the start's delay.
+	bool suppressed, didTick, justReloaded;
+	uint8_t delay;
 };
 
+// The sound, its timing as SameBoy has it: a 2 MHz clock counted from power-on (the time saved as
+// epoch), the frame sequencer's divider from the divider's 512 Hz edges.
 struct GBApu {
 	bool power;
 	struct GBChannel square[2];
 	struct GBChannel wave;
 	struct GBChannel noise;
+	uint32_t epoch;
+	uint8_t divider;
+	uint8_t skipDivEvent;
+	bool duringDivWrite;
+	// The Color at double speed takes the envelopes' step an M-cycle after the divider's.
+	bool envelopePending;
+	uint32_t envelopeAt;
+	// The sweep (channel 1).
+	uint8_t sweepCountdown, sweepCalcCountdown, sweepReloadTimer, restartHold;
+	uint16_t sweepAddend, sweepShadow, sweepCompletedAddend;
+	bool sweepUnshifted, sweepInstantDone;
+	// The wave channel's sample byte, whether it read one on the last cycle, and whether it was started.
+	uint8_t waveByte;
+	bool waveJustRead, wavePulsed;
+	// The noise channel: its LFSR, the counter whose bit steps it, and that counter's countdown.
 	uint16_t lfsr;
-	// The sweep (channel 1): its shadow frequency, timer, and whether it runs.
-	uint16_t sweepShadow;
-	uint8_t sweepTimer;
-	bool sweepOn;
-	bool sweepNegated;
-	// The wave channel's sample buffer, and when it last read wave RAM.
-	uint8_t waveSample;
-	uint32_t waveReadAt;
-	// The frame sequencer's next step (0 to 7).
-	uint8_t frameStep;
+	bool narrow, lfsrSample, lfsrSteppedNarrow, lfsrBit7;
+	uint16_t noiseCounter;
+	uint8_t noiseCountdown;
+	// The original's start of the noise channel, put off to a 512 kHz edge.
+	bool noiseDelayed;
+	uint32_t noiseStartAt;
+	bool noiseReloaded, noiseDidStep, noiseCounting, noiseBackground, noiseStartedDacOff;
 	uint8_t regs[0x30];
 	uint32_t lastSync;
 	// Sample building: the time the sample being built starts, and its mixed sums so far.
