@@ -124,7 +124,20 @@ int main(int argc, char** argv) {
 			hash = (hash ^ (gb.frame[y][x] == GB_SHADE_OFF ? 0 : gb.frame[y][x])) * 1099511628211ULL;
 		}
 	}
-	if (getenv("SHOT")) {
+	if (getenv("SHOT") && gb.model == GB_MODEL_CGB) {
+		// The Color's picture as 8-bit RGB (P6).
+		FILE* o = fopen(getenv("SHOT"), "wb");
+		fprintf(o, "P6\n%d %d\n255\n", GB_WIDTH, GB_HEIGHT);
+		for (int y = 0; y < GB_HEIGHT; ++y) {
+			for (int x = 0; x < GB_WIDTH; ++x) {
+				uint16_t v = gb.frame[y][x];
+				fputc((v & 31) * 255 / 31, o);
+				fputc((v >> 5 & 31) * 255 / 31, o);
+				fputc((v >> 10 & 31) * 255 / 31, o);
+			}
+		}
+		fclose(o);
+	} else if (getenv("SHOT")) {
 		FILE* o = fopen(getenv("SHOT"), "wb");
 		fprintf(o, "P5\n%d %d\n255\n", GB_WIDTH, GB_HEIGHT);
 		for (int y = 0; y < GB_HEIGHT; ++y) {

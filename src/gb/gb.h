@@ -73,6 +73,7 @@ enum {
 	GB_EVENT_SERIAL,
 	GB_EVENT_FRAME,
 	GB_EVENT_DMA,
+	GB_EVENT_HDMA,
 	GB_EVENTS,
 };
 
@@ -191,6 +192,23 @@ struct GBDma {
 	bool overlap;
 };
 
+// The Game Boy Color's own hardware (Pan Docs, "CGB Registers").
+struct GBCgb {
+	// Palette RAM, 8 palettes of 4 colors as little-endian RGB555, and the index registers.
+	uint8_t bgPalette[64];
+	uint8_t objPalette[64];
+	uint8_t bcps, ocps;
+	// Objects by OAM position (0) or by X (1, as the original Game Boy).
+	uint8_t opri;
+	uint8_t key0;
+	uint8_t undocumented[4];
+	uint8_t rp;
+	// VRAM DMA: where it reads and writes, the 16-byte blocks left, and whether it waits for H-blanks.
+	uint16_t hdmaSource, hdmaDest;
+	uint8_t hdmaBlocks;
+	bool hdmaHblank;
+};
+
 struct GBCart {
 	uint8_t mapper;
 	bool hasRam, hasBattery, hasRtc;
@@ -226,6 +244,7 @@ struct GB {
 	struct GBCart cart;
 	struct GBDma dma;
 	struct GBApu apu;
+	struct GBCgb cgb;
 	bool bootMapped;
 	uint8_t wramBank;
 	uint8_t vramBank;
@@ -245,6 +264,11 @@ struct GB {
 	uint32_t frameCount;
 	// Set when V-blank starts, so a frame's run can end there.
 	bool frameEnded;
+	// Powered on with the LCD off: the first frame runs on to where V-blank would start a second time.
+	bool firstFrame;
+	// When the LCD was last switched off: the frame then ends a frame's length later.
+	bool lcdWentOff;
+	uint32_t lcdOffAt;
 
 	// Not saved: the cartridge and where it is mapped, and the frontend's hooks.
 	const uint8_t* rom;
@@ -259,6 +283,8 @@ struct GB {
 	// shades' colors, then the screen's with the LCD off.
 	uint32_t* video;
 	uint32_t videoColors[5];
+	// With a frontend's picture, the Color's 32768 RGB555 colors as it shows them.
+	const uint32_t* videoTable;
 	// Serial bytes shifted out with no partner, for the test runner.
 	void (*serialOut)(void* user, uint8_t byte);
 	void* user;
@@ -302,17 +328,25 @@ void gbPpuSync(struct GB*);
 uint8_t gbPpuRead(struct GB*, uint8_t reg);
 void gbPpuWrite(struct GB*, uint8_t reg, uint8_t value);
 void gbPpuEvent(struct GB*);
+void gbPpuReplan(struct GB*);
 
 // apu.c
 void gbApuReset(struct GB*);
 void gbApuSync(struct GB*);
 void gbApuDivReset(struct GB*);
 uint8_t gbApuRead(struct GB*, uint8_t reg);
+uint8_t gbApuPcm(struct GB*, bool high);
 void gbApuWrite(struct GB*, uint8_t reg, uint8_t value);
 
 // serial.c
 void gbSerialWrite(struct GB*, uint8_t reg, uint8_t value);
 void gbSerialEvent(struct GB*);
+
+// cgb.c
+uint8_t gbCgbRead(struct GB*, uint8_t reg);
+void gbCgbWrite(struct GB*, uint8_t reg, uint8_t value);
+void gbHdmaHblank(struct GB*);
+void gbHdmaEvent(struct GB*);
 
 // cart.c
 bool gbCartInit(struct GB*);

@@ -140,7 +140,7 @@ static inline uint64_t tileRow(const struct GB* gb, uint16_t address) {
 }
 
 // Draws the line whole: background and window a tile at a time, then the objects.
-static void drawLine(struct GB* gb) {
+static void drawLineDmg(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
 	int y = ppu->line;
 	if (y >= GB_HEIGHT || ppu->hiddenFrame) {
@@ -239,6 +239,142 @@ static void drawLine(struct GB* gb) {
 				out[x] = palette >> (color * 2) & 3;
 			}
 		}
+	}
+}
+
+// A tile row's eight colour indices, flipped left to right if asked.
+static inline uint64_t flipRow(uint64_t pixels, bool flip) {
+	return flip ? __builtin_bswap64(pixels) : pixels;
+}
+
+// The Game Boy Color's line. A Color game: tiles with attributes (palette, VRAM bank, flips, priority
+// over objects) and colour palettes; LCDC bit 0 only takes the background's priority away. An
+// original Game Boy game on a Color: drawn as on the original, its shades through the colour
+// palettes the boot ROM left.
+static void drawLineCgb(struct GB* gb) {
+	struct GBPpu* ppu = &gb->ppu;
+	struct GBCgb* cgb = &gb->cgb;
+	int y = ppu->line;
+	if (y >= GB_HEIGHT || ppu->hiddenFrame) {
+		return;
+	}
+	initSpread();
+	bool const color = gb->cgbMode;
+	uint8_t index[GB_WIDTH + 16];
+	uint8_t attr[GB_WIDTH + 16];
+	memset(attr, 0, sizeof(attr));
+	bool background = color || (ppu->lcdc & LCDC_BG);
+	if (background) {
+		uint8_t row[21 * 8];
+		uint8_t rowAttr[21 * 8];
+		uint16_t map = (ppu->lcdc & LCDC_BG_MAP ? 0x1C00 : 0x1800) + ((ppu->scy + y) & 0xFF) / 8 * 32;
+		unsigned fineY = (ppu->scy + y) & 7;
+		unsigned column = ppu->scx >> 3;
+		for (int t = 0; t < 21; ++t) {
+			uint16_t at = map + ((column + t) & 31);
+			uint8_t tile = gb->vram[at];
+			uint8_t a = color ? gb->vram[0x2000 + at] : 0;
+			unsigned line = a & 0x40 ? 7 - fineY : fineY;
+			uint16_t address = (a & 0x08 ? 0x2000 : 0) + tileAddress(ppu, tile) + line * 2;
+			uint64_t pixels = flipRow(tileRow(gb, address), a & 0x20);
+			memcpy(&row[t * 8], &pixels, 8);
+			memset(&rowAttr[t * 8], a, 8);
+		}
+		memcpy(index, &row[ppu->scx & 7], GB_WIDTH);
+		memcpy(attr, &rowAttr[ppu->scx & 7], GB_WIDTH);
+		if (windowOnLine(gb)) {
+			uint16_t wmap = (ppu->lcdc & LCDC_WINDOW_MAP ? 0x1C00 : 0x1800) + ppu->windowLine / 8 * 32;
+			unsigned wfine = ppu->windowLine & 7;
+			int start = ppu->wx - 7;
+			int first = start < 0 ? 0 : start;
+			for (int t = (first - start) / 8; t * 8 + start < GB_WIDTH; ++t) {
+				uint8_t tile = gb->vram[wmap + t];
+				uint8_t a = color ? gb->vram[0x2000 + wmap + t] : 0;
+				unsigned line = a & 0x40 ? 7 - wfine : wfine;
+				uint64_t pixels = flipRow(tileRow(gb, (a & 0x08 ? 0x2000 : 0) + tileAddress(ppu, tile) + line * 2), a & 0x20);
+				uint8_t tilePixels[8];
+				memcpy(tilePixels, &pixels, 8);
+				for (int i = 0; i < 8; ++i) {
+					int x = t * 8 + i + start;
+					if (x >= first && x < GB_WIDTH) {
+						index[x] = tilePixels[i];
+						attr[x] = a;
+					}
+				}
+			}
+			++ppu->windowLine;
+		}
+	} else {
+		memset(index, 0, GB_WIDTH);
+	}
+	// The background's colours, as 15-bit RGB.
+	uint16_t rgb[GB_WIDTH];
+	for (int x = 0; x < GB_WIDTH; ++x) {
+		unsigned entry = color ? (attr[x] & 7) * 4 + index[x] : ppu->bgp >> (index[x] * 2) & 3;
+		rgb[x] = cgb->bgPalette[entry * 2] | (cgb->bgPalette[entry * 2 + 1] & 0x7F) << 8;
+	}
+	if ((ppu->lcdc & LCDC_OBJ)) {
+		int height = ppu->lcdc & LCDC_TALL ? 16 : 8;
+		// Which object has each pixel: by OAM position in a Color game (unless OPRI says by X), else
+		// the smallest X, then the first in OAM.
+		bool byPosition = color && !(cgb->opri & 1);
+		uint8_t ownerX[GB_WIDTH];
+		bool taken[GB_WIDTH];
+		memset(ownerX, 0xFF, sizeof(ownerX));
+		memset(taken, 0, sizeof(taken));
+		for (int i = 0; i < ppu->objectCount; ++i) {
+			const uint8_t* object = &gb->oam[ppu->objects[i] * 4];
+			int left = object[1] - 8;
+			if (left <= -8 || left >= GB_WIDTH) {
+				continue;
+			}
+			uint8_t flags = object[3];
+			int line = y - (object[0] - 16);
+			if (flags & 0x40) {
+				line = height - 1 - line;
+			}
+			uint8_t tile = height == 16 ? object[2] & 0xFE : object[2];
+			uint16_t bank = color && (flags & 0x08) ? 0x2000 : 0;
+			uint64_t pixels = flipRow(tileRow(gb, bank + tile * 16 + line * 2), flags & 0x20);
+			uint8_t colors[8];
+			memcpy(colors, &pixels, 8);
+			for (int px = 0; px < 8; ++px) {
+				int x = left + px;
+				if (x < 0 || x >= GB_WIDTH || (byPosition ? taken[x] : ownerX[x] <= object[1])) {
+					continue;
+				}
+				int c = colors[px];
+				if (!c) {
+					continue;
+				}
+				taken[x] = true;
+				ownerX[x] = object[1];
+				// Behind the background's colours 1 to 3: by the object's flag, or the tile's in a
+				// Color game; LCDC bit 0 off in a Color game puts objects in front regardless.
+				bool behind = index[x] && ((flags & 0x80) || (color && (attr[x] & 0x80)));
+				if (behind && !(color && !(ppu->lcdc & LCDC_BG))) {
+					continue;
+				}
+				unsigned entry = color ? (flags & 7) * 4 + c : (flags & 0x10 ? 4 : 0) + ((flags & 0x10 ? ppu->obp1 : ppu->obp0) >> (c * 2) & 3);
+				rgb[x] = cgb->objPalette[entry * 2] | (cgb->objPalette[entry * 2 + 1] & 0x7F) << 8;
+			}
+		}
+	}
+	if (gb->video && gb->videoTable) {
+		uint32_t* video = gb->video + y * GB_WIDTH;
+		for (int x = 0; x < GB_WIDTH; ++x) {
+			video[x] = gb->videoTable[rgb[x]];
+		}
+	} else {
+		memcpy(gb->frame[y], rgb, sizeof(rgb));
+	}
+}
+
+static void drawLine(struct GB* gb) {
+	if (gb->model == GB_MODEL_CGB) {
+		drawLineCgb(gb);
+	} else {
+		drawLineDmg(gb);
 	}
 }
 
@@ -377,13 +513,17 @@ static void advance(struct GB* gb) {
 	case STEP_MODE0:
 		// Mode 3 ends: STAT shows mode 0 now, and its interrupt comes a dot later.
 		drawLine(gb);
+		if (gb->cgb.hdmaHblank) {
+			gbHdmaHblank(gb);
+		}
 		if (single) {
 			ppu->mode = 0;
 			ppu->modeForInterrupt = 0;
 			ppu->oamReadBlocked = false;
 			ppu->vramReadBlocked = false;
 			ppu->oamWriteBlocked = false;
-			ppu->vramWriteBlocked = false;
+			// The Color takes VRAM writes again a dot later.
+			ppu->vramWriteBlocked = gb->model == GB_MODEL_CGB;
 		}
 		next(gb, STEP_HBLANK_INT, ppu->nextAt + 1);
 		break;
@@ -510,7 +650,10 @@ static bool interrupting(const struct GB* gb, int step, int line) {
 	case STEP_DRAW:
 	case STEP_FIRST_VRAM:
 		// Where mode 3 ends is worked out here.
-		return ppu->stat & 0x08;
+		return (ppu->stat & 0x08) || gb->cgb.hdmaHblank;
+	case STEP_MODE0:
+		// An H-blank DMA moves a block then.
+		return gb->cgb.hdmaHblank;
 	case STEP_HBLANK_INT:
 		return ppu->stat & 0x08;
 	case STEP_FIRST:
@@ -649,6 +792,11 @@ void gbPpuSync(struct GB* gb) {
 	catchUp(gb);
 }
 
+void gbPpuReplan(struct GB* gb) {
+	catchUp(gb);
+	plan(gb);
+}
+
 static void lcdOn(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
 	ppu->line = 0;
@@ -669,6 +817,8 @@ static void lcdOff(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
 	// The screen shows nothing while the LCD is off.
 	gbBlankFrame(gb);
+	gb->lcdWentOff = true;
+	gb->lcdOffAt = gb->now;
 	ppu->oamReadBlocked = false;
 	ppu->vramReadBlocked = false;
 	ppu->oamWriteBlocked = false;

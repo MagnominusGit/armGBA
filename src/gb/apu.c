@@ -479,7 +479,12 @@ uint8_t gbApuRead(struct GB* gb, uint8_t address) {
 	if (address >= 0x30) {
 		if (apu->wave.on) {
 			// While it plays, a read gets the byte the channel is reading, if it reads it just then.
-			if (gb->model == GB_MODEL_CGB || (gbSince(gb->now, apu->waveReadAt) >= 2 && gbSince(gb->now, apu->waveReadAt) < 4)) {
+			if (gb->model == GB_MODEL_CGB) {
+				// The Color: the byte being read, the step due this very dot not yet taken.
+				unsigned position = apu->waveReadAt == gb->now ? (apu->wave.position - 1) & 31 : apu->wave.position;
+				return gb->io[0x30 + (position >> 1)];
+			}
+			if (gbSince(gb->now, apu->waveReadAt) >= 2 && gbSince(gb->now, apu->waveReadAt) < 4) {
 				return gb->io[0x30 + (apu->wave.position >> 1)];
 			}
 			return 0xFF;
@@ -491,6 +496,32 @@ uint8_t gbApuRead(struct GB* gb, uint8_t address) {
 		       (apu->wave.on ? 4 : 0) | (apu->noise.on ? 8 : 0);
 	}
 	return *reg(gb, address);
+}
+
+// PCM12 and PCM34 (the Color's): each channel's digital output now, 0 to 15, two to a byte.
+uint8_t gbApuPcm(struct GB* gb, bool high) {
+	struct GBApu* apu = &gb->apu;
+	gbApuSync(gb);
+	uint8_t levels[2];
+	for (int i = 0; i < 2; ++i) {
+		int index = high ? 2 + i : i;
+		struct GBChannel* ch = index < 2 ? &apu->square[index] : index == 2 ? &apu->wave : &apu->noise;
+		uint8_t level = 0;
+		if (ch->on) {
+			if (index < 2) {
+				uint8_t duty = duties[*reg(gb, index ? 0x16 : 0x11) >> 6];
+				level = duty >> (7 - ch->position) & 1 ? ch->volume : 0;
+			} else if (index == 2) {
+				static const uint8_t shifts[4] = { 4, 0, 1, 2 };
+				uint8_t sample = ch->position & 1 ? apu->waveSample & 0xF : apu->waveSample >> 4;
+				level = sample >> shifts[*reg(gb, 0x1C) >> 5 & 3];
+			} else {
+				level = apu->lfsr & 1 ? 0 : ch->volume;
+			}
+		}
+		levels[i] = level;
+	}
+	return levels[0] | levels[1] << 4;
 }
 
 void gbApuReset(struct GB* gb) {

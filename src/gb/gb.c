@@ -56,6 +56,9 @@ void gbRunEvents(struct GB* gb) {
 		case GB_EVENT_DMA:
 			gbDmaSync(gb);
 			break;
+		case GB_EVENT_HDMA:
+			gbHdmaEvent(gb);
+			break;
 		default:
 			break;
 		}
@@ -129,6 +132,7 @@ void gbReset(struct GB* gb) {
 		// Power on into the boot ROM: everything at 0 but the divider, which starts at 8 (as SameBoy
 		// has it), and the LCD off.
 		gb->bootMapped = true;
+		gb->firstFrame = true;
 		gb->timer.counter = 8;
 		gb->timer.reloadedAt = gb->now - 0x10000;
 		gbMapRom(gb);
@@ -171,9 +175,9 @@ void gbReset(struct GB* gb) {
 void gbBlankFrame(struct GB* gb) {
 	for (int y = 0; y < GB_HEIGHT; ++y) {
 		for (int x = 0; x < GB_WIDTH; ++x) {
-			gb->frame[y][x] = GB_SHADE_OFF;
+			gb->frame[y][x] = gb->model == GB_MODEL_CGB ? 0x7FFF : GB_SHADE_OFF;
 			if (gb->video) {
-				gb->video[y * GB_WIDTH + x] = gb->videoColors[4];
+				gb->video[y * GB_WIDTH + x] = gb->model == GB_MODEL_CGB && gb->videoTable ? gb->videoTable[0x7FFF] : gb->videoColors[4];
 			}
 		}
 	}
@@ -226,13 +230,24 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	return true;
 }
 
-// Runs to the start of the next V-blank, or a frame's time with the LCD off.
+// Runs to the start of the next V-blank, or a frame's time with the LCD off. Frames with the LCD off
+// keep the timing armGBA's frames have always had: the first after power-on ends where V-blank would
+// start a second time, and one the LCD goes off in ends 158 lines after that.
 void gbRunFrame(struct GB* gb) {
 	uint32_t limit = gb->now + GB_FRAME_DOTS;
+	if (gb->firstFrame) {
+		gb->firstFrame = false;
+		limit += GB_LINE_DOTS * 144;
+	}
 	gb->frameEnded = false;
 	gb->audioCount = 0;
+	gb->lcdWentOff = false;
 	while (!gb->frameEnded && gbSince(limit, gb->now) > 0) {
 		gbCpuRun(gb, limit);
+		if (gb->lcdWentOff) {
+			gb->lcdWentOff = false;
+			limit = gb->lcdOffAt + GB_LINE_DOTS * 158;
+		}
 		// With the LCD on, a frame goes on to V-blank, however late it started.
 		if (!gb->frameEnded && (gb->ppu.lcdc & 0x80) && gbSince(gb->now, limit) >= 0) {
 			limit = gb->now + GB_FRAME_DOTS;

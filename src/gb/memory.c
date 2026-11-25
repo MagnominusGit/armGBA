@@ -175,6 +175,14 @@ uint8_t gbIoRead(struct GB* gb, uint8_t reg) {
 		return gb->ifl | 0xE0;
 	case 0x10 ... 0x3F:
 		return gbApuRead(gb, reg) | ioUnused[reg];
+	case 0x4C:
+	case 0x4D:
+	case 0x4F:
+	case 0x51 ... 0x56:
+	case 0x68 ... 0x6C:
+	case 0x70:
+	case 0x72 ... 0x77:
+		return gbCgbRead(gb, reg);
 	case 0x40:
 	case 0x41:
 	case 0x42:
@@ -216,6 +224,15 @@ void gbIoWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 		break;
 	case 0x10 ... 0x3F:
 		gbApuWrite(gb, reg, value);
+		break;
+	case 0x4C:
+	case 0x4D:
+	case 0x4F:
+	case 0x51 ... 0x56:
+	case 0x68 ... 0x6C:
+	case 0x70:
+	case 0x72 ... 0x75:
+		gbCgbWrite(gb, reg, value);
 		break;
 	case 0x50:
 		if (value & 1 && gb->bootMapped) {

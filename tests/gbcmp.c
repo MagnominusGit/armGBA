@@ -23,10 +23,15 @@ enum {
 	MAX_FRAMES = 20000,
 };
 
-static uint8_t (*theirs)[GB_HEIGHT][GB_WIDTH];
+static uint16_t (*theirs)[GB_HEIGHT][GB_WIDTH];
+// CGB=1: the Game Boy Color, its colours as 15-bit RGB.
+static bool colorModel;
 // Work RAM after each frame, from both cores.
-static uint8_t (*theirRam)[0x2000];
-static uint8_t (*ourRam)[0x2000];
+// Work RAM: 8 KiB, or all eight 4 KiB banks of the Game Boy Color.
+#define RAM_MAX 0x8000
+static size_t ramBytes = 0x2000;
+static uint8_t (*theirRam)[RAM_MAX];
+static uint8_t (*ourRam)[RAM_MAX];
 static int theirCount;
 static unsigned pixelFormat = RETRO_PIXEL_FORMAT_0RGB1555;
 static unsigned heldButtons;
@@ -38,6 +43,7 @@ static const struct {
 } options[] = {
 	{ "armgba_gb_boot_rom", "open-source" },
 	{ "armgba_gb_model", "Game Boy" },
+	{ "armgba_gb_core", "gambatte" },
 	{ "armgba_gb_screen", "grayscale" },
 	{ "armgba_gb_contrast", "0" },
 	{ "armgba_gb_color_correction", "disabled" },
@@ -59,6 +65,9 @@ static bool environment(unsigned cmd, void* data) {
 			if (!strcmp(v->key, options[i].key)) {
 				v->value = options[i].value;
 			}
+		}
+		if (colorModel && !strcmp(v->key, "armgba_gb_model")) {
+			v->value = "Game Boy Color";
 		}
 		return v->value != NULL;
 	}
@@ -90,17 +99,15 @@ static void video(const void* data, unsigned width, unsigned height, size_t pitc
 	if (!data || theirCount >= MAX_FRAMES) {
 		return;
 	}
-	uint8_t(*out)[GB_WIDTH] = theirs[theirCount++];
+	uint16_t(*out)[GB_WIDTH] = theirs[theirCount++];
 	for (unsigned y = 0; y < GB_HEIGHT && y < height; ++y) {
 		for (unsigned x = 0; x < GB_WIDTH && x < width; ++x) {
-			unsigned g;
-			if (pixelFormat == RETRO_PIXEL_FORMAT_XRGB8888) {
-				g = ((const uint32_t*) ((const uint8_t*) data + y * pitch))[x] >> 8 & 0xFF;
+			uint32_t c = ((const uint32_t*) ((const uint8_t*) data + y * pitch))[x];
+			if (colorModel) {
+				out[y][x] = (c >> 19 & 0x1F) | (c >> 11 & 0x1F) << 5 | (c >> 3 & 0x1F) << 10;
 			} else {
-				uint16_t p = ((const uint16_t*) ((const uint8_t*) data + y * pitch))[x];
-				g = pixelFormat == RETRO_PIXEL_FORMAT_RGB565 ? (p >> 5 & 0x3F) * 255 / 63 : (p >> 5 & 0x1F) * 255 / 31;
+				out[y][x] = shade(c >> 8 & 0xFF);
 			}
-			out[y][x] = shade(g);
 		}
 	}
 }
@@ -115,7 +122,10 @@ static double audioSquares;
 static long audioCount;
 static int currentFrame;
 
+static long batchFrames;
+
 static size_t audioBatch(const int16_t* data, size_t frames) {
+	batchFrames += frames;
 	if (currentFrame >= 600) {
 		for (size_t i = 0; i < frames * 2; ++i) {
 			audioSquares += (double) data[i] * data[i];
@@ -177,7 +187,7 @@ static unsigned buttonsAt(const char* script, int frame) {
 	return held;
 }
 
-static uint64_t hashPicture(const uint8_t (*p)[GB_WIDTH]) {
+static uint64_t hashPicture(const uint16_t (*p)[GB_WIDTH]) {
 	uint64_t hash = 1469598103934665603ULL;
 	for (int y = 0; y < GB_HEIGHT; ++y) {
 		for (int x = 0; x < GB_WIDTH; ++x) {
@@ -217,10 +227,12 @@ int main(int argc, char** argv) {
 	if (!mkdtemp(systemDir)) {
 		return 2;
 	}
+	colorModel = getenv("CGB") != NULL;
+	ramBytes = colorModel ? 0x8000 : 0x2000;
 	theirs = calloc(MAX_FRAMES, sizeof(*theirs));
 	theirRam = calloc(frames, sizeof(*theirRam));
 	ourRam = calloc(frames, sizeof(*ourRam));
-	uint8_t(*ours)[GB_HEIGHT][GB_WIDTH] = calloc(frames, sizeof(*ours));
+	uint16_t(*ours)[GB_HEIGHT][GB_WIDTH] = calloc(frames, sizeof(*ours));
 
 	// The other core, frame by frame.
 	void* core = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
@@ -245,11 +257,15 @@ int main(int argc, char** argv) {
 		heldButtons = buttonsAt(script, i);
 		currentFrame = i;
 		int before = theirCount;
+		long samplesBefore = batchFrames;
 		SYM(retro_run)();
+		if (getenv("TIMES") && i < atoi(getenv("TIMES"))) {
+			fprintf(stderr, "theirs %d: %ld samples\n", i, batchFrames - samplesBefore);
+		}
 		const uint8_t* ram = ((void* (*)(unsigned)) dlsym(core, "retro_get_memory_data"))(RETRO_MEMORY_SYSTEM_RAM);
 		size_t ramSize = ((size_t (*)(unsigned)) dlsym(core, "retro_get_memory_size"))(RETRO_MEMORY_SYSTEM_RAM);
-		if (ram && ramSize >= 0x2000) {
-			memcpy(theirRam[i], ram, 0x2000);
+		if (ram && ramSize >= ramBytes) {
+			memcpy(theirRam[i], ram, ramBytes);
 		}
 		// A frame with no picture keeps the last.
 		if (theirCount == before && theirCount && theirCount < MAX_FRAMES) {
@@ -262,27 +278,31 @@ int main(int argc, char** argv) {
 
 	// armGB.
 	static struct GB gb;
-	gb.boot = armgba_dmg_boot;
-	gb.bootSize = sizeof(armgba_dmg_boot);
-	if (!gbLoad(&gb, rom, padded, GB_MODEL_DMG)) {
+	gb.boot = colorModel ? armgba_cgb_boot : armgba_dmg_boot;
+	gb.bootSize = colorModel ? sizeof(armgba_cgb_boot) : sizeof(armgba_dmg_boot);
+	if (!gbLoad(&gb, rom, padded, colorModel ? GB_MODEL_CGB : GB_MODEL_DMG)) {
 		fprintf(stderr, "armGB can't load it\n");
 		return 2;
 	}
 	if (getenv("RAMOUT")) {
 		FILE* o = fopen(getenv("RAMOUT"), "wb");
-		fwrite(theirRam[0], 1, 0x2000, o);
+		fwrite(theirRam[0], 1, ramBytes, o);
 		fclose(o);
 	}
 	// Work RAM starts as the other core's did at power-on (its first frame is the boot ROM's, which
 	// leaves work RAM alone), so games that read it before writing it run alike. For this test only.
-	memcpy(gb.wram, theirRam[0], 0x2000);
+	memcpy(gb.wram, theirRam[0], ramBytes);
 	for (int i = 0; i < frames; ++i) {
 		gb.keys = buttonsAt(script, i);
+		uint32_t started = gb.now;
 		gbRunFrame(&gb);
-		memcpy(ourRam[i], gb.wram, 0x2000);
+		if (getenv("TIMES") && i < atoi(getenv("TIMES"))) {
+			fprintf(stderr, "ours %d: %u dots lcdc %02x frameCount %u double %d pc %04x\n", i, gb.now - started, gb.ppu.lcdc, gb.frameCount, gb.doubleSpeed, gb.cpu.pc);
+		}
+		memcpy(ourRam[i], gb.wram, ramBytes);
 		for (int y = 0; y < GB_HEIGHT; ++y) {
 			for (int x = 0; x < GB_WIDTH; ++x) {
-				ours[i][y][x] = gb.frame[y][x] == GB_SHADE_OFF ? 0 : gb.frame[y][x];
+				ours[i][y][x] = !colorModel && gb.frame[y][x] == GB_SHADE_OFF ? 0 : gb.frame[y][x];
 			}
 		}
 	}
@@ -295,6 +315,8 @@ int main(int argc, char** argv) {
 		hashOurs[i] = hashPicture(ours[i]);
 		hashTheirs[i] = hashPicture(theirs[i]);
 	}
+	// FROM=n: the first unmatched frame is looked for from frame n.
+	int from = getenv("FROM") ? atoi(getenv("FROM")) : 0;
 	int matched = 0, exact = 0, first = -1, unmatched = 0;
 	for (int i = 0; i < n; ++i) {
 		bool found = false;
@@ -308,7 +330,7 @@ int main(int argc, char** argv) {
 			++matched;
 		} else {
 			++unmatched;
-			if (first < 0) {
+			if (first < 0 && i >= from) {
 				first = i;
 			}
 		}
@@ -320,6 +342,12 @@ int main(int argc, char** argv) {
 			if (i >= 0 && i < n) {
 				fprintf(stderr, "%5d ours %04x theirs %04x%s\n", i, (unsigned) (hashOurs[i] & 0xFFFF), (unsigned) (hashTheirs[i] & 0xFFFF), i == first ? "  <" : "");
 			}
+		}
+	}
+	// HASHES=a: both cores' picture hashes from frame a, 100 frames.
+	if (getenv("HASHES")) {
+		for (int i = atoi(getenv("HASHES")); i < n && i < atoi(getenv("HASHES")) + 100; ++i) {
+			fprintf(stderr, "%5d ours %04x theirs %04x\n", i, (unsigned) (hashOurs[i] & 0xFFFF), (unsigned) (hashTheirs[i] & 0xFFFF));
 		}
 	}
 	int differing = 0;
@@ -339,7 +367,8 @@ int main(int argc, char** argv) {
 			fprintf(o, "P5\n%d %d\n255\n", GB_WIDTH, GB_HEIGHT);
 			for (int y = 0; y < GB_HEIGHT; ++y) {
 				for (int x = 0; x < GB_WIDTH; ++x) {
-					fputc(255 - (which ? theirs[first][y][x] : ours[first][y][x]) * 85, o);
+					uint16_t v = which ? theirs[first][y][x] : ours[first][y][x];
+					fputc(colorModel ? ((v & 31) + (v >> 5 & 31) + (v >> 10 & 31)) * 255 / 93 : 255 - v * 85, o);
 				}
 			}
 			fclose(o);
@@ -348,7 +377,7 @@ int main(int argc, char** argv) {
 	// The first frame whose work RAM differs, and where.
 	int ramFirst = -1, ramAt = -1;
 	for (int i = 0; i < frames && ramFirst < 0; ++i) {
-		for (int a = 0; a < 0x2000; ++a) {
+		for (int a = 0; a < (int) ramBytes; ++a) {
 			if (ourRam[i][a] != theirRam[i][a]) {
 				ramFirst = i;
 				ramAt = 0xC000 + a;
@@ -357,7 +386,7 @@ int main(int argc, char** argv) {
 		}
 	}
 	if (getenv("RAMDIFF") && ramFirst >= 0) {
-		for (int a = 0, shown = 0; a < 0x2000 && shown < 12; ++a) {
+		for (int a = 0, shown = 0; a < (int) ramBytes && shown < (getenv("RAMALL") ? 100000 : 12); ++a) {
 			if (ourRam[ramFirst][a] != theirRam[ramFirst][a]) {
 				fprintf(stderr, "frame %d $%04X ours %02X theirs %02X (frame before: ours %02X theirs %02X)\n", ramFirst, 0xC000 + a,
 				        ourRam[ramFirst][a], theirRam[ramFirst][a], ramFirst ? ourRam[ramFirst - 1][a] : 0, ramFirst ? theirRam[ramFirst - 1][a] : 0);
