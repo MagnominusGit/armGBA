@@ -12,7 +12,7 @@
 
 enum {
 	LCDC_ON = 0x80,
-	// Dots a VRAM DMA takes for each 16 bytes: 8 M-cycles at single speed.
+	// Dots a VRAM DMA takes for each 16 bytes, 2 a byte at either speed (SameBoy).
 	BLOCK_DOTS = 32,
 };
 
@@ -26,10 +26,13 @@ static bool palettesLocked(struct GB* gb) {
 	return (gb->ppu.lcdc & LCDC_ON) && gb->ppu.mode == 3;
 }
 
-// Moves 16-byte blocks from the source to VRAM.
+// Moves 16-byte blocks from the source to VRAM, the CPU waiting: 2 dots before the first byte, and
+// at single speed 2 after the last (SameBoy). The destination is kept whole, VRAM taking its low 13
+// bits; past FFFF the transfer stops, the blocks left as they were.
 static void copyBlocks(struct GB* gb, unsigned blocks) {
 	struct GBCgb* cgb = &gb->cgb;
 	gbPpuSync(gb);
+	gb->now += 2;
 	for (unsigned b = 0; b < blocks && cgb->hdmaBlocks; ++b) {
 		for (int i = 0; i < 16; ++i) {
 			uint16_t from = cgb->hdmaSource + i;
@@ -37,10 +40,16 @@ static void copyBlocks(struct GB* gb, unsigned blocks) {
 			gb->vram[(gb->vramBank & 1) * 0x2000 + ((cgb->hdmaDest + i) & 0x1FFF)] = value;
 		}
 		cgb->hdmaSource += 16;
-		cgb->hdmaDest = 0x8000 | ((cgb->hdmaDest + 16) & 0x1FF0);
-		--cgb->hdmaBlocks;
-		// The CPU waits while the bytes move.
+		cgb->hdmaDest += 16;
 		gb->now += BLOCK_DOTS;
+		--cgb->hdmaBlocks;
+		if (!cgb->hdmaDest) {
+			cgb->hdmaHblank = false;
+			break;
+		}
+	}
+	if (!gb->doubleSpeed) {
+		gb->now += 2;
 	}
 	if (!cgb->hdmaBlocks) {
 		cgb->hdmaHblank = false;
@@ -148,30 +157,35 @@ void gbCgbWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 		break;
 	case 0x51:
 		cgb->hdmaSource = (cgb->hdmaSource & 0x00F0) | value << 8;
+		// E000 and up read as F000 and up (SameBoy).
+		if (cgb->hdmaSource >= 0xE000) {
+			cgb->hdmaSource |= 0xF000;
+		}
 		break;
 	case 0x52:
 		cgb->hdmaSource = (cgb->hdmaSource & 0xFF00) | (value & 0xF0);
 		break;
 	case 0x53:
-		cgb->hdmaDest = 0x8000 | ((value & 0x1F) << 8) | (cgb->hdmaDest & 0xF0);
+		cgb->hdmaDest = value << 8 | (cgb->hdmaDest & 0xF0);
 		break;
 	case 0x54:
-		cgb->hdmaDest = 0x8000 | (cgb->hdmaDest & 0x1F00) | (value & 0xF0);
+		cgb->hdmaDest = (cgb->hdmaDest & 0xFF00) | (value & 0xF0);
 		break;
 	case 0x55:
-		// Writing bit 7 clear during an H-blank DMA stops it.
+		// Writing bit 7 clear during an H-blank DMA stops it, its count taken from the write (read
+		// back with bit 7 set, as SameBoy has it).
 		if (cgb->hdmaHblank && !(value & 0x80)) {
 			cgb->hdmaHblank = false;
-			cgb->hdmaBlocks = 0;
+			cgb->hdmaBlocks = (value & 0x7F) + 1;
 			break;
 		}
 		cgb->hdmaBlocks = (value & 0x7F) + 1;
 		if (value & 0x80) {
 			cgb->hdmaHblank = true;
 			gbPpuReplan(gb);
-			// Started in an H-blank with the LCD on, a block moves at once.
+			// Started in an H-blank, or with the LCD off, a block moves at once.
 			gbPpuSync(gb);
-			if ((gb->ppu.lcdc & LCDC_ON) && gb->ppu.mode == 0 && gb->ppu.line < GB_HEIGHT) {
+			if (!(gb->ppu.lcdc & LCDC_ON) || (gb->ppu.mode == 0 && gb->ppu.line < GB_HEIGHT)) {
 				copyBlocks(gb, 1);
 			}
 		} else {
