@@ -1253,7 +1253,7 @@ void takeSound() {
 }
 
 // Runs the selected console for some samples, or to the end of a frame; count becomes the samples run.
-// Returns whether a frame ended, its picture then in shown too.
+// Returns whether a frame ended, its picture then in shown too when linked.
 bool runFor(std::size_t& count) {
 	uint32_t dots = static_cast<uint32_t>(count * 2) - s->overDot;
 	bool const ended = gbRunFor(s->gb, &dots);
@@ -1261,7 +1261,8 @@ bool runFor(std::size_t& count) {
 	count = total / 2;
 	s->overDot = total % 2;
 	takeSound();
-	if (ended) {
+	// A whole picture kept apart only where a frame can end mid-picture: linked.
+	if (ended && (s->linked || players > 1)) {
 		std::memcpy(s->shown, s->pixels, sizeof(s->shown));
 	}
 	return ended;
