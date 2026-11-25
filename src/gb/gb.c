@@ -100,8 +100,10 @@ void gbReset(struct GB* gb) {
 	gb->joypadSelect = 0x30;
 	gb->wramBank = 1;
 	if (gb->boot) {
-		// Power on into the boot ROM: everything at 0, the LCD off.
+		// Power on into the boot ROM: everything at 0 but the divider, which starts at 8 (as SameBoy
+		// has it), and the LCD off.
 		gb->bootMapped = true;
+		gb->timer.counter = 8;
 		gb->timer.reloadedAt = gb->now - 0x10000;
 		gbMapRom(gb);
 		gbPpuReset(gb);

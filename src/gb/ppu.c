@@ -7,15 +7,37 @@
 // The PPU (Pan Docs, "Rendering" and "STAT"). A line is 456 dots: OAM scan (mode 2) for 80, drawing
 // (mode 3) for 172 dots or more, then H-blank (mode 0); lines 144 to 153 are V-blank (mode 1). The
 // PPU moves from step to step by an event, and draws a whole line where mode 3 ends.
+//
+// When within a line LY, STAT's mode and the LY=LYC comparison change, and when the STAT interrupt
+// line sees them, follow SameBoy's PPU (Lior Halphon, MIT; Core/display.c), which measured them.
 
 enum {
+	// Lines 0 to 143.
+	STEP_OAM_WRITE,
+	STEP_LY,
 	STEP_OAM,
+	STEP_OAM_LATE,
+	STEP_MODE3,
 	STEP_DRAW,
-	STEP_HBLANK,
+	STEP_MODE0,
+	STEP_HBLANK_INT,
+	STEP_PRE_OAM,
 	STEP_LINE_END,
-	STEP_VBLANK,
-	STEP_LY_ZERO,
-	STEP_VBLANK_END,
+	// The first line after the LCD is switched on.
+	STEP_FIRST,
+	STEP_FIRST_OAM_WRITE,
+	STEP_FIRST_MODE3,
+	STEP_FIRST_VRAM,
+	// Lines 144 to 152.
+	STEP_V_START,
+	STEP_V_LY,
+	STEP_V_COMPARE,
+	STEP_V_BLANK,
+	// Line 153.
+	STEP_L153_LY,
+	STEP_L153_ZERO,
+	STEP_L153_LYC0,
+	STEP_L153_COMPARE,
 };
 
 enum {
@@ -65,7 +87,7 @@ static unsigned drawLength(const struct GB* gb) {
 		return length;
 	}
 	struct LineObjects objects;
-	findObjects(gb, ppu->ly, &objects);
+	findObjects(gb, ppu->line, &objects);
 	bool tileSeen[32] = { false };
 	for (int i = 0; i < objects.count; ++i) {
 		int x = gb->oam[objects.index[i] * 4 + 1];
@@ -105,7 +127,10 @@ static uint16_t tileAddress(const struct GBPpu* ppu, uint8_t tile) {
 
 static void drawLine(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
-	int y = ppu->ly;
+	int y = ppu->line;
+	if (y >= GB_HEIGHT) {
+		return;
+	}
 	uint8_t index[GB_WIDTH];
 	uint16_t* out = gb->frame[y];
 	if (ppu->lcdc & LCDC_BG) {
@@ -175,99 +200,257 @@ static void drawLine(struct GB* gb) {
 	}
 }
 
-// The STAT interrupt line: a request goes out when it rises.
+// SameBoy's GB_STAT_update: the coincidence bit and the STAT interrupt line, from the comparison
+// LY and the mode the interrupt goes by.
 static void updateStat(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
-	bool line = (ppu->lyMatch && (ppu->stat & 0x40)) || (ppu->mode == 0 && (ppu->stat & 0x08)) ||
-	            (ppu->mode == 1 && (ppu->stat & 0x10)) || (ppu->mode == 2 && (ppu->stat & 0x20));
+	if (!(ppu->lcdc & LCDC_ON)) {
+		return;
+	}
+	if (gb->dma.active && ppu->mode == 2) {
+		ppu->mode = 0;
+	}
+	bool single = gb->model != GB_MODEL_CGB || !gb->doubleSpeed;
+	if (ppu->lyCompare >= 0 || single) {
+		if (ppu->lyCompare == ppu->lyc) {
+			ppu->lycLine = true;
+			ppu->coincidence = true;
+		} else {
+			if (ppu->lyCompare >= 0) {
+				ppu->lycLine = false;
+			}
+			ppu->coincidence = false;
+		}
+	}
+	bool line;
+	switch (ppu->modeForInterrupt) {
+	case 0:
+		line = ppu->stat & 0x08;
+		break;
+	case 1:
+		line = ppu->stat & 0x10;
+		break;
+	case 2:
+		line = ppu->stat & 0x20;
+		break;
+	default:
+		line = false;
+		break;
+	}
+	if ((ppu->stat & 0x40) && ppu->lycLine) {
+		line = true;
+	}
 	if (line && !ppu->statLine) {
 		gbRequest(gb, GB_IRQ_STAT);
 	}
 	ppu->statLine = line;
 }
 
-static void compareLy(struct GB* gb) {
-	gb->ppu.lyMatch = gb->ppu.ly == gb->ppu.lyc;
-}
-
-static void next(struct GB* gb, int step, uint32_t offset) {
+static void next(struct GB* gb, int step, uint32_t at) {
 	struct GBPpu* ppu = &gb->ppu;
 	ppu->step = step;
-	ppu->nextAt = ppu->lineStart + offset;
-	gbSchedule(gb, GB_EVENT_PPU, ppu->nextAt);
+	ppu->nextAt = at;
+	gbSchedule(gb, GB_EVENT_PPU, at);
 }
 
-static void startLine(struct GB* gb) {
+// A new line starts, at time start.
+static void beginLine(struct GB* gb, uint32_t start) {
 	struct GBPpu* ppu = &gb->ppu;
-	if (ppu->ly < GB_HEIGHT) {
-		if (ppu->ly == ppu->wy) {
-			ppu->windowSeen = true;
-		}
-		ppu->mode = ppu->firstLine ? 0 : 2;
-		compareLy(gb);
-		updateStat(gb);
-		next(gb, STEP_DRAW, 80);
-		return;
-	}
-	if (ppu->ly == GB_HEIGHT) {
-		ppu->mode = 1;
-		compareLy(gb);
-		gbRequest(gb, GB_IRQ_VBLANK);
-		// The OAM interrupt goes off at V-blank's start too.
-		bool oam = ppu->stat & 0x20;
-		updateStat(gb);
-		if (oam && !ppu->statLine) {
-			gbRequest(gb, GB_IRQ_STAT);
-		}
-		gb->frameEnded = true;
-		++gb->frameCount;
-		next(gb, STEP_LINE_END, GB_LINE_DOTS);
-		return;
-	}
-	compareLy(gb);
-	updateStat(gb);
-	if (ppu->ly == GB_LINES - 1) {
-		next(gb, STEP_LY_ZERO, 4);
+	ppu->lineStart = start;
+	ppu->lineEnd = start + GB_LINE_DOTS;
+	if (ppu->line < GB_HEIGHT) {
+		bool cgb = gb->model == GB_MODEL_CGB;
+		ppu->oamWriteBlocked = cgb && !gb->doubleSpeed;
+		next(gb, STEP_OAM_WRITE, start + 2);
 	} else {
-		next(gb, STEP_LINE_END, GB_LINE_DOTS);
+		ppu->lyCompare = -1;
+		updateStat(gb);
+		next(gb, ppu->line == GB_LINES - 1 ? STEP_L153_LY : STEP_V_LY, start + 2);
 	}
+}
+
+// Mode 3 has begun to fetch: the line is drawn as a whole where it ends.
+static void startDrawing(struct GB* gb, uint32_t at) {
+	struct GBPpu* ppu = &gb->ppu;
+	ppu->drawStart = at;
+	ppu->mode3Length = drawLength(gb);
+	next(gb, STEP_MODE0, at + ppu->mode3Length - 5);
 }
 
 // Runs the step due now.
 static void advance(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
+	bool single = gb->model != GB_MODEL_CGB || !gb->doubleSpeed;
 	switch (ppu->step) {
-	case STEP_DRAW:
-		ppu->firstLine = false;
-		ppu->mode = 3;
-		ppu->mode3Length = drawLength(gb);
-		updateStat(gb);
-		next(gb, STEP_HBLANK, 80 + ppu->mode3Length);
+	case STEP_OAM_WRITE:
+		ppu->oamWriteBlocked = gb->model == GB_MODEL_CGB;
+		next(gb, STEP_LY, ppu->lineStart + 3);
 		break;
-	case STEP_HBLANK:
-		drawLine(gb);
-		ppu->mode = 0;
+	case STEP_LY:
+		ppu->oamReadBlocked = true;
+		ppu->ly = ppu->line;
+		ppu->lyCompare = ppu->line ? -1 : 0;
+		if (ppu->line) {
+			ppu->modeForInterrupt = 2;
+			ppu->mode = 0;
+		} else if (gb->model != GB_MODEL_CGB) {
+			ppu->mode = 0;
+		}
 		updateStat(gb);
-		next(gb, STEP_LINE_END, GB_LINE_DOTS);
+		next(gb, STEP_OAM, ppu->lineStart + 4);
+		break;
+	case STEP_OAM:
+		ppu->oamReadBlocked = true;
+		ppu->oamWriteBlocked = true;
+		ppu->mode = 2;
+		ppu->modeForInterrupt = 2;
+		ppu->lyCompare = ppu->line;
+		if (ppu->ly == ppu->wy) {
+			ppu->windowSeen = true;
+		}
+		updateStat(gb);
+		ppu->modeForInterrupt = -1;
+		updateStat(gb);
+		next(gb, STEP_OAM_LATE, ppu->lineStart + 80);
+		break;
+	case STEP_OAM_LATE:
+		// Near the scan's end, VRAM writes open for a moment, and reads close on the original.
+		ppu->vramReadBlocked = gb->model != GB_MODEL_CGB;
+		ppu->vramWriteBlocked = false;
+		ppu->oamWriteBlocked = gb->model == GB_MODEL_CGB;
+		next(gb, STEP_MODE3, ppu->lineStart + 84);
+		break;
+	case STEP_MODE3:
+		ppu->mode = 3;
+		ppu->modeForInterrupt = 3;
+		ppu->vramReadBlocked = true;
+		ppu->vramWriteBlocked = true;
+		ppu->oamReadBlocked = true;
+		ppu->oamWriteBlocked = true;
+		updateStat(gb);
+		next(gb, STEP_DRAW, ppu->lineStart + 89);
+		break;
+	case STEP_DRAW:
+		startDrawing(gb, ppu->nextAt);
+		break;
+	case STEP_MODE0:
+		// Mode 3 ends: STAT shows mode 0 now, and its interrupt comes a dot later.
+		drawLine(gb);
+		if (single) {
+			ppu->mode = 0;
+			ppu->modeForInterrupt = 0;
+			ppu->oamReadBlocked = false;
+			ppu->vramReadBlocked = false;
+			ppu->oamWriteBlocked = false;
+			ppu->vramWriteBlocked = false;
+		}
+		next(gb, STEP_HBLANK_INT, ppu->nextAt + 1);
+		break;
+	case STEP_HBLANK_INT:
+		ppu->oamReadBlocked = false;
+		ppu->vramReadBlocked = false;
+		ppu->oamWriteBlocked = false;
+		ppu->vramWriteBlocked = false;
+		ppu->mode = 0;
+		ppu->modeForInterrupt = 0;
+		updateStat(gb);
+		next(gb, STEP_PRE_OAM, ppu->lineEnd - 2);
+		break;
+	case STEP_PRE_OAM:
+		if (ppu->line != GB_HEIGHT - 1) {
+			ppu->modeForInterrupt = 2;
+		}
+		next(gb, STEP_LINE_END, ppu->lineEnd);
 		break;
 	case STEP_LINE_END:
-		ppu->lineStart += GB_LINE_DOTS;
-		++ppu->ly;
-		startLine(gb);
+		if (++ppu->line == GB_LINES) {
+			ppu->line = 0;
+			ppu->windowLine = 0;
+			ppu->windowSeen = false;
+		}
+		ppu->firstLine = false;
+		beginLine(gb, ppu->lineEnd);
 		break;
-	case STEP_LY_ZERO:
-		// Line 153 reads as 0 after its first dots.
-		ppu->ly = 0;
-		compareLy(gb);
+	case STEP_FIRST:
+		// SameBoy's line 0 after the LCD is switched on: mode 0 instead of the OAM scan.
+		ppu->mode = 0;
+		ppu->lyCompare = 0;
+		ppu->modeForInterrupt = -1;
+		ppu->oamReadBlocked = false;
+		ppu->vramReadBlocked = false;
+		ppu->oamWriteBlocked = false;
+		ppu->vramWriteBlocked = false;
 		updateStat(gb);
-		next(gb, STEP_VBLANK_END, GB_LINE_DOTS);
+		next(gb, STEP_FIRST_OAM_WRITE, ppu->nextAt + 76);
 		break;
-	case STEP_VBLANK_END:
-		ppu->lineStart += GB_LINE_DOTS;
+	case STEP_FIRST_OAM_WRITE:
+		ppu->oamWriteBlocked = true;
+		next(gb, STEP_FIRST_MODE3, ppu->nextAt + 2);
+		break;
+	case STEP_FIRST_MODE3:
+		ppu->mode = 3;
+		ppu->modeForInterrupt = 3;
+		ppu->oamWriteBlocked = true;
+		ppu->oamReadBlocked = true;
+		ppu->vramReadBlocked = gb->model != GB_MODEL_CGB || gb->doubleSpeed;
+		ppu->vramWriteBlocked = ppu->vramReadBlocked;
+		next(gb, STEP_FIRST_VRAM, ppu->nextAt + 5);
+		break;
+	case STEP_FIRST_VRAM:
+		ppu->vramReadBlocked = true;
+		ppu->vramWriteBlocked = true;
+		startDrawing(gb, ppu->nextAt);
+		break;
+	case STEP_V_LY:
+		ppu->ly = ppu->line;
+		if (ppu->line == GB_HEIGHT && !ppu->statLine && (ppu->stat & 0x20)) {
+			gbRequest(gb, GB_IRQ_STAT);
+		}
+		next(gb, STEP_V_COMPARE, ppu->lineStart + 4);
+		break;
+	case STEP_V_COMPARE:
+		ppu->lyCompare = ppu->line;
+		updateStat(gb);
+		if (ppu->line == GB_HEIGHT) {
+			next(gb, STEP_V_BLANK, ppu->lineStart + 5);
+		} else {
+			next(gb, STEP_LINE_END, ppu->lineEnd);
+		}
+		break;
+	case STEP_V_BLANK:
+		ppu->mode = 1;
+		gbRequest(gb, GB_IRQ_VBLANK);
+		if (!ppu->statLine && (ppu->stat & 0x20)) {
+			gbRequest(gb, GB_IRQ_STAT);
+		}
+		ppu->modeForInterrupt = 1;
+		updateStat(gb);
+		gb->frameEnded = true;
+		++gb->frameCount;
+		next(gb, STEP_LINE_END, ppu->lineEnd);
+		break;
+	case STEP_L153_LY:
+		ppu->ly = 153;
+		next(gb, STEP_L153_ZERO, ppu->lineStart + (gb->model == GB_MODEL_CGB ? 4 : 6));
+		break;
+	case STEP_L153_ZERO:
+		if (single && gb->model != GB_MODEL_CGB) {
+			ppu->ly = 0;
+		}
+		ppu->lyCompare = 153;
+		updateStat(gb);
+		next(gb, STEP_L153_LYC0, ppu->lineStart + 8);
+		break;
+	case STEP_L153_LYC0:
 		ppu->ly = 0;
-		ppu->windowLine = 0;
-		ppu->windowSeen = false;
-		startLine(gb);
+		ppu->lyCompare = gb->model == GB_MODEL_CGB && gb->doubleSpeed ? 153 : -1;
+		updateStat(gb);
+		next(gb, STEP_L153_COMPARE, ppu->lineStart + 12);
+		break;
+	case STEP_L153_COMPARE:
+		ppu->lyCompare = 0;
+		updateStat(gb);
+		next(gb, STEP_LINE_END, ppu->lineEnd);
 		break;
 	}
 }
@@ -282,14 +465,41 @@ void gbPpuSync(struct GB* gb) {
 	gbPpuEvent(gb);
 }
 
+static void lcdOn(struct GB* gb) {
+	struct GBPpu* ppu = &gb->ppu;
+	ppu->line = 0;
+	ppu->ly = 0;
+	ppu->firstLine = true;
+	ppu->windowLine = 0;
+	ppu->windowSeen = false;
+	// The first line is 8 dots short, and starts a dot late on the original Game Boy.
+	unsigned late = gb->model == GB_MODEL_CGB ? 0 : 1;
+	ppu->lineStart = gb->now + late;
+	ppu->lineEnd = gb->now + late + GB_LINE_DOTS - 8;
+	next(gb, STEP_FIRST, gb->now + late);
+}
+
+static void lcdOff(struct GB* gb) {
+	struct GBPpu* ppu = &gb->ppu;
+	ppu->oamReadBlocked = false;
+	ppu->vramReadBlocked = false;
+	ppu->oamWriteBlocked = false;
+	ppu->vramWriteBlocked = false;
+	ppu->ly = 0;
+	ppu->line = 0;
+	ppu->mode = 0;
+	ppu->windowLine = 0;
+	ppu->windowSeen = false;
+	gbUnschedule(gb, GB_EVENT_PPU);
+}
+
 void gbPpuReset(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
 	memset(ppu, 0, sizeof(*ppu));
 	ppu->lcdc = 0x91;
-	ppu->stat = 0x80;
 	ppu->bgp = 0xFC;
-	ppu->lineStart = gb->now;
-	startLine(gb);
+	ppu->modeForInterrupt = -1;
+	lcdOn(gb);
 }
 
 uint8_t gbPpuRead(struct GB* gb, uint8_t reg) {
@@ -299,7 +509,7 @@ uint8_t gbPpuRead(struct GB* gb, uint8_t reg) {
 	case 0x40:
 		return ppu->lcdc;
 	case 0x41:
-		return 0x80 | (ppu->stat & 0x78) | (ppu->lyMatch ? 4 : 0) | (ppu->lcdc & LCDC_ON ? ppu->mode : 0);
+		return 0x80 | (ppu->stat & 0x78) | (ppu->coincidence ? 4 : 0) | (ppu->lcdc & LCDC_ON ? ppu->mode : 0);
 	case 0x42:
 		return ppu->scy;
 	case 0x43:
@@ -331,17 +541,9 @@ void gbPpuWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 		uint8_t old = ppu->lcdc;
 		ppu->lcdc = value;
 		if ((old & LCDC_ON) && !(value & LCDC_ON)) {
-			ppu->ly = 0;
-			ppu->mode = 0;
-			ppu->windowLine = 0;
-			ppu->windowSeen = false;
-			gbUnschedule(gb, GB_EVENT_PPU);
-			updateStat(gb);
+			lcdOff(gb);
 		} else if (!(old & LCDC_ON) && (value & LCDC_ON)) {
-			ppu->ly = 0;
-			ppu->lineStart = gb->now;
-			ppu->firstLine = true;
-			startLine(gb);
+			lcdOn(gb);
 		}
 		break;
 	}
@@ -359,10 +561,7 @@ void gbPpuWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 		break;
 	case 0x45:
 		ppu->lyc = value;
-		if (ppu->lcdc & LCDC_ON) {
-			compareLy(gb);
-			updateStat(gb);
-		}
+		updateStat(gb);
 		break;
 	case 0x46:
 		ppu->dma = value;

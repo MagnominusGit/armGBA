@@ -61,13 +61,18 @@ bool gbCartInit(struct GB* gb) {
 		cart->romBanks = 1;
 	}
 	cart->romBank = 1;
+	// A 1 MiB MBC1 cartridge with a second header at bank $10 is a multicart.
+	if (cart->mapper == GB_MBC1 && gb->romSize == 0x100000 && !memcmp(rom + 0x104, rom + 0x40104, 0x30)) {
+		cart->mbc1Multicart = true;
+	}
 	return true;
 }
 
 static void mbc1Banks(struct GB* gb) {
 	struct GBCart* cart = &gb->cart;
-	uint8_t low = cart->romBank & 0x1F;
-	cart->romBank = (cart->mbc1Upper << 5) | (low ? low : 1);
+	uint8_t low = cart->mbc1Low;
+	low = low ? low : 1;
+	cart->romBank = cart->mbc1Multicart ? (cart->mbc1Upper << 4) | (low & 0xF) : (cart->mbc1Upper << 5) | low;
 	cart->ramBank = cart->mbc1Mode ? cart->mbc1Upper : 0;
 }
 
@@ -80,7 +85,7 @@ void gbCartWrite(struct GB* gb, uint16_t address, uint8_t value) {
 			cart->ramEnabled = (value & 0xF) == 0xA;
 			break;
 		case 1:
-			cart->romBank = (cart->romBank & ~0x1F) | (value & 0x1F);
+			cart->mbc1Low = value & 0x1F;
 			mbc1Banks(gb);
 			break;
 		case 2:

@@ -30,7 +30,7 @@ static const uint8_t ioUnused[0x80] = {
 void gbMapRom(struct GB* gb) {
 	const struct GBCart* cart = &gb->cart;
 	size_t mask = gb->romSize - 1;
-	size_t low = (size_t) (cart->mapper == GB_MBC1 && cart->mbc1Mode ? cart->mbc1Upper << 5 : 0) * 0x4000 & mask;
+	size_t low = (size_t) (cart->mapper == GB_MBC1 && cart->mbc1Mode ? cart->mbc1Upper << (cart->mbc1Multicart ? 4 : 5) : 0) * 0x4000 & mask;
 	size_t high = (size_t) cart->romBank * 0x4000 & mask;
 	for (int i = 0; i < 4; ++i) {
 		gb->memMap[i] = gb->rom + low + i * 0x1000;
@@ -101,6 +101,7 @@ void gbDmaSync(struct GB* gb) {
 void gbDmaStart(struct GB* gb, uint8_t page) {
 	struct GBDma* dma = &gb->dma;
 	gbDmaSync(gb);
+	dma->overlap = dma->active && dmaIndex(gb) >= 0;
 	dma->active = true;
 	dma->source = page << 8;
 	dma->start = gb->now;
@@ -117,10 +118,18 @@ static bool dmaConflict(struct GB* gb, uint16_t address, uint8_t* value) {
 		return false;
 	}
 	int index = dmaIndex(gb);
+	if (index >= 0) {
+		dma->overlap = false;
+	}
+	bool oam = address >= 0xFE00 && address < 0xFF00;
+	if (index < 0 && dma->overlap && oam) {
+		*value = 0xFF;
+		return true;
+	}
 	if (index < 0 || index >= 160) {
 		return false;
 	}
-	if (address >= 0xFE00 && address < 0xFF00) {
+	if (oam) {
 		*value = 0xFF;
 		return true;
 	}
@@ -239,7 +248,7 @@ uint8_t gbRead(struct GB* gb, uint16_t address) {
 	case 0x8:
 	case 0x9:
 		gbPpuSync(gb);
-		if (gb->ppu.mode == 3) {
+		if (gb->ppu.vramReadBlocked) {
 			return 0xFF;
 		}
 		return gb->vram[(gb->vramBank & 1) * 0x2000 + (address & 0x1FFF)];
@@ -252,7 +261,7 @@ uint8_t gbRead(struct GB* gb, uint16_t address) {
 		}
 		if (address < 0xFEA0) {
 			gbPpuSync(gb);
-			if (gb->ppu.mode >= 2) {
+			if (gb->ppu.oamReadBlocked) {
 				return 0xFF;
 			}
 			return gb->oam[address & 0xFF];
@@ -287,7 +296,7 @@ void gbWrite(struct GB* gb, uint16_t address, uint8_t value) {
 	case 0x8:
 	case 0x9:
 		gbPpuSync(gb);
-		if (gb->ppu.mode != 3) {
+		if (!gb->ppu.vramWriteBlocked) {
 			gb->vram[(gb->vramBank & 1) * 0x2000 + (address & 0x1FFF)] = value;
 		}
 		return;
@@ -308,7 +317,7 @@ void gbWrite(struct GB* gb, uint16_t address, uint8_t value) {
 		} else if (address < 0xFEA0) {
 			gbPpuSync(gb);
 			gbDmaSync(gb);
-			if (gb->ppu.mode < 2 && !(gb->dma.active && dmaIndex(gb) >= 0)) {
+			if (!gb->ppu.oamWriteBlocked && !(gb->dma.active && (dmaIndex(gb) >= 0 || gb->dma.overlap))) {
 				gb->oam[address & 0xFF] = value;
 			}
 		} else if (address < 0xFF00) {

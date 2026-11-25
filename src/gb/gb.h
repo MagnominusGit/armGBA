@@ -98,23 +98,34 @@ struct GBTimer {
 };
 
 struct GBPpu {
-	// The line, the time its dot 0 came, and where in the line the PPU is: the next step, at nextAt.
+	// The line the PPU is on (LY is the register, which changes a few dots into a line), when the line
+	// started, and the step it takes next, at nextAt.
+	uint8_t line;
 	uint8_t ly;
 	uint8_t step;
 	uint32_t lineStart;
+	uint32_t lineEnd;
+	uint32_t drawStart;
 	uint32_t nextAt;
 	uint16_t mode3Length;
 	uint8_t lcdc, stat, scy, scx, lyc, bgp, obp0, obp1, wy, wx, dma;
+	// The mode STAT shows, and the one its interrupt line goes by (-1: none), which differ for a dot
+	// at some edges.
 	uint8_t mode;
+	int8_t modeForInterrupt;
+	// The LY that LYC is compared with: -1 while LY changes.
+	int16_t lyCompare;
+	bool coincidence;
+	bool lycLine;
 	// The STAT interrupt line: a request goes out when it rises.
 	bool statLine;
-	bool lyMatch;
-	// The window's own line counter.
+	// The window's own line counter, and whether LY has matched WY this frame.
 	uint8_t windowLine;
 	bool windowSeen;
-	// The line being shown just after the LCD is switched on, which has no mode 2.
+	// The line being shown just after the LCD is switched on, which has no OAM scan.
 	bool firstLine;
-	bool frameDone;
+	// When the CPU is locked out of OAM and VRAM, which isn't quite when STAT's mode says.
+	bool oamReadBlocked, oamWriteBlocked, vramReadBlocked, vramWriteBlocked;
 };
 
 struct GBSerial {
@@ -129,6 +140,8 @@ struct GBDma {
 	uint16_t source;
 	uint32_t start;
 	uint8_t done;
+	// Restarted while moving bytes: the old transfer keeps OAM locked while the new one waits.
+	bool overlap;
 };
 
 struct GBCart {
@@ -138,7 +151,10 @@ struct GBCart {
 	uint16_t romBank;
 	uint8_t ramBank;
 	uint8_t mbc1Mode;
+	uint8_t mbc1Low;
 	uint8_t mbc1Upper;
+	// MBC1 multicart (MBC1M): the upper bits bank by 16 banks, not 32.
+	bool mbc1Multicart;
 	uint32_t romBanks;
 	uint32_t ramSize;
 };
