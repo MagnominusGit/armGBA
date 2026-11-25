@@ -226,15 +226,22 @@ static void runNoise(struct GB* gb, uint32_t t, uint32_t cycles, struct Spans* s
 						unsigned mask = apu->narrow ? 0x4040 : 0x4000;
 						int32_t high = 2 * ch->volume - 15, v = dacOut(ch);
 						uint32_t k = 1;
-						// The 15-bit LFSR eight steps at a time: the outputs are bits 1-8, the new bits each
-						// pair's XNOR.
-						for (; !apu->narrow && k + 7 <= steps; k += 8) {
+						// The LFSR several steps at a time, 8 at 15 bits or 6 at 7: the outputs are the next
+						// bits up, the new bits each pair's XNOR.
+						unsigned batch = apu->narrow ? 6 : 8;
+						for (; k + batch - 1 <= steps; k += batch) {
 							uint32_t x = lfsr;
-							uint32_t outs = (x >> 1) & 0xFF;
-							bit7 = x >> 14 & 1;
-							lfsr = (uint16_t) ((x >> 8) | ((~(x ^ (x >> 1)) & 0xFF) << 7));
+							uint32_t outs = (x >> 1) & ((1u << batch) - 1);
+							uint32_t xnor = ~(x ^ (x >> 1)) & ((1u << batch) - 1);
+							if (apu->narrow) {
+								bit7 = x >> 12 & 1;
+								lfsr = (uint16_t) (((x >> 6) & 0x181) | (xnor << 1) | (xnor << 9));
+							} else {
+								bit7 = x >> 14 & 1;
+								lfsr = (uint16_t) ((x >> 8) | (xnor << 7));
+							}
 							if (spans && high != -15) {
-								uint32_t changes = (outs ^ ((outs << 1) | (v == high))) & 0xFF;
+								uint32_t changes = (outs ^ ((outs << 1) | (v == high))) & ((1u << batch) - 1);
 								for (; changes; changes &= changes - 1) {
 									int j = __builtin_ctz(changes);
 									at = t + (cycles - left + (k + j) * period) * 2;
