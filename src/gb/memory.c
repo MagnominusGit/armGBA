@@ -33,10 +33,18 @@ void gbMapRom(struct GB* gb) {
 	const struct GBCart* cart = &gb->cart;
 	size_t mask = gb->romSize - 1;
 	size_t low = (size_t) (cart->mapper == GB_MBC1 && cart->mbc1Mode ? cart->mbc1Upper << (cart->mbc1Multicart ? 4 : 5) : 0) * 0x4000 & mask;
+	if (cart->bank0Mapped) {
+		low = (size_t) cart->bank0 * 0x4000 & mask;
+	}
 	size_t high = (size_t) cart->romBank * 0x4000 & mask;
 	for (int i = 0; i < 4; ++i) {
 		gb->memMap[i] = gb->rom + low + i * 0x1000;
 		gb->memMap[4 + i] = gb->rom + high + i * 0x1000;
+	}
+	if (cart->halves) {
+		for (int i = 0; i < 4; ++i) {
+			gb->memMap[4 + i] = gb->rom + ((size_t) cart->half[i >> 1] * 0x2000 & mask) + (i & 1) * 0x1000;
+		}
 	}
 	unsigned bank = gb->cgbMode ? (gb->wramBank & 7 ? gb->wramBank & 7 : 1) : 1;
 	gb->memMap[0xC] = gb->wram;
@@ -45,7 +53,8 @@ void gbMapRom(struct GB* gb) {
 	for (int i = 0; i < 16; ++i) {
 		gb->readMap[i] = gb->dma.active ? NULL : gb->memMap[i];
 	}
-	if (gb->bootMapped) {
+	// Sachen's header page reads through its scrambled address lines.
+	if (gb->bootMapped || cart->mapper == GB_SACHEN) {
 		gb->readMap[0] = NULL;
 	}
 	if (cart->romTransformed) {
@@ -305,6 +314,9 @@ uint8_t gbRead(struct GB* gb, uint16_t address) {
 	case 0x0:
 		if (gb->bootMapped && (address < 0x100 || (gb->bootSize > 0x100 && address >= 0x200 && address < 0x900))) {
 			return gb->boot[address];
+		}
+		if (gb->cart.mapper == GB_SACHEN && address >= 0x100 && address < 0x200) {
+			return gb->memMap[0][gbCartSachenAddress(address)];
 		}
 		return gb->memMap[0][address];
 	case 0x8:

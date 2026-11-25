@@ -155,6 +155,43 @@ static void powerOnRam(struct GB* gb) {
 }
 
 // The state the boot ROM leaves (Pan Docs, "Power Up Sequence").
+// VRAM as the original Game Boy's boot ROM leaves it (Pan Docs, Power Up Sequence): the header's logo,
+// each bit made 2x2, in tiles 1-24 from $8010, the (R) mark in tile $19, and both on the map. A Sachen
+// cartridge shows the boot ROM its own logo through its scrambled address lines (armGBA's): the first
+// kind's from a half page up.
+static void bootLogo(struct GB* gb) {
+	static const uint8_t mark[8] = { 0x3C, 0x42, 0xB9, 0xA5, 0xB9, 0xA5, 0x42, 0x3C };
+	uint8_t logo[0x30];
+	for (int i = 0; i < 0x30; ++i) {
+		if (gb->cart.mapper == GB_SACHEN) {
+			uint16_t from = gb->rom[0x104] == 0xCE && gb->rom[0x144] == 0xED ? 0x184 : 0x104;
+			logo[i] = gb->rom[gbCartSachenAddress(from + i)];
+		} else {
+			logo[i] = gb->rom[0x104 + i];
+		}
+	}
+	uint8_t* tile = gb->vram + 0x10;
+	for (int i = 0; i < 0x30; ++i) {
+		for (int half = 1; half >= 0; --half) {
+			uint8_t nibble = logo[i] >> (half * 4) & 0xF;
+			uint8_t doubled = 0;
+			for (int bit = 0; bit < 4; ++bit) {
+				doubled |= (nibble >> bit & 1) * (3 << bit * 2);
+			}
+			tile[0] = tile[2] = doubled;
+			tile += 4;
+		}
+	}
+	for (int i = 0; i < 8; ++i) {
+		gb->vram[0x190 + i * 2] = mark[i];
+	}
+	for (int i = 0; i < 12; ++i) {
+		gb->vram[0x1904 + i] = 1 + i;
+		gb->vram[0x1924 + i] = 13 + i;
+	}
+	gb->vram[0x1910] = 0x19;
+}
+
 void gbReset(struct GB* gb) {
 	const uint8_t* rom = gb->rom;
 	size_t romSize = gb->romSize;
@@ -180,7 +217,9 @@ void gbReset(struct GB* gb) {
 	gb->cart.huc3.alarmDays = cart.huc3.alarmDays;
 	gb->cart.huc3.alarmOn = cart.huc3.alarmOn;
 	// The Color's boot ROM runs in Color mode and leaves it by KEY0; without one, the header decides.
-	gb->cgbMode = gbColor(gb) && (gb->boot || (rom[0x143] & 0x80));
+	// A Sachen cartridge's header reads through its scrambled address lines.
+	uint8_t flag = gb->cart.mapper == GB_SACHEN ? rom[gbCartSachenAddress(0x143)] : rom[0x143];
+	gb->cgbMode = gbColor(gb) && (gb->boot || (flag & 0x80));
 	gbBlankFrame(gb);
 	if (!gbColor(gb)) {
 		powerOnRam(gb);
@@ -219,6 +258,15 @@ void gbReset(struct GB* gb) {
 		cpu->e = 0xD8;
 		cpu->h = 0x01;
 		cpu->l = 0x4D;
+	}
+	if (!gbColor(gb)) {
+		bootLogo(gb);
+	} else {
+		// The Color's boot ROM leaves the background's palettes white.
+		for (int i = 0; i < 64; i += 2) {
+			gb->cgb.bgPalette[i] = 0xFF;
+			gb->cgb.bgPalette[i + 1] = 0x7F;
+		}
 	}
 	cpu->sp = 0xFFFE;
 	cpu->pc = 0x100;

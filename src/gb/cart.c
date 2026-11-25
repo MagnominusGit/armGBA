@@ -58,6 +58,9 @@ static uint32_t crc32(const uint8_t* data, size_t size) {
 	return ~crc;
 }
 
+static bool sintaxLocked(const struct GB* gb);
+static uint32_t crc32(const uint8_t* data, size_t size);
+
 static unsigned logoSum(const struct GB* gb) {
 	unsigned sum = 0;
 	for (int i = 0x184; i < 0x1B4; ++i) {
@@ -100,11 +103,129 @@ static uint8_t variantOf(const struct GB* gb) {
 		return rom[0x147] == 0x01 || (0x8000u << rom[0x148]) != gb->romSize ? GB_LI_CHENG : GB_PLAIN;
 	case 0x6C1DCF2D:
 	case 0x99E3449D:
-		// Sintax cartridges hold up to 2 MiB; larger dumps of them are already unscrambled.
-		return rom[0x7FFF] != 0x01 && gb->romSize <= 0x200000 ? GB_SINTAX : GB_PLAIN;
+		return sintaxLocked(gb) ? GB_SINTAX : GB_PLAIN;
 	default:
-		return GB_PLAIN;
+		break;
 	}
+	// Other logos of the same makers, by the sum of their bytes as hhugboy tells them (armGBA's list).
+	// Their games end each bank in its number; a dump where that holds is one patched to run without
+	// the lock.
+	bool locked = rom[0x7FFF] != 0x01 || (gb->romSize > 0xBFFF && rom[0xBFFF] != 0x02);
+	switch (logoSum(gb)) {
+	case 4639: // BBD
+	case 3334: // "S-GBC"
+	case 5092: // Fiver Firm
+		return locked ? GB_BBD : GB_PLAIN;
+	case 4125:
+	case 4138:
+		return sintaxLocked(gb) ? GB_SINTAX : GB_PLAIN;
+	default:
+		break;
+	}
+	// The Telefang pirate sold as Pokemon Jade, on a Li Cheng cartridge (armGBA's).
+	return crc32(rom + 0x100, 0x50) == 0x3EF5AFB2 ? GB_LI_CHENG : GB_PLAIN;
+}
+
+// Sintax's games end each bank in its number, with the bits in the lock's order. Where banks 2, 4 and 8
+// end in just those the dump runs without the lock (armGBA's rule: Emo Cheng DX, Luke Yingxiong Chuan 3).
+static bool sintaxLocked(const struct GB* gb) {
+	const uint8_t* rom = gb->rom;
+	if (rom[0x7FFF] <= 0x01) {
+		return false;
+	}
+	return gb->romSize < 9 * 0x4000u || rom[3 * 0x4000 - 1] != 2 || rom[5 * 0x4000 - 1] != 4 || rom[9 * 0x4000 - 1] != 8;
+}
+
+// NT's cartridges have no mark of their own; their games are told by their headers (armGBA's list, from
+// mGBA's), and Makon's by the licensee code it made up: the first few on the older kind, with a header
+// that says 256 KiB, the rest on the newer. 0 for none.
+static uint8_t ntMapper(const struct GB* gb) {
+	const uint8_t* rom = gb->rom;
+	if (gb->romSize < 0x8000) {
+		return 0;
+	}
+	uint32_t header = crc32(rom + 0x100, 0x50);
+	switch (header) {
+	case 0xE1147E75: // Rockman 8
+	case 0xEFF88FAA: // True Color 25 in 1
+		return GB_NT_OLD1;
+	case 0x811925D9: // 23 in 1
+	case 0x62A8016A: // 29 in 1
+	case 0x5758D6D9: // Caise Gedou 24 in 1
+	case 0x80265A64: // Rockman X4
+	case 0x805459DE: // Sonic Adventure 8
+	case 0x0B1B808A: // Super Donkey Kong 5
+	case 0x4650EB9A: // Super Mario Special 3
+		return GB_NT_OLD2;
+	case 0xB289D95A: // Capcom vs SNK - Millennium Fight 2001
+	case 0x688D6713: // Digimon 02 4
+	case 0x8931A272: // Digimon 2
+	case 0x79083C6B: // Digimon Pocket
+	case 0x0C5047EE: // Harry Potter 3
+	case 0x8AC634B7: // Pokemon Diamond (Special Pikachu Edition)
+	case 0x8628A287: // Pokemon Jade (Special Pikachu Edition)
+	case 0xBC75D7B8: // Pokemon - Mewtwo Strikes Back
+	case 0xFF0B60CC: // Shuma Baolong 02 4
+	case 0x14A992A6: // Street Fighter Zero 4
+		return GB_NT_NEW;
+	}
+	if ((rom[0x144] == 'M' && rom[0x145] == 'K') || (rom[0x144] == 'G' && rom[0x145] == 'C')) {
+		static const char* const early[] = { "SONIC 7", "SUPER MARIO 3", "DONKEY\x09KONG 5", "ROCKMAN 99" };
+		for (unsigned i = 0; i < sizeof(early) / sizeof(early[0]); ++i) {
+			if (!strcmp((const char*) rom + 0x134, early[i])) {
+				return rom[0x148] == 3 ? GB_NT_OLD2 : 0;
+			}
+		}
+		// Two dumps of such games are patched to run on the cartridge their headers name.
+		return header == 0x72EDBF3E || header == 0x212ECA2F ? 0 : GB_NT_NEW;
+	}
+	return 0;
+}
+
+// mGBA's test for Wisdom Tree's cartridges: no title or header around it, a header checksum of E7, and
+// the company's name in the ROM.
+static bool isWisdomTree(const struct GB* gb) {
+	const uint8_t* rom = gb->rom;
+	for (int i = 0x134; i < 0x14C; ++i) {
+		if (rom[i]) {
+			return false;
+		}
+	}
+	for (int i = 0xF0; i < 0x100; ++i) {
+		if (rom[i]) {
+			return false;
+		}
+	}
+	if (rom[0x14D] != 0xE7) {
+		return false;
+	}
+	for (size_t i = 0x300; i + 11 < gb->romSize; ++i) {
+		if (!memcmp(rom + i, "WISDOM", 6) && !memcmp(rom + i + 7, "TREE", 4)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Sachen's multicarts keep the logo where their scrambled address lines put it (armGBA's).
+static bool isSachen(const struct GB* gb) {
+	const uint8_t* rom = gb->rom;
+	return gb->romSize >= 0x200 && ((rom[0x104] == 0xCE && rom[0x144] == 0xED && rom[0x114] == 0x66)
+	                                || (rom[0x184] == 0xCE && rom[0x1C4] == 0xED && rom[0x194] == 0x66));
+}
+
+// mGBA's test for MMM01: its own header, a valid one with a type of 0B-0D, in the last 32 KiB.
+static const uint8_t* mmm01Header(const struct GB* gb) {
+	static const uint8_t logo[0x30] = {
+		0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,
+		0x00, 0x08, 0x11, 0x1F, 0x88, 0x89, 0x00, 0x0E, 0xDC, 0xCC, 0x6E, 0xE6, 0xDD, 0xDD, 0xD9, 0x99,
+		0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E, 0xEC, 0xCC, 0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
+	};
+	if (gb->romSize < 0x10000) {
+		return NULL;
+	}
+	const uint8_t* footer = gb->rom + gb->romSize - 0x8000;
+	return !memcmp(footer + 0x104, logo, sizeof(logo)) && footer[0x147] >= 0x0B && footer[0x147] <= 0x0D ? footer : NULL;
 }
 
 // What the switchable bank's bytes read as: in a data bit order, or XORed with Sintax's key for the
@@ -298,7 +419,19 @@ bool gbCartInit(struct GB* gb) {
 	}
 	romScramble(cart);
 	cart->vf.opened = cart->variant == GB_VAST_FAME && !vastFameMaybeGgb81(gb);
-	switch (cart->variant != GB_PLAIN ? 0x1B : type) {
+	// Cartridges told by more than their header (armGBA's order): Wisdom Tree's, the variants above,
+	// NT's, Sachen's, MMM01's.
+	cart->romBanks = (uint32_t) (gb->romSize / 0x4000) ? (uint32_t) (gb->romSize / 0x4000) : 1;
+	uint8_t special = cart->variant != GB_PLAIN ? GB_MBC5 : isWisdomTree(gb) ? GB_WISDOM_TREE : ntMapper(gb) ? ntMapper(gb)
+	                : isSachen(gb) ? GB_SACHEN : mmm01Header(gb) ? GB_MMM01 : 0;
+	const uint8_t* header = special == GB_MMM01 ? mmm01Header(gb) : rom;
+	if (special == GB_MMM01) {
+		type = header[0x147];
+	}
+	switch (special ? 0x100 : type) {
+	case 0x100:
+		cart->mapper = special;
+		break;
 	case 0x00:
 	case 0x08:
 	case 0x09:
@@ -348,12 +481,37 @@ bool gbCartInit(struct GB* gb) {
 		cart->mbc7.readBits = 0xFFFF;
 		break;
 	default:
-		cart->mapper = GB_MBC5;
+		// Prototypes and unlicensed games with nothing sensible here are guessed at below.
+		cart->mapper = GB_MBC_NONE;
 		break;
 	}
-	cart->hasBattery = type == 0x03 || type == 0x06 || type == 0x09 || type == 0x0F || type == 0x10 || type == 0x13 ||
+	cart->hasBattery = type == 0x03 || type == 0x06 || type == 0x09 || type == 0x0D || type == 0x0F || type == 0x10 || type == 0x13 ||
 	                   type == 0x1B || type == 0x1E || type == 0xFC || type == 0xFE || type == 0xFF;
-	cart->ramSize = rom[0x149] < 6 ? ramSizes[rom[0x149]] : 0;
+	cart->ramSize = header[0x149] < 6 ? ramSizes[header[0x149]] : 0;
+	// armGBA's guesses for headers that don't hold: no mapper over more than 32 KiB, or HuC1 with a ROM
+	// size that is none (unlicensed multicarts), is the commonest mapper, though not the Doctor GB flash
+	// cartridge's menu, whose hardware is its own.
+	unsigned banks = cart->romBanks < 2 ? 2 : cart->romBanks;
+	if ((cart->mapper == GB_MBC_NONE && !special && banks > 2 && type != 0x08 && type != 0x09 && memcmp(rom + 0x134, "GB16M", 6))
+	    || (cart->mapper == GB_HUC1 && rom[0x148] > 0x08)) {
+		cart->mapper = banks > 2 ? GB_MBC1 : GB_MBC_NONE;
+	}
+	// The Telefang pirates sold as Pokemon Jade and Diamond: Telefang's title on an MBC3 header that
+	// gives a tenth of the ROM's size.
+	if (cart->mapper == GB_MBC3 && !memcmp(rom + 0x134, "TELEFANG", 8) && rom[0x148] < 5) {
+		cart->mapper = GB_PKJD;
+	}
+	// Prototypes of Zelda DX were built for MBC5, as the game shipped, under a header that still says
+	// MBC1: they write whole bank numbers past 31 to one register.
+	if (cart->mapper == GB_MBC1 && banks == 64 && (rom[0x143] & 0x80) && !memcmp(rom + 0x134, "ZELDA", 6)) {
+		cart->mapper = GB_MBC5;
+	}
+	// MBC1 can't address more than 512 KiB of ROM along with more than 8 KiB of RAM; games that claim
+	// both, or 2 MiB under a header giving a small ROM's size, are on something like MBC3.
+	if (cart->mapper == GB_MBC1 && banks > 32 && (cart->ramSize > 0x2000 || (rom[0x148] < 8 && (2u << rom[0x148]) < banks))) {
+		cart->mapper = GB_MBC3;
+	}
+	cart->mbc30 = cart->mapper == GB_MBC3 && (banks > 0x80 || cart->ramSize > 0x8000);
 	if (cart->mapper == GB_MBC2) {
 		cart->ramSize = 0x200;
 	}
@@ -373,15 +531,11 @@ bool gbCartInit(struct GB* gb) {
 	if (cart->variant == GB_SINTAX || cart->mapper == GB_HUC1) {
 		cart->ramEnabled = cart->hasRam;
 	}
-	// Banks of 16 KiB; the ROM's size is rounded up to a power of two when it is loaded.
-	cart->romBanks = (uint32_t) (gb->romSize / 0x4000);
-	if (!cart->romBanks) {
-		cart->romBanks = 1;
-	}
 	cart->romBank = 1;
 	if (cart->mapper == GB_TAMA5) {
 		cart->romBank = gbTama5Bank(gb);
 	}
+	gbMapperInit(gb);
 	// A 1 MiB MBC1 cartridge with a second header at bank $10 is a multicart.
 	if (cart->mapper == GB_MBC1 && gb->romSize == 0x100000 && !memcmp(rom + 0x104, rom + 0x40104, 0x30)) {
 		cart->mbc1Multicart = true;
@@ -401,6 +555,11 @@ void gbCartWrite(struct GB* gb, uint16_t address, uint8_t value) {
 	struct GBCart* cart = &gb->cart;
 	uint16_t romBank = cart->romBank;
 	uint8_t mode = cart->mbc1Mode, upper = cart->mbc1Upper;
+	if (cart->mapper >= GB_SACHEN) {
+		gbMapperWrite(gb, address, value);
+		gbMapRom(gb);
+		return;
+	}
 	if (cart->variant != GB_PLAIN) {
 		bool mbc5 = variantWrite(gb, address, &value);
 		// Its bytes may read differently now.
@@ -444,7 +603,7 @@ void gbCartWrite(struct GB* gb, uint16_t address, uint8_t value) {
 			cart->ramEnabled = (value & 0xF) == 0xA;
 			break;
 		case 1:
-			cart->romBank = value & 0x7F ? value & 0x7F : 1;
+			cart->romBank = value & (cart->mbc30 ? 0xFF : 0x7F) ? value & (cart->mbc30 ? 0xFF : 0x7F) : 1;
 			break;
 		case 2:
 			cart->ramBank = value;
@@ -561,8 +720,12 @@ static int32_t ramOffset(const struct GB* gb, uint16_t address) {
 	if (cart->mapper == GB_MBC2) {
 		return address & 0x1FF;
 	}
-	if (cart->mapper == GB_MBC3 && cart->ramBank > 3) {
+	if (cart->mapper == GB_MBC3 && cart->ramBank > (cart->mbc30 ? 7 : 3)) {
 		return -1;
+	}
+	// MBC6: two 4 KiB halves.
+	if (cart->mapper == GB_MBC6) {
+		return (cart->ramHalf[address >> 12 & 1] * 0x1000 + (address & 0xFFF)) & (cart->ramSize - 1);
 	}
 	return (cart->ramBank * 0x2000 + (address & 0x1FFF)) & (cart->ramSize - 1);
 }
@@ -1042,6 +1205,9 @@ uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
 		return mbc7Read(gb, address);
 	}
 	uint8_t value;
+	if (gb->cart.mapper == GB_PKJD && gb->cart.ramEnabled && gbPkjdRead(gb, &value)) {
+		return value;
+	}
 	if (gb->cart.mapper == GB_HUC3) {
 		if (huc3Read(gb, &value)) {
 			return value;
@@ -1087,6 +1253,9 @@ void gbCartWriteRam(struct GB* gb, uint16_t address, uint8_t value) {
 		return;
 	}
 	if (gb->cart.mapper == GB_HUC3 && huc3Write(gb, value)) {
+		return;
+	}
+	if (gb->cart.mapper == GB_PKJD && gb->cart.ramEnabled && gbPkjdWrite(gb, value)) {
 		return;
 	}
 	// HuC1's infrared LED: nothing to see it.

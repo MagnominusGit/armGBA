@@ -75,6 +75,14 @@ enum GBMapper {
 	GB_HUC3,
 	GB_CAMERA,
 	GB_TAMA5,
+	GB_SACHEN,
+	GB_PKJD,
+	GB_NT_OLD1,
+	GB_NT_OLD2,
+	GB_NT_NEW,
+	GB_WISDOM_TREE,
+	GB_MMM01,
+	GB_MBC6,
 };
 
 // The Pocket Camera (SameBoy's): its sensor's registers, whether they're mapped in place of RAM, and
@@ -354,6 +362,22 @@ struct GBCart {
 	struct GBMbc7 mbc7;
 	struct GBHuc3 huc3;
 	struct GBCamera camera;
+	// MBC3 past 2 MiB of ROM or 32 KiB of RAM (MBC30): 8-bit ROM banks, eight RAM banks.
+	bool mbc30;
+	// Mappers that switch bank 0 too (bank0Mapped), or the switchable area as two 8 KiB halves (halves),
+	// and MBC6's two 4 KiB RAM halves.
+	bool bank0Mapped, halves;
+	uint16_t bank0;
+	uint16_t half[2];
+	uint8_t ramHalf[2];
+	// mappers.c's: Sachen's bank, base and mask; NT's bank, base, game size, bit order and split;
+	// MMM01's lock and base; PKJD's counters.
+	uint8_t sachenBank, sachenBase, sachenMask;
+	uint8_t ntBank, ntBase, ntCount;
+	bool ntSwapped, ntSplit;
+	bool mmm01Locked;
+	uint16_t mmm01Base;
+	uint8_t pkjdCounters[2];
 };
 
 struct GB {
@@ -524,6 +548,12 @@ void gbCartWrite(struct GB*, uint16_t address, uint8_t value);
 uint8_t gbCartReadRam(struct GB*, uint16_t address);
 void gbCartWriteRam(struct GB*, uint16_t address, uint8_t value);
 uint16_t gbTama5Bank(struct GB*);
+void gbMapperInit(struct GB*);
+void gbMapperWrite(struct GB*, uint16_t address, uint8_t value);
+bool gbPkjdRead(struct GB*, uint8_t* value);
+bool gbPkjdWrite(struct GB*, uint8_t value);
+// Where a Sachen cartridge's scrambled address lines read its header page.
+uint16_t gbCartSachenAddress(uint16_t address);
 uint8_t gbTama5Read(struct GB*, uint16_t address);
 void gbTama5Write(struct GB*, uint16_t address, uint8_t value);
 // A ROM read on a Vast Fame cartridge, where its protection may answer instead.

@@ -290,8 +290,11 @@ int main(int argc, char** argv) {
 
 	// armGB.
 	static struct GB gb;
-	gb.boot = colorModel ? armgba_cgb_boot : armgba_dmg_boot;
-	gb.bootSize = colorModel ? sizeof(armgba_cgb_boot) : sizeof(armgba_dmg_boot);
+	// NOBOOT=1: armGB without a boot ROM, as the other core runs Sachen's cartridges.
+	if (!getenv("NOBOOT")) {
+		gb.boot = colorModel ? armgba_cgb_boot : armgba_dmg_boot;
+		gb.bootSize = colorModel ? sizeof(armgba_cgb_boot) : sizeof(armgba_dmg_boot);
+	}
 	if (!gbLoad(&gb, rom, padded, colorModel ? GB_MODEL_CGB : GB_MODEL_DMG)) {
 		fprintf(stderr, "armGB can't load it\n");
 		return 2;
