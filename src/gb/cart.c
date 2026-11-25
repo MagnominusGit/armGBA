@@ -254,8 +254,6 @@ bool gbCartInit(struct GB* gb) {
 	memset(cart, 0, sizeof(*cart));
 	cart->rtc.lastSync = gb->now;
 	cart->rtc.lastHost = gb->hostMicros;
-	// Cartridge RAM with no save yet reads as all 1s, as other emulators start it.
-	memset(gb->sram, 0xFF, sizeof(gb->sram));
 	uint8_t type = rom[0x147];
 	cart->variant = variantOf(gb);
 	if (cart->variant == GB_HITEK) {

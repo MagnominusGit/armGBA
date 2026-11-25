@@ -398,6 +398,9 @@ struct GB {
 	uint32_t frameCount;
 	// Set when V-blank starts, so a frame's run can end there.
 	bool frameEnded;
+	// When the frame under way ends with the LCD off (a frame's time after the last ended); with the
+	// LCD on, a frame goes on to V-blank however late.
+	uint32_t frameLimit;
 	// Set when the CPU must look again before its next instruction: an interrupt requested or enabled,
 	// HALT, STOP, EI, RETI, a lock-up or the frame's end.
 	bool attention;
@@ -447,6 +450,9 @@ static inline bool gbColor(const struct GB* gb) {
 }
 void gbReset(struct GB*);
 void gbRunFrame(struct GB*);
+// Runs for up to *dots, stopping early where a frame ends; *dots becomes the dots run. Returns whether
+// a frame ended. The sound made goes on from audioCount, which the caller empties.
+bool gbRunFor(struct GB*, uint32_t* dots);
 void gbSchedule(struct GB*, int event, uint32_t at);
 void gbUnschedule(struct GB*, int event);
 void gbRunEvents(struct GB*);

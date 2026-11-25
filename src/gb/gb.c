@@ -162,14 +162,23 @@ void gbReset(struct GB* gb) {
 	void* user = gb->user;
 	uint8_t model = gb->model;
 	struct GBCart cart = gb->cart;
-	memset(gb, 0, offsetof(struct GB, rom));
+	// Everything starts over but the cartridge's RAM.
+	memset(gb, 0, offsetof(struct GB, sram));
+	memset((uint8_t*) gb + offsetof(struct GB, sram) + sizeof(gb->sram), 0, offsetof(struct GB, rom) - offsetof(struct GB, sram) - sizeof(gb->sram));
 	gb->rom = rom;
 	gb->romSize = romSize;
 	gb->serialOut = serialOut;
 	gb->user = user;
 	gb->model = model;
-	gb->cart = cart;
+	gb->frameLimit = GB_FRAME_DOTS;
+	// A reset starts the cartridge's mapper over; its battery-backed RAM and clocks run on.
 	gbCartInit(gb);
+	gb->cart.rtc = cart.rtc;
+	gb->cart.huc3.minutes = cart.huc3.minutes;
+	gb->cart.huc3.days = cart.huc3.days;
+	gb->cart.huc3.alarmMinutes = cart.huc3.alarmMinutes;
+	gb->cart.huc3.alarmDays = cart.huc3.alarmDays;
+	gb->cart.huc3.alarmOn = cart.huc3.alarmOn;
 	// The Color's boot ROM runs in Color mode and leaves it by KEY0; without one, the header decides.
 	gb->cgbMode = gbColor(gb) && (gb->boot || (rom[0x143] & 0x80));
 	gbBlankFrame(gb);
@@ -292,6 +301,8 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	gb->rom = rom;
 	gb->romSize = size;
 	gb->model = model;
+	// Cartridge RAM with no save yet reads as all 1s, as other emulators start it.
+	memset(gb->sram, 0xFF, sizeof(gb->sram));
 	if (!gbCartInit(gb)) {
 		return false;
 	}
@@ -301,19 +312,34 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 
 // Runs to the start of the next V-blank, or a frame's time with the LCD off.
 void gbRunFrame(struct GB* gb) {
-	uint32_t limit = gb->now + GB_FRAME_DOTS;
-	gb->frameEnded = false;
 	gb->audioCount = 0;
-	while (!gb->frameEnded && gbSince(limit, gb->now) > 0) {
-		gbCpuRun(gb, limit);
-		// With the LCD on, a frame goes on to V-blank, however late it started.
-		if (!gb->frameEnded && (gb->ppu.lcdc & 0x80) && gbSince(gb->now, limit) >= 0) {
-			limit = gb->now + GB_FRAME_DOTS;
+	uint32_t dots = 4 * GB_FRAME_DOTS;
+	gbRunFor(gb, &dots);
+}
+
+bool gbRunFor(struct GB* gb, uint32_t* dots) {
+	uint32_t start = gb->now;
+	uint32_t until = start + *dots;
+	gb->frameEnded = false;
+	while (!gb->frameEnded && gbSince(until, gb->now) > 0) {
+		gbCpuRun(gb, gbSince(gb->frameLimit, until) < 0 ? gb->frameLimit : until);
+		if (!gb->frameEnded && gbSince(gb->now, gb->frameLimit) >= 0) {
+			// With the LCD on, a frame goes on to V-blank, however late it started.
+			if (gb->ppu.lcdc & 0x80) {
+				gb->frameLimit = gb->now + GB_FRAME_DOTS;
+			} else {
+				gb->frameEnded = true;
+			}
+		}
+	}
+	if (gb->frameEnded) {
+		gb->frameLimit = gb->now + GB_FRAME_DOTS;
+		// The clock counts in a time that wraps after some minutes: up to date every frame.
+		if (gb->cart.hasRtc) {
+			gbRtcSync(gb);
 		}
 	}
 	gbApuSync(gb);
-	// The clock counts in a time that wraps after some minutes: up to date every frame.
-	if (gb->cart.hasRtc) {
-		gbRtcSync(gb);
-	}
+	*dots = gb->now - start;
+	return gb->frameEnded;
 }
