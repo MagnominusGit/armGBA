@@ -65,6 +65,20 @@ enum GBMapper {
 	GB_MBC3,
 	GB_MBC5,
 	GB_HUC1,
+	GB_MBC7,
+};
+
+// MBC7 (SameBoy's): the accelerometer's latched readings, and the 93LC56 EEPROM's serial port: its
+// pins as last written, the bits being shifted out, the command being shifted in and the data bits it
+// still takes.
+struct GBMbc7 {
+	bool secondary;
+	uint16_t x, y;
+	bool cs, clk, di, dout;
+	uint16_t readBits;
+	uint16_t command;
+	uint8_t argumentBits;
+	bool writeEnabled;
 };
 
 // Unlicensed cartridges built on MBC5 that scramble bank numbers or data (told apart, as mGBA does,
@@ -286,6 +300,7 @@ struct GBCart {
 	struct GBVastFame vf;
 	// HuC1: RAM's place taken by the infrared port.
 	bool irMode;
+	struct GBMbc7 mbc7;
 };
 
 struct GB {
@@ -350,6 +365,10 @@ struct GB {
 	// Serial bytes shifted out with no partner, for the test runner.
 	void (*serialOut)(void* user, uint8_t byte);
 	void* user;
+	// MBC7's accelerometer, set by the frontend: the offsets from lying flat (0x70 a cartridge on its
+	// side, lower to the right and towards the player), and a flick for its next reading.
+	int16_t tiltX, tiltY;
+	bool flick;
 	// The clock's source, set by the frontend: the device's time (in microseconds, given each frame)
 	// or the console's, at rtcPercent of its speed.
 	bool rtcRealTime;

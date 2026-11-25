@@ -299,6 +299,11 @@ bool gbCartInit(struct GB* gb) {
 	case 0xFF:
 		cart->mapper = GB_HUC1;
 		break;
+	case 0x22:
+		cart->mapper = GB_MBC7;
+		cart->mbc7.x = cart->mbc7.y = 0x8000;
+		cart->mbc7.readBits = 0xFFFF;
+		break;
 	default:
 		cart->mapper = GB_MBC5;
 		break;
@@ -308,6 +313,11 @@ bool gbCartInit(struct GB* gb) {
 	cart->ramSize = rom[0x149] < 6 ? ramSizes[rom[0x149]] : 0;
 	if (cart->mapper == GB_MBC2) {
 		cart->ramSize = 0x200;
+	}
+	// MBC7's EEPROM: 128 16-bit words, kept as the save.
+	if (cart->mapper == GB_MBC7) {
+		cart->ramSize = 0x100;
+		cart->hasBattery = true;
 	}
 	cart->hasRam = cart->ramSize != 0;
 	// Sintax's cartridge RAM needs no enabling (mGBA), nor HuC1's (SameBoy).
@@ -393,6 +403,24 @@ void gbCartWrite(struct GB* gb, uint16_t address, uint8_t value) {
 				gbRtcSync(gb);
 				memcpy(cart->rtc.latched, cart->rtc.regs, sizeof(cart->rtc.latched));
 			}
+			break;
+		}
+		break;
+	case GB_MBC7:
+		switch (address >> 12) {
+		case 0:
+		case 1:
+			cart->ramEnabled = value == 0x0A;
+			break;
+		case 2:
+		case 3:
+			cart->romBank = value;
+			break;
+		case 4:
+		case 5:
+			cart->mbc7.secondary = value == 0x40;
+			break;
+		default:
 			break;
 		}
 		break;
@@ -548,7 +576,153 @@ void gbRtcSetRealTime(struct GB* gb, bool on) {
 	gb->cart.rtc.lastHost = gb->hostMicros;
 }
 
+// MBC7 (SameBoy's): $Ax0x then $Ax1x latch the accelerometer, read at $Ax2x-$Ax5x; $Ax8x is the EEPROM's
+// pins (DO bit 0, DI bit 1, CLK bit 6, CS bit 7), a command clocked in on each rising CLK with CS high.
+static uint8_t mbc7Read(struct GB* gb, uint16_t address) {
+	const struct GBMbc7* m = &gb->cart.mbc7;
+	if (!gb->cart.ramEnabled || !m->secondary || address >= 0xB000) {
+		return 0xFF;
+	}
+	switch (address >> 4 & 0xF) {
+	case 2:
+		return m->x;
+	case 3:
+		return m->x >> 8;
+	case 4:
+		return m->y;
+	case 5:
+		return m->y >> 8;
+	case 6:
+		return 0;
+	case 8:
+		return m->dout | m->di << 1 | m->clk << 6 | m->cs << 7;
+	default:
+		return 0xFF;
+	}
+}
+
+static uint16_t eepromWord(const struct GB* gb, unsigned word) {
+	return gb->sram[word * 2] | gb->sram[word * 2 + 1] << 8;
+}
+
+static void setEepromWord(struct GB* gb, unsigned word, uint16_t value) {
+	gb->sram[word * 2] = value;
+	gb->sram[word * 2 + 1] = value >> 8;
+}
+
+static void eepromCommand(struct GB* gb) {
+	struct GBMbc7* m = &gb->cart.mbc7;
+	unsigned word = m->command & 0x7F;
+	switch (m->command >> 6 & 0xF) {
+	case 0x8:
+	case 0x9:
+	case 0xA:
+	case 0xB: // READ
+		m->readBits = eepromWord(gb, word);
+		m->command = 0;
+		break;
+	case 0x3: // EWEN
+		m->writeEnabled = true;
+		m->command = 0;
+		break;
+	case 0x0: // EWDS
+		m->writeEnabled = false;
+		m->command = 0;
+		break;
+	case 0x4:
+	case 0x5:
+	case 0x6:
+	case 0x7: // WRITE: the word cleared, its 16 bits to come
+		if (m->writeEnabled) {
+			setEepromWord(gb, word, 0);
+		}
+		m->argumentBits = 16;
+		break;
+	case 0xC:
+	case 0xD:
+	case 0xE:
+	case 0xF: // ERASE
+		if (m->writeEnabled) {
+			setEepromWord(gb, word, 0xFFFF);
+			m->readBits = 0x3FFF;
+		}
+		m->command = 0;
+		break;
+	case 0x2: // ERAL
+		if (m->writeEnabled) {
+			memset(gb->sram, 0xFF, 0x100);
+			m->readBits = 0xFF;
+		}
+		m->command = 0;
+		break;
+	case 0x1: // WRAL: everything cleared, 16 bits to come
+		if (m->writeEnabled) {
+			memset(gb->sram, 0, 0x100);
+		}
+		m->argumentBits = 16;
+		break;
+	}
+}
+
+static void mbc7Write(struct GB* gb, uint16_t address, uint8_t value) {
+	struct GBMbc7* m = &gb->cart.mbc7;
+	if (!gb->cart.ramEnabled || !m->secondary || address >= 0xB000) {
+		return;
+	}
+	switch (address >> 4 & 0xF) {
+	case 0:
+		if (value == 0x55) {
+			m->x = m->y = 0x8000;
+		}
+		break;
+	case 1:
+		if (value == 0xAA) {
+			m->x = 0x81D0 + gb->tiltX;
+			m->y = 0x81D0 + gb->tiltY - (gb->flick ? 0xE0 : 0);
+			gb->flick = false;
+		}
+		break;
+	case 8:
+		m->cs = value & 0x80;
+		m->di = value & 2;
+		if (m->cs && !m->clk && (value & 0x40)) {
+			m->dout = m->readBits >> 15;
+			m->readBits = m->readBits << 1 | 1;
+			if (!m->argumentBits) {
+				m->command = m->command << 1 | m->di;
+				if (m->command & 0x400) {
+					eepromCommand(gb);
+				}
+			} else {
+				--m->argumentBits;
+				m->dout = true;
+				if (m->di) {
+					uint16_t bit = 1 << m->argumentBits;
+					if (m->command & 0x100) {
+						setEepromWord(gb, m->command & 0x7F, eepromWord(gb, m->command & 0x7F) | bit);
+					} else {
+						for (unsigned i = 0; i < 0x7F; ++i) {
+							setEepromWord(gb, i, eepromWord(gb, i) | bit);
+						}
+					}
+				}
+				if (!m->argumentBits) {
+					m->command = 0;
+					m->readBits = 0x3FFF;
+				}
+			}
+		}
+		m->clk = value & 0x40;
+		break;
+	default:
+		break;
+	}
+}
+
 uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
+	if (gb->cart.mapper == GB_MBC7) {
+		return mbc7Read(gb, address);
+	}
 	// HuC1's infrared port: no light seen.
 	if (gb->cart.mapper == GB_HUC1 && gb->cart.irMode) {
 		return 0xC0;
@@ -567,6 +741,10 @@ uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
 }
 
 void gbCartWriteRam(struct GB* gb, uint16_t address, uint8_t value) {
+	if (gb->cart.mapper == GB_MBC7) {
+		mbc7Write(gb, address, value);
+		return;
+	}
 	// HuC1's infrared LED: nothing to see it.
 	if (gb->cart.mapper == GB_HUC1 && gb->cart.irMode) {
 		return;

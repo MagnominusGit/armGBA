@@ -855,7 +855,7 @@ void dropArmgb() {
 	s->armgb = 0;
 }
 
-// The cartridges armGB knows: none, MBC1, MBC2, MBC3 with or without its clock, MBC5, and HuC1 (a
+// The cartridges armGB knows: none, MBC1, MBC2, MBC3 with or without its clock, MBC5, MBC7, and HuC1 (a
 // header with Nintendo's logo: a ROM that only reads $FF there isn't one).
 bool armgbCartridge(const unsigned char* bytes, size_t size) {
 	if (size < 0x150) {
@@ -863,7 +863,7 @@ bool armgbCartridge(const unsigned char* bytes, size_t size) {
 	}
 	switch (bytes[0x147]) {
 	case 0x00: case 0x01: case 0x02: case 0x03: case 0x05: case 0x06: case 0x08: case 0x09: case 0x0F: case 0x10:
-	case 0x11: case 0x12: case 0x13: case 0x19: case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1E:
+	case 0x11: case 0x12: case 0x13: case 0x19: case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1E: case 0x22:
 		return true;
 	case 0xFF:
 		return bytes[0x104] == 0xCE && bytes[0x105] == 0xED;
@@ -1799,11 +1799,18 @@ void libretroGbSetTilt(int x, int y) {
 	// its side.
 	gambatte::mbc7TiltX = -x * 0x70 / 32768;
 	gambatte::mbc7TiltY = -y * 0x70 / 32768;
+	if (s->armgb) {
+		s->armgb->tiltX = gambatte::mbc7TiltX;
+		s->armgb->tiltY = gambatte::mbc7TiltY;
+	}
 }
 
 // Flicks the console, for the one sensor reading the flick lasts.
 void libretroGbFlick(void) {
 	gambatte::mbc7Flick = true;
+	if (s->armgb) {
+		s->armgb->flick = true;
+	}
 }
 
 // Work RAM, for achievements and cheats.
