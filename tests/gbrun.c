@@ -47,8 +47,8 @@ int main(int argc, char** argv) {
 	static struct GB gb;
 	// armGBA's own boot ROMs, unless NOBOOT is set.
 	if (!getenv("NOBOOT")) {
-		gb.boot = model == GB_MODEL_CGB ? armgba_cgb_boot : armgba_dmg_boot;
-		gb.bootSize = model == GB_MODEL_CGB ? sizeof(armgba_cgb_boot) : sizeof(armgba_dmg_boot);
+		gb.boot = model == GB_MODEL_CGB ? armgba_cgb_boot : getenv("POCKET") ? armgba_mgb_boot : armgba_dmg_boot;
+		gb.bootSize = model == GB_MODEL_CGB ? sizeof(armgba_cgb_boot) : 256;
 	}
 	if (!gbLoad(&gb, rom, padded, model)) {
 		fprintf(stderr, "can't load\n");
