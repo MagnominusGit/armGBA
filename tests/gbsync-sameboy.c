@@ -43,3 +43,10 @@ const uint8_t* sbSram(void) { return gb.mbc_ram; }
 size_t sbSramSize(void) { return gb.mbc_ram_size; }
 int sbDouble(void) { return gb.cgb_double_speed; }
 uint8_t sbRead(uint16_t a) { return GB_safe_read_memory(&gb, a); }
+// The sound channels: on, and the volume of channels 1, 2 and 4 (-1 for the wave channel).
+void sbApu(int on[4], int volume[4]) {
+	GB_apu_run(&gb, true);
+	for (int i = 0; i < 4; ++i) on[i] = gb.apu.is_active[i];
+	volume[0] = gb.apu.square_channels[0].current_volume; volume[1] = gb.apu.square_channels[1].current_volume;
+	volume[2] = -1; volume[3] = gb.apu.noise_channel.current_volume;
+}

@@ -279,7 +279,9 @@ struct GBChannel {
 	uint32_t nextStep;
 	uint8_t position;
 	uint8_t volume;
-	uint8_t envelopeTimer;
+	// The envelope (SameBoy's): its 3-bit countdown, its clock, and whether that clock locked it.
+	uint8_t envCountdown;
+	bool envClock, envShouldLock, envLocked;
 };
 
 struct GBApu {

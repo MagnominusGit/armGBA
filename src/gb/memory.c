@@ -217,7 +217,8 @@ uint8_t gbIoRead(struct GB* gb, uint8_t reg) {
 	case 0x01:
 		return gb->serial.sb;
 	case 0x02:
-		return gb->serial.sc | ioUnused[reg];
+		// The Color's fast clock bit is there in Color mode.
+		return gb->serial.sc | (gb->cgbMode ? 0x7C : ioUnused[reg]);
 	case 0x04:
 	case 0x05:
 	case 0x06:

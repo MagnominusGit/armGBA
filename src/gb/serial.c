@@ -4,12 +4,14 @@
  * Licensed under the GNU General Public License, version 2 or (at your option) any later version: see LICENSE. */
 #include "gb.h"
 
-// The serial port (Pan Docs, "Serial Data Transfer"). The internal clock is a bit of the divider's
-// counter: a bit shifts on each of its falling edges, bit 8 (8192 Hz), or bit 3 with the Color's fast
-// clock. With no cable, 1s shift in; a transfer on the external clock never ends.
+// The serial port (Pan Docs, "Serial Data Transfer"). The internal clock runs off a bit of the
+// divider's counter, bit 7, or bit 2 with the Color's fast clock: each falling edge of it turns the
+// serial clock over, and a bit shifts as that goes low, so eight bits take sixteen edges. Writing SC
+// sets the serial clock low (SameBoy). With no cable, 1s shift in; a transfer on the external clock
+// never ends.
 
 static unsigned clockBit(const struct GB* gb) {
-	return gb->cgbMode && (gb->serial.sc & 2) ? 3 : 8;
+	return gb->cgbMode && (gb->serial.sc & 2) ? 2 : 7;
 }
 
 void gbSerialWrite(struct GB* gb, uint8_t reg, uint8_t value) {
@@ -26,11 +28,11 @@ void gbSerialWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 	if (gb->serialOut) {
 		gb->serialOut(gb->user, serial->sb);
 	}
-	// The eighth falling edge of the clock bit from now.
+	// The sixteenth falling edge of the clock bit from now.
 	gbTimerSync(gb);
 	unsigned shift = clockBit(gb) + 1;
 	uint32_t c = gb->timer.counter;
-	uint32_t edge = ((c >> shift) + 8) << shift;
+	uint32_t edge = ((c >> shift) + 16) << shift;
 	uint32_t per = gb->doubleSpeed ? 2 : 1;
 	serial->bits = 8;
 	gbSchedule(gb, GB_EVENT_SERIAL, gb->now + (edge - c + per - 1) / per);

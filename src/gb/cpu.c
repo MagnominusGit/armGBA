@@ -569,7 +569,11 @@ static void step(struct GB* gb) {
 	case 0x76: { // HALT
 		gb->attention = true;
 		uint8_t pending = gb->ie & gb->ifl & 0x1F;
-		if (!cpu->ime && pending) {
+		// With an interrupt already pending, HALT doesn't stop: with IME on (just turned on by EI), the
+		// interrupt is taken at once and returns to the HALT, as SameBoy has it; off, the halt bug.
+		if (pending && cpu->ime) {
+			--cpu->pc;
+		} else if (pending) {
 			cpu->haltBug = true;
 		} else {
 			cpu->halted = true;

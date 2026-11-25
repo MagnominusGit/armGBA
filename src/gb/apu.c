@@ -1,7 +1,10 @@
 /* Copyright (c) 2026 Magnominus
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
- * Licensed under the GNU General Public License, version 2 or (at your option) any later version: see LICENSE. */
+ * Licensed under the GNU General Public License, version 2 or (at your option) any later version: see LICENSE.
+ *
+ * The envelopes follow SameBoy (Copyright (c) Lior Halphon), under the Expat (MIT) license: see
+ * LICENSES/SameBoy.txt. */
 #include "gb.h"
 
 #include <string.h>
@@ -239,18 +242,79 @@ static void clockSweep(struct GB* gb) {
 	}
 }
 
-static void clockEnvelope(struct GBChannel* ch, uint8_t nrx2) {
-	uint8_t pace = nrx2 & 7;
-	if (!pace || !ch->envelopeTimer || --ch->envelopeTimer) {
+// The envelopes, as SameBoy (MIT) has them: a 3-bit countdown steps down on frame sequencer step 6
+// while the envelope's clock is low. Half a step after it reaches 0 (the sequencer's bit rising), it
+// reloads from NRx2 and, if that isn't 0, raises the clock, which the next step takes down, moving
+// the volume. A clock raised with the volume at 15 going up, or 0 going down, locks the envelope until
+// the channel restarts.
+static void setEnvelopeClock(struct GBChannel* ch, bool value, bool up) {
+	if (ch->envClock == value) {
 		return;
 	}
-	ch->envelopeTimer = pace;
-	if (nrx2 & 8) {
-		if (ch->volume < 15) {
-			++ch->volume;
+	ch->envClock = value;
+	if (value) {
+		ch->envShouldLock = (ch->volume == 0xF && up) || (ch->volume == 0 && !up);
+	} else {
+		ch->envLocked |= ch->envShouldLock;
+	}
+}
+
+static void tickEnvelope(struct GBChannel* ch, uint8_t nrx2) {
+	setEnvelopeClock(ch, false, false);
+	if (ch->envLocked || !(nrx2 & 7)) {
+		return;
+	}
+	ch->volume = (ch->volume + (nrx2 & 8 ? 1 : -1)) & 0xF;
+}
+
+// The envelopes' channels, each with its NRx2.
+static int envelopes(struct GB* gb, struct GBChannel* chs[3], uint8_t nrx2[3]) {
+	struct GBApu* apu = &gb->apu;
+	chs[0] = &apu->square[0], chs[1] = &apu->square[1], chs[2] = &apu->noise;
+	nrx2[0] = *reg(gb, 0x12), nrx2[1] = *reg(gb, 0x17), nrx2[2] = *reg(gb, 0x21);
+	return 3;
+}
+
+// Half a step on: the sequencer's bit rising.
+static void sequencerRise(struct GB* gb) {
+	struct GBChannel* chs[3];
+	uint8_t nrx2[3];
+	for (int i = envelopes(gb, chs, nrx2); i--;) {
+		if (chs[i]->on && chs[i]->envCountdown == 0) {
+			chs[i]->envCountdown = nrx2[i] & 7;
+			setEnvelopeClock(chs[i], chs[i]->envCountdown != 0, nrx2[i] & 8);
 		}
-	} else if (ch->volume) {
-		--ch->volume;
+	}
+}
+
+// NRx2 written while the channel plays ("zombie mode", SameBoy's): the volume can move or invert, by
+// how the envelope's clock lines meet. The original Game Boy and the earlier Colors take the write as
+// two, through all bits set.
+static void envelopeWrite(struct GBChannel* ch, uint8_t value, uint8_t old) {
+	if (ch->envClock) {
+		ch->envCountdown = value & 7;
+	}
+	bool tick = (value & 7) && !(old & 7) && !ch->envLocked;
+	bool invert = (value & 8) ^ (old & 8);
+	if ((value & 0xF) == 8 && (old & 0xF) == 8 && !ch->envLocked) {
+		tick = true;
+	}
+	if (invert) {
+		if (value & 8) {
+			if (!(old & 7) && !ch->envLocked) {
+				ch->volume ^= 0xF;
+			} else {
+				ch->volume = (0xE - ch->volume) & 0xF;
+			}
+			tick = false;
+		} else {
+			ch->volume = (0x10 - ch->volume) & 0xF;
+		}
+	}
+	if (tick) {
+		ch->volume = (ch->volume + (value & 8 ? 1 : -1)) & 0xF;
+	} else if (!(value & 7) && ch->envClock) {
+		setEnvelopeClock(ch, false, false);
 	}
 }
 
@@ -263,10 +327,15 @@ static void frameSequencer(struct GB* gb) {
 	if (step == 2 || step == 6) {
 		clockSweep(gb);
 	}
-	if (step == 7) {
-		clockEnvelope(&apu->square[0], *reg(gb, 0x12));
-		clockEnvelope(&apu->square[1], *reg(gb, 0x17));
-		clockEnvelope(&apu->noise, *reg(gb, 0x21));
+	struct GBChannel* chs[3];
+	uint8_t nrx2[3];
+	for (int i = envelopes(gb, chs, nrx2); i--;) {
+		if (step == 6 && !chs[i]->envClock) {
+			chs[i]->envCountdown = (chs[i]->envCountdown - 1) & 7;
+		}
+		if (chs[i]->envClock) {
+			tickEnvelope(chs[i], nrx2[i]);
+		}
 	}
 	apu->frameStep = (step + 1) & 7;
 }
@@ -290,15 +359,20 @@ void gbApuSync(struct GB* gb) {
 	gbTimerSync(gb);
 	uint32_t per = gb->doubleSpeed ? 2 : 1;
 	uint32_t c = (uint16_t) (gb->timer.counter - (uint32_t) dots * per);
-	unsigned shift = sequencerBit(gb) + 1;
+	// Each edge of the sequencer's bit: falling, a step; rising, the envelopes' half step.
+	unsigned bit = sequencerBit(gb);
 	for (;;) {
-		uint32_t edge = ((c >> shift) + 1) << shift;
+		uint32_t edge = ((c >> bit) + 1) << bit;
 		uint32_t at = apu->lastSync + (edge - c + per - 1) / per;
 		if (gbSince(at, gb->now) > 0) {
 			break;
 		}
 		render(gb, at);
-		frameSequencer(gb);
+		if (edge >> bit & 1) {
+			sequencerRise(gb);
+		} else {
+			frameSequencer(gb);
+		}
 		c = edge & 0xFFFF;
 	}
 	render(gb, gb->now);
@@ -345,7 +419,8 @@ static void lengthEnable(struct GB* gb, struct GBChannel* ch, uint8_t value, uin
 static void startEnvelope(struct GBChannel* ch, uint8_t nrx2) {
 	ch->on = ch->dac;
 	ch->volume = nrx2 >> 4;
-	ch->envelopeTimer = nrx2 & 7;
+	ch->envCountdown = nrx2 & 7;
+	ch->envClock = ch->envLocked = false;
 }
 
 static void writeControl(struct GB* gb, uint8_t address, uint8_t value) {
@@ -463,6 +538,13 @@ void gbApuWrite(struct GB* gb, uint8_t address, uint8_t value) {
 		ch->dac = (value & 0xF8) != 0;
 		if (!ch->dac) {
 			ch->on = false;
+		} else if (ch->on) {
+			if (gb->model == GB_MODEL_DMG || gb->model == GB_MODEL_MGB) {
+				envelopeWrite(ch, 0xFF, old);
+				envelopeWrite(ch, value, 0xFF);
+			} else {
+				envelopeWrite(ch, value, old);
+			}
 		}
 		break;
 	case 0x1A:

@@ -14,7 +14,7 @@
 #include <string.h>
 void sbLoad(int cgb, const uint8_t* boot, size_t bootSize, const uint8_t* rom, size_t romSize);
 int sbStep(void); uint8_t sbRead(uint16_t); void sbRegs(uint16_t r[6]); int sbHalted(void); uint16_t sbDiv(void); int sbLine(void);
-uint8_t sbIo(int); uint8_t sbIe(void); int sbIme(void);
+uint8_t sbIo(int); uint8_t sbIe(void); int sbIme(void); void sbApu(int on[4], int volume[4]);
 const uint8_t* sbRam(void); size_t sbRamSize(void); const uint8_t* sbHram(void); const uint8_t* sbOam(void);
 const uint8_t* sbSram(void); size_t sbSramSize(void); int sbDouble(void);
 static struct GB gb;
@@ -80,8 +80,32 @@ int main(int argc, char** argv) {
 			lyA = gbPpuRead(&gb, 0x44); statA = gbPpuRead(&gb, 0x41);
 			ppu = lyA != sbIo(0x44) || (statA & 3) != (sbIo(0x41) & 3);
 		}
-		if (regs || timing || ppu) {
-			printf("instruction %ld differs (%s), frame %u\n", i, regs ? "registers" : timing ? "DIV" : "PPU", gb.frameCount);
+		// APU=1: the sound channels too, which are on and their envelopes' volumes.
+		bool apu = false;
+		if (getenv("APU") && !gb.bootMapped) {
+			gbApuSync(&gb);
+			int on[4], vol[4];
+			sbApu(on, vol);
+			const struct GBChannel* ch[4] = { &gb.apu.square[0], &gb.apu.square[1], &gb.apu.wave, &gb.apu.noise };
+			// A channel's start can lag a few cycles (SameBoy's delayed starts): only a difference that
+			// lasts counts.
+			static int lasting[4];
+			for (int k = 0; k < 4; ++k) {
+				bool differs = ch[k]->on != on[k] || (vol[k] >= 0 && on[k] && ch[k]->on && ch[k]->volume != vol[k]);
+				lasting[k] = differs ? lasting[k] + 1 : 0;
+				if (lasting[k] > 40) {
+					printf("  channel %d: armGB on %d volume %d | SameBoy on %d volume %d; NRx0-NRx4 armGB", k + 1, ch[k]->on, ch[k]->volume, on[k], vol[k]);
+					uint8_t base = (uint8_t[]) { 0x10, 0x15, 0x1A, 0x1F }[k];
+					for (int r = 0; r < 5; ++r) printf(" %02x", gb.apu.regs[base + r - 0x10]);
+					printf(" SameBoy");
+					for (int r = 0; r < 5; ++r) printf(" %02x", sbIo(base + r));
+					printf("\n");
+					apu = true;
+				}
+			}
+		}
+		if (regs || timing || ppu || apu) {
+			printf("instruction %ld differs (%s), frame %u\n", i, regs ? "registers" : timing ? "DIV" : ppu ? "PPU" : "APU", gb.frameCount);
 			printf("  armGB LY %02x STAT %02x line %u dot %d | SameBoy LY %02x STAT %02x\n", lyA, statA, gb.ppu.line, (int) (gb.now - gb.ppu.lineStart), sbIo(0x44), sbIo(0x41));
 			for (int k = 24; k >= 1; --k) printf("  sameboy pc %04x af %04x\n", hist[(i - k + H) % H][5], hist[(i - k + H) % H][0]);
 			printf("  armGB   af %04x bc %04x de %04x hl %04x sp %04x pc %04x  div %04x line %u double %d\n", a[0], a[1], a[2], a[3], a[4], a[5], gb.timer.counter, gb.ppu.line, gb.doubleSpeed);
