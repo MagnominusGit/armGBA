@@ -669,6 +669,8 @@ void gbPpuFreeze(struct GB*, uint32_t dots);
 void gbExpandTiles(uint32_t* line, uint8_t* info, const uint64_t* pixels, const uint32_t* const* colors, const uint8_t* front, int count);
 void gbShadeLine(uint32_t* out, const uint8_t* index, const uint32_t* lut, int count);
 void gbShadeLinePlain(uint32_t* out, const uint8_t* index, const uint32_t* lut, int count);
+uint64_t gbFindObjects(const uint8_t* oam, int line, int height);
+uint64_t gbFindObjectsPlain(const uint8_t* oam, int line, int height);
 void gbExpandTilesPlain(uint32_t* line, uint8_t* info, const uint64_t* pixels, const uint32_t* const* colors, const uint8_t* front, int count);
 
 // apu.c

@@ -29,6 +29,19 @@ static void expandPlain(uint32_t* line, uint8_t* info, const uint64_t* pixels, c
 	}
 }
 
+
+// The objects on a line: a bit for each of the 40 whose rows (height 8 or 16) cover it, from its Y
+// in OAM (every fourth byte, 16 above the screen).
+static uint64_t objectsPlain(const uint8_t* oam, int line, int height) {
+	uint64_t found = 0;
+	for (int i = 0; i < 40; ++i) {
+		if ((uint8_t) (line + 16 - oam[i * 4]) < height) {
+			found |= 1ULL << i;
+		}
+	}
+	return found;
+}
+
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
 
@@ -83,8 +96,45 @@ void gbExpandTiles(uint32_t* line, uint8_t* info, const uint64_t* pixels, const 
 	}
 }
 
+
+// SSE2 (every x86-64): four objects a load, their Y in each 32-bit lane's low byte.
+uint64_t gbFindObjects(const uint8_t* oam, int line, int height) {
+	__m128i top = _mm_set1_epi32(line + 16), mask = _mm_set1_epi32(0xFF), below = _mm_set1_epi32(-1), limit = _mm_set1_epi32(height);
+	uint64_t found = 0;
+	for (int i = 0; i < 40; i += 4) {
+		__m128i y = _mm_and_si128(_mm_loadu_si128((const __m128i*) &oam[i * 4]), mask);
+		__m128i d = _mm_sub_epi32(top, y);
+		__m128i in = _mm_and_si128(_mm_cmpgt_epi32(d, below), _mm_cmplt_epi32(d, limit));
+		found |= (uint64_t) _mm_movemask_ps(_mm_castsi128_ps(in)) << i;
+	}
+	return found;
+}
+
 #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
+
+// NEON: sixteen objects a load (vld4 takes every fourth byte), then eight; a bit for each.
+static inline uint64_t objectBits(uint8x16_t in) {
+	static const uint8_t weights[16] = { 1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128 };
+	uint8x16_t bits = vandq_u8(in, vld1q_u8(weights));
+#if defined(__aarch64__)
+	return vaddv_u8(vget_low_u8(bits)) | (uint64_t) vaddv_u8(vget_high_u8(bits)) << 8;
+#else
+	uint8x8_t sum = vpadd_u8(vget_low_u8(bits), vget_high_u8(bits));
+	sum = vpadd_u8(sum, sum);
+	sum = vpadd_u8(sum, sum);
+	return vget_lane_u8(sum, 0) | (uint64_t) vget_lane_u8(sum, 1) << 8;
+#endif
+}
+
+uint64_t gbFindObjects(const uint8_t* oam, int line, int height) {
+	uint8x16_t top = vdupq_n_u8(line + 16), limit = vdupq_n_u8(height);
+	uint64_t found = objectBits(vcltq_u8(vsubq_u8(top, vld4q_u8(oam).val[0]), limit));
+	found |= objectBits(vcltq_u8(vsubq_u8(top, vld4q_u8(oam + 64).val[0]), limit)) << 16;
+	uint8x8_t last = vclt_u8(vsub_u8(vget_low_u8(top), vld4_u8(oam + 128).val[0]), vget_low_u8(limit));
+	found |= objectBits(vcombine_u8(last, vdup_n_u8(0))) << 32;
+	return found;
+}
 
 // Each pixel's index picks four bytes of the palette: the index times 4, plus 0 to 3.
 static inline uint8x16_t paletteBytes(uint8x8_t indices, int half) {
@@ -131,6 +181,10 @@ void gbExpandTiles(uint32_t* line, uint8_t* info, const uint64_t* pixels, const 
 
 #else
 
+uint64_t gbFindObjects(const uint8_t* oam, int line, int height) {
+	return objectsPlain(oam, line, height);
+}
+
 void gbShadeLine(uint32_t* out, const uint8_t* index, const uint32_t* lut, int count) {
 	shadePlain(out, index, lut, count);
 }
@@ -142,6 +196,10 @@ void gbExpandTiles(uint32_t* line, uint8_t* info, const uint64_t* pixels, const 
 #endif
 
 // The plain loops, for checking the others against.
+uint64_t gbFindObjectsPlain(const uint8_t* oam, int line, int height) {
+	return objectsPlain(oam, line, height);
+}
+
 void gbShadeLinePlain(uint32_t* out, const uint8_t* index, const uint32_t* lut, int count) {
 	shadePlain(out, index, lut, count);
 }

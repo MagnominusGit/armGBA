@@ -2,7 +2,7 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  * Licensed under the GNU General Public License, version 2 or (at your option) any later version: see LICENSE. */
-// gbsimd [rounds]: armGB's SIMD drawing (ppu-simd.c) against its plain loop, on random tiles and palettes.
+// gbsimd [rounds]: armGB's SIMD drawing (ppu-simd.c) against its plain loops, on random tiles, palettes and OAM.
 #include "gb.h"
 
 #include <stdio.h>
@@ -67,6 +67,19 @@ int main(int argc, char** argv) {
 		gbShadeLinePlain(b, index + from, lut, count);
 		if (memcmp(a, b, sizeof(a))) {
 			printf("shades differ in round %ld\n", r);
+			return 1;
+		}
+	}
+	// The objects on a line, from OAM's Y bytes: mostly near the line, so many rows cover it.
+	for (long r = 0; r < rounds; ++r) {
+		uint8_t oam[160];
+		int line = (int) (next() % 154);
+		for (int i = 0; i < 160; ++i) {
+			oam[i] = next() & 1 ? (uint8_t) (line + 16 - (int) (next() % 20) + 2) : (uint8_t) next();
+		}
+		int height = next() & 1 ? 16 : 8;
+		if (gbFindObjects(oam, line, height) != gbFindObjectsPlain(oam, line, height)) {
+			printf("objects differ in round %ld\n", r);
 			return 1;
 		}
 	}

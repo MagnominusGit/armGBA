@@ -59,15 +59,12 @@ enum {
 // The objects on the line, in OAM order: at most ten.
 static void findObjects(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
-	int height = ppu->lcdc & LCDC_TALL ? 16 : 8;
-	int y = ppu->line;
-	ppu->objectCount = 0;
-	for (int i = 0; i < 40 && ppu->objectCount < 10; ++i) {
-		int top = gb->oam[i * 4] - 16;
-		if (y >= top && y < top + height) {
-			ppu->objects[ppu->objectCount++] = i;
-		}
+	uint64_t found = gbFindObjects(gb->oam, ppu->line, ppu->lcdc & LCDC_TALL ? 16 : 8);
+	int count = 0;
+	for (; found && count < 10; found &= found - 1) {
+		ppu->objects[count++] = __builtin_ctzll(found);
 	}
+	ppu->objectCount = count;
 }
 
 static bool windowOnLine(const struct GB* gb) {
