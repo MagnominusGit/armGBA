@@ -53,16 +53,19 @@ void gbMapRom(struct GB* gb) {
 			gb->readMap[i] = NULL;
 		}
 	}
-	// Vast Fame: every ROM page while its bytes are given out, else the page it waits for and the
-	// pages it covers.
+	// Vast Fame: every ROM page while a read is armed, and bank 0 from where another bank covers it.
 	if (cart->variant == GB_VAST_FAME) {
 		const struct GBVastFame* vf = &cart->vf;
+		bool armed = (vf->at7000[0] & 7) >= 4;
+		unsigned from = vf->at7000[10] << 8 | vf->at7000[9];
+		bool covered = (vf->at7000[8] & 0xF) == 0xF && from < 0x4000;
 		for (int i = 0; i < 8; ++i) {
-			if (vf->left || (vf->length && i == vf->address >> 12) || (vf->replace && i < 4 && i >= vf->replaceFrom >> 12)) {
+			if (armed || (covered && i < 4 && i >= (int) (from >> 12))) {
 				gb->readMap[i] = NULL;
 			}
 		}
 	}
+
 }
 
 // The bus a DMA source or a CPU access is on: the external bus (the cartridge, and on the original

@@ -58,6 +58,18 @@ static uint32_t crc32(const uint8_t* data, size_t size) {
 	return ~crc;
 }
 
+static unsigned logoSum(const struct GB* gb) {
+	unsigned sum = 0;
+	for (int i = 0x184; i < 0x1B4; ++i) {
+		sum += gb->rom[i];
+	}
+	return sum;
+}
+
+static bool vastFameMaybeGgb81(const struct GB* gb) {
+	return logoSum(gb) == 2981;
+}
+
 // Which variant a cartridge is, by its second logo; a "fixed" dump (its last bank-0 byte 1) is plain.
 static uint8_t variantOf(const struct GB* gb) {
 	const uint8_t* rom = gb->rom;
@@ -69,7 +81,9 @@ static uint8_t variantOf(const struct GB* gb) {
 	for (int i = 0x184; i < 0x1B4; ++i) {
 		sum += rom[i];
 	}
-	if (sum == 4844 || sum == 6127 || sum == 4406) {
+	// Vast Fame's logo, Soul Falchion's, an italic DIGI, two its games carry elsewhere, and one GGB-81's
+	// games carry too (armGBA's list).
+	if (sum == 4844 || sum == 6127 || sum == 4406 || sum == 3209 || sum == 2981) {
 		return GB_VAST_FAME;
 	}
 	switch (crc32(&rom[0x184], 0x30)) {
@@ -111,6 +125,9 @@ static void romScramble(struct GBCart* cart) {
 	case GB_GGB81:
 		order = ggb81Data[cart->dataOrder];
 		break;
+	case GB_VAST_FAME:
+		order = ggb81Data[cart->vf.dataMode];
+		break;
 	default:
 		break;
 	}
@@ -120,78 +137,92 @@ static void romScramble(struct GBCart* cart) {
 	}
 }
 
-// Vast Fame's configuration writes ($6000-$7FFF, address bits 4-11 ignored). $96 at $7000 starts
-// configuring and at $700F ends it; in between, each write to $6000 or $7000-$700A turns a running
-// value right a bit and XORs it with the value written, and stores it. $7000 then sets the bytes given
-// out (how many, then where, and the bytes) and $7008 what covers bank 0.
-static bool vastFameSensible(const uint8_t at[11]) {
-	unsigned length = at[0] & 7;
-	uint16_t address = at[2] << 8 | at[1];
-	return length < 4 || (at[3] == 0 ? address < 0x4000 : address >= 0x4000 && address < 0x8000);
+// Vast Fame (armGBA's, after hhugboy): how many reads the armed sequence answers.
+static unsigned vastFameLength(const struct GBVastFame* vf) {
+	return (vf->at7000[0] & 7) >= 4 ? (vf->at7000[0] & 7) - 3 : 0;
+}
+
+// Where the difference between the two kinds' starting values is after so many turns.
+static uint8_t vastFameTurned(unsigned turns) {
+	return (0x10 >> (turns & 7) | 0x10 << (8 - (turns & 7))) & 0xFF;
+}
+
+// The registers as the other kind of cartridge would have them.
+static void vastFameOtherKind(struct GBVastFame* vf) {
+	vf->start ^= 0x10;
+	vf->running ^= vastFameTurned(vf->turns);
+	vf->at6000 ^= vastFameTurned(vf->turnOf[11]);
+	for (int i = 0; i < 11; ++i) {
+		vf->at7000[i] ^= vastFameTurned(vf->turnOf[i]);
+	}
+	vf->decided = true;
 }
 
 static void vastFameWrite(struct GB* gb, uint16_t address, uint8_t value) {
 	struct GBVastFame* vf = &gb->cart.vf;
 	uint16_t at = address & 0xF00F;
 	if (at == 0x7000 && value == 0x96) {
+		vf->opened = true;
+		vf->dataMode = 0;
 		vf->config = true;
-		vf->running[0] = 0x00;
-		vf->running[1] = 0x10;
-		return;
-	}
-	if (at == 0x700F && value == 0x96) {
+		vf->running = vf->start;
+		vf->turns = 0;
+		romScramble(&gb->cart);
+	} else if (at == 0x700F && value == 0x96) {
 		vf->config = false;
-		return;
-	}
-	if (!vf->config || !(at == 0x6000 || (at >= 0x7000 && at <= 0x700A))) {
-		return;
-	}
-	for (int k = 0; k < 2; ++k) {
-		vf->running[k] = (uint8_t) (vf->running[k] >> 1 | vf->running[k] << 7) ^ value;
+	} else if (vf->config && (at == 0x6000 || (at >= 0x7000 && at <= 0x700A))) {
+		vf->running = (uint8_t) ((vf->running & 1) << 7 | vf->running >> 1) ^ value;
+		vf->turns = (vf->turns + 1) & 7;
+		unsigned index = at == 0x6000 ? 11 : at & 0xF;
+		vf->turnOf[index] = vf->turns;
 		if (at == 0x6000) {
-			vf->at6000[k] = vf->running[k];
+			vf->at6000 = vf->running;
 		} else {
-			vf->at7000[k][at - 0x7000] = vf->running[k];
+			vf->at7000[at & 0xF] = vf->running;
 		}
-	}
-	if (at == 0x7000) {
-		// The starting value is the one whose bytes are given out somewhere they can be read.
-		if (vf->which < 0) {
-			vf->which = !vastFameSensible(vf->at7000[0]) && vastFameSensible(vf->at7000[1]);
+		uint8_t other = vf->running ^ vastFameTurned(vf->turns);
+		if (!vf->decided && ((at == 0x7000 && (vf->running & 7) < 4 && (other & 7) >= 4)
+		                     || (at == 0x7008 && (vf->running & 0xF) != 0xF && (other & 0xF) == 0xF))) {
+			vastFameOtherKind(vf);
 		}
-		const uint8_t* stored = vf->at7000[vf->which];
-		unsigned length = stored[0] & 7;
-		vf->length = length >= 4 ? length - 3 : 0;
-		vf->left = 0;
-		vf->bank = stored[3];
-		vf->address = stored[2] << 8 | stored[1];
-		memcpy(vf->bytes, &stored[4], 4);
-	} else if (at == 0x7008) {
-		int which = vf->which < 0 ? 0 : vf->which;
-		const uint8_t* stored = vf->at7000[which];
-		vf->replaceFrom = stored[10] << 8 | stored[9];
-		vf->replaceBank = vf->at6000[which];
-		vf->replace = (stored[8] & 0xF) == 0xF;
+		if (at == 0x7000) {
+			vf->left = 0;
+		}
 	}
 	gbMapRom(gb);
 }
 
+// Whether the address is the armed one: bank 0's, or the switchable bank's (hhugboy's bounds, its
+// decimal 4000 included).
+static bool vastFameWaited(const struct GB* gb, unsigned bank, uint16_t address) {
+	return (bank == 0 && address < 0x3FFF) || (bank == gb->cart.romBank && address >= 4000);
+}
+
 uint8_t gbCartReadVastFame(struct GB* gb, uint16_t address) {
 	struct GBVastFame* vf = &gb->cart.vf;
-	bool waited = vf->bank == 0 ? address < 0x4000 : vf->bank == gb->cart.romBank && address >= 0x4000;
-	if (waited && address == vf->address && !vf->left && vf->length) {
-		vf->left = vf->length;
-		gbMapRom(gb);
+	if (!vf->decided && !vf->left) {
+		// Whichever kind's trigger address the game reads first is the kind this cartridge is.
+		unsigned otherBank = vf->at7000[3] ^ vastFameTurned(vf->turnOf[3]);
+		unsigned other = (vf->at7000[2] ^ vastFameTurned(vf->turnOf[2])) << 8 | (vf->at7000[1] ^ vastFameTurned(vf->turnOf[1]));
+		unsigned mine = vf->at7000[2] << 8 | vf->at7000[1];
+		if (address == mine) {
+			vf->decided = true;
+		} else if (address == other && vastFameWaited(gb, otherBank, address)) {
+			vastFameOtherKind(vf);
+		}
+	}
+	unsigned length = vastFameLength(vf);
+	if (vastFameWaited(gb, vf->at7000[3], address) && address == (vf->at7000[2] << 8 | vf->at7000[1]) && !vf->left) {
+		vf->left = length;
 	}
 	if (vf->left) {
-		uint8_t value = vf->bytes[vf->length - vf->left];
-		if (!--vf->left) {
-			gbMapRom(gb);
-		}
-		return value;
+		--vf->left;
+		return vf->at7000[4 + length - vf->left - 1];
 	}
-	if (vf->replace && address >= vf->replaceFrom && address < 0x4000) {
-		return gb->rom[(((size_t) vf->replaceBank << 14) & (gb->romSize - 1)) + address];
+	// Bank 0 with its upper part from another bank, while $7008's value ends in F.
+	uint16_t from = vf->at7000[10] << 8 | vf->at7000[9];
+	if ((vf->at7000[8] & 0xF) == 0xF && address < 0x4000 && address >= from) {
+		return gb->rom[(((size_t) vf->at6000 << 14) & (gb->romSize - 1)) + address];
 	}
 	return address < 0x4000 ? gb->memMap[address >> 12][address & 0xFFF] : gbCartRomByte(gb, gb->memMap[address >> 12][address & 0xFFF]);
 }
@@ -238,11 +269,15 @@ static bool variantWrite(struct GB* gb, uint16_t address, uint8_t* value) {
 	case GB_LI_CHENG:
 		return !(address > 0x2100 && address < 0x3000);
 	case GB_VAST_FAME:
-		if (address < 0x6000) {
-			return true;
+		if (address >= 0x6000) {
+			vastFameWrite(gb, address, *value);
+			return false;
 		}
-		vastFameWrite(gb, address, *value);
-		return false;
+		if (!cart->vf.opened && (address & 0xF0FF) == 0x2001) {
+			cart->vf.dataMode = *value & 7;
+			romScramble(cart);
+		}
+		return true;
 	default:
 		return true;
 	}
@@ -262,7 +297,7 @@ bool gbCartInit(struct GB* gb) {
 		cart->bankOrder = 0xF;
 	}
 	romScramble(cart);
-	cart->vf.which = -1;
+	cart->vf.opened = cart->variant == GB_VAST_FAME && !vastFameMaybeGgb81(gb);
 	switch (cart->variant != GB_PLAIN ? 0x1B : type) {
 	case 0x00:
 	case 0x08:

@@ -121,24 +121,27 @@ enum GBVariant {
 	GB_VAST_FAME,
 };
 
-// Vast Fame's protection (as hhugboy documents it, src/memory/mbc/MbcUnlVf001): configured through
-// $6000 and $7000-$700A, it gives a few bytes in place of a chosen ROM address's, and can put another
-// bank's bytes over bank 0 from an address on.
+// Vast Fame's protection (armGBA's, after taizou's findings in hhugboy): MBC5 with a lock set up by
+// writes to $6000-$7FFF, each turning a running value right a bit and XORing the byte into it, stored
+// by address. With them the game arms a read of a ROM address that makes the next one to four ROM reads
+// give bytes it supplied, and bank 0 from an address up read from another bank. The running value
+// starts at $00 on Vast Fame's own cartridges and $10 on mainland releases of the same games; nothing in
+// the ROM says which, so a command or a read that only makes sense the other way decides.
 struct GBVastFame {
 	bool config;
-	// Kept for both starting values of the running value, $00 and $10 (hhugboy's VF001 and VF001A);
-	// the first set of bytes given out tells which this cartridge uses.
-	uint8_t running[2];
-	uint8_t at6000[2];
-	uint8_t at7000[2][11];
-	int8_t which;
-	uint8_t length, left;
-	uint8_t bank;
-	uint16_t address;
-	uint8_t bytes[4];
-	bool replace;
-	uint16_t replaceFrom;
-	uint8_t replaceBank;
+	uint8_t start;
+	uint8_t running;
+	uint8_t at6000;
+	uint8_t at7000[11];
+	// For each register, after how many turns it was last written (index 11: $6000).
+	uint8_t turnOf[12];
+	uint8_t turns;
+	uint8_t left;
+	bool decided;
+	// A cartridge whose logo GGB-81's games carry too reads its data in GGB-81's orders until its lock
+	// is first opened.
+	bool opened;
+	uint8_t dataMode;
 };
 
 // The events, each at a time; the earliest decides when the CPU next stops to run them.
