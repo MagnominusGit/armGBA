@@ -62,6 +62,10 @@ void gbRunEvents(struct GB* gb) {
 		case GB_EVENT_SPEED:
 			gbSpeedEvent(gb);
 			break;
+		case GB_EVENT_STALL:
+			gb->cpu.stalled = false;
+			gb->attention = true;
+			break;
 		default:
 			break;
 		}
@@ -108,6 +112,11 @@ void gbSpeedEvent(struct GB* gb) {
 }
 
 // STOP: on the Color with a speed switch armed, switches speed; otherwise sleeps until a button.
+void gbStall(struct GB* gb, uint32_t dots) {
+	gb->cpu.stalled = true;
+	gbSchedule(gb, GB_EVENT_STALL, gb->now + dots);
+}
+
 void gbStop(struct GB* gb) {
 	gb->attention = true;
 	if (gb->cgbMode && (gb->io[0x4D] & 1)) {
@@ -277,6 +286,7 @@ void gbReset(struct GB* gb) {
 		// An original Game Boy game on the Color: the four shades as grays, for the background and both
 		// sprite palettes, where the boot ROM would have chosen colors.
 		static const uint16_t grays[4] = { 0x7FFF, 0x5294, 0x294A, 0x0000 };
+		gb->cgb.compatShades = true;
 		for (int i = 0; i < 8; ++i) {
 			gb->cgb.bgPalette[i] = gb->cgb.objPalette[i] = gb->cgb.objPalette[8 + i] = grays[i >> 1] >> (i & 1 ? 8 : 0);
 		}

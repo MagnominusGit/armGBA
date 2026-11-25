@@ -174,6 +174,7 @@ enum {
 	GB_EVENT_DMA,
 	GB_EVENT_HDMA,
 	GB_EVENT_SPEED,
+	GB_EVENT_STALL,
 	GB_EVENTS,
 };
 
@@ -189,6 +190,8 @@ struct GBCpu {
 	bool haltBug;
 	bool stopped;
 	bool locked;
+	// Held at power on until GB_EVENT_STALL (gbStall).
+	bool stalled;
 	// A speed switch: 1 while the speed is about to change to double, 2 while halted until it is done
 	// (an interrupt wakes it sooner).
 	uint8_t switching;
@@ -320,6 +323,8 @@ struct GBCgb {
 	// Palette RAM, 8 palettes of 4 colors as little-endian RGB555, and the index registers.
 	uint8_t bgPalette[64];
 	uint8_t objPalette[64];
+	// An original Game Boy game started without a boot ROM: drawn in the frontend's shades.
+	bool compatShades;
 	uint8_t bcps, ocps;
 	// Objects by OAM position (0) or by X (1, as the original Game Boy).
 	uint8_t opri;
@@ -564,6 +569,9 @@ void gbRunEvents(struct GB*);
 void gbRequest(struct GB*, uint8_t irq);
 void gbStop(struct GB*);
 void gbSpeedEvent(struct GB*);
+// Holds the CPU for some dots from power on: the Game Boy Advance's own start before the Color's boot
+// ROM runs.
+void gbStall(struct GB*, uint32_t dots);
 void gbBlankFrame(struct GB*);
 size_t gbStateSize(void);
 void gbSaveState(const struct GB*, void* data);

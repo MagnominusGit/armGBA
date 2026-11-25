@@ -267,7 +267,9 @@ static inline uint32_t paletteColor(const struct GB* gb, const uint8_t* palettes
 static void lineColors(const struct GB* gb, const uint8_t* palettes, int count, const uint8_t* shades, uint32_t colors[8][4]) {
 	for (int p = 0; p < count; ++p) {
 		for (int i = 0; i < 4; ++i) {
-			colors[p][i] = paletteColor(gb, palettes, shades ? p * 4 + (shades[p] >> (i * 2) & 3) : p * 4 + i);
+			unsigned shade = shades ? shades[p] >> (i * 2) & 3 : (unsigned) i;
+			// With no boot ROM to choose colors, the frontend's shades.
+			colors[p][i] = shades && gb->cgb.compatShades && gb->video ? gb->videoColors[shade] : paletteColor(gb, palettes, p * 4 + shade);
 		}
 	}
 }

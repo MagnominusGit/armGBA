@@ -778,7 +778,7 @@ void gbCpuRun(struct GB* gb, uint32_t until) {
 		if (gbSince(gb->now, gb->nextEvent) >= 0) {
 			gbRunEvents(gb);
 		}
-		if (cpu->stopped || cpu->locked) {
+		if (cpu->stopped || cpu->locked || cpu->stalled) {
 			idle(gb, until);
 			continue;
 		}
