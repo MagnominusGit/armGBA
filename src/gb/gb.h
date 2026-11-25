@@ -136,6 +136,45 @@ struct GBSerial {
 	uint32_t nextBit;
 };
 
+// A sound channel. The timer counts dots to the next step of the waveform; length, envelope and
+// sweep are clocked by the frame sequencer.
+struct GBChannel {
+	bool on;
+	bool dac;
+	bool lengthOn;
+	uint16_t length;
+	uint16_t frequency;
+	uint32_t nextStep;
+	uint8_t position;
+	uint8_t volume;
+	uint8_t envelopeTimer;
+	// The level it puts out now, 0 to 15.
+	uint8_t level;
+};
+
+struct GBApu {
+	bool power;
+	struct GBChannel square[2];
+	struct GBChannel wave;
+	struct GBChannel noise;
+	uint16_t lfsr;
+	// The sweep (channel 1): its shadow frequency, timer, and whether it runs.
+	uint16_t sweepShadow;
+	uint8_t sweepTimer;
+	bool sweepOn;
+	bool sweepNegated;
+	// The wave channel's sample buffer, and when it last read wave RAM.
+	uint8_t waveSample;
+	uint32_t waveReadAt;
+	// The frame sequencer's next step (0 to 7).
+	uint8_t frameStep;
+	uint8_t regs[0x30];
+	uint32_t lastSync;
+	// Sample building: the time each sample's window starts, and the sums over it so far.
+	uint32_t sampleStart;
+	int32_t accumLeft, accumRight;
+};
+
 // OAM DMA (Pan Docs, "OAM DMA Transfer"): written at start, an M-cycle's wait, then a byte an M-cycle.
 struct GBDma {
 	bool active;
@@ -180,6 +219,7 @@ struct GB {
 	struct GBSerial serial;
 	struct GBCart cart;
 	struct GBDma dma;
+	struct GBApu apu;
 	bool bootMapped;
 	uint8_t wramBank;
 	uint8_t vramBank;
@@ -190,6 +230,9 @@ struct GB {
 	uint8_t io[0x80];
 	uint8_t sram[0x20000];
 	uint16_t frame[GB_HEIGHT][GB_WIDTH];
+	// The frame's sound, left and right interleaved, at GB_SAMPLE_RATE: the frontend takes it.
+	int16_t audio[4096];
+	uint32_t audioCount;
 	uint32_t frameCount;
 	// Set when V-blank starts, so a frame's run can end there.
 	bool frameEnded;
@@ -244,7 +287,11 @@ void gbPpuWrite(struct GB*, uint8_t reg, uint8_t value);
 void gbPpuEvent(struct GB*);
 
 // apu.c
+void gbApuReset(struct GB*);
+void gbApuSync(struct GB*);
 void gbApuDivReset(struct GB*);
+uint8_t gbApuRead(struct GB*, uint8_t reg);
+void gbApuWrite(struct GB*, uint8_t reg, uint8_t value);
 
 // serial.c
 void gbSerialWrite(struct GB*, uint8_t reg, uint8_t value);

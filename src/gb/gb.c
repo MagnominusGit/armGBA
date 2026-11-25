@@ -70,6 +70,7 @@ void gbRequest(struct GB* gb, uint8_t irq) {
 // STOP: on the Color with a speed switch armed, switches speed; otherwise sleeps until a button.
 void gbStop(struct GB* gb) {
 	if (gb->cgbMode && (gb->io[0x4D] & 1)) {
+		gbApuSync(gb);
 		gbTimerSync(gb);
 		gb->doubleSpeed = !gb->doubleSpeed;
 		gb->mcycle = gb->doubleSpeed ? 2 : 4;
@@ -99,7 +100,7 @@ void gbReset(struct GB* gb) {
 	gb->cgbMode = model == GB_MODEL_CGB && (rom[0x143] & 0x80);
 	gb->mcycle = 4;
 	struct GBCpu* cpu = &gb->cpu;
-	gb->joypadSelect = 0x30;
+	gb->joypadSelect = 0;
 	gb->wramBank = 1;
 	if (gb->boot) {
 		// Power on into the boot ROM: everything at 0 but the divider, which starts at 8 (as SameBoy
@@ -108,6 +109,7 @@ void gbReset(struct GB* gb) {
 		gb->timer.counter = 8;
 		gb->timer.reloadedAt = gb->now - 0x10000;
 		gbMapRom(gb);
+		gbApuReset(gb);
 		gbPpuReset(gb);
 		gb->ppu.lcdc = 0;
 		gbUnschedule(gb, GB_EVENT_PPU);
@@ -134,6 +136,10 @@ void gbReset(struct GB* gb) {
 	gb->timer.reloadedAt = gb->now - 0x10000;
 	gb->ifl = 0x01;
 	gbMapRom(gb);
+	gbApuReset(gb);
+	gb->apu.power = true;
+	gb->apu.regs[0x24 - 0x10] = 0x77;
+	gb->apu.regs[0x25 - 0x10] = 0xF3;
 	gbPpuReset(gb);
 	updateNext(gb);
 }
@@ -161,7 +167,9 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 void gbRunFrame(struct GB* gb) {
 	uint32_t limit = gb->now + GB_FRAME_DOTS;
 	gb->frameEnded = false;
+	gb->audioCount = 0;
 	while (!gb->frameEnded && gbSince(limit, gb->now) > 0) {
 		gbCpuRun(gb, limit);
 	}
+	gbApuSync(gb);
 }

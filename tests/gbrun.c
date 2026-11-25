@@ -11,6 +11,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+static double now(void) {
+	struct timespec t;
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return t.tv_sec + t.tv_nsec / 1e9;
+}
 
 static char serialText[4096];
 static size_t serialLength;
@@ -58,9 +65,18 @@ int main(int argc, char** argv) {
 	}
 	gb.serialOut = serialOut;
 	const char* result = "none";
+	// MARK=n: times frames n to the end, and runs them all (no stopping at a result).
+	int mark = getenv("MARK") ? atoi(getenv("MARK")) : -1;
+	double marked = 0;
 	int frame;
 	for (frame = 0; frame < frames; ++frame) {
+		if (frame == mark) {
+			marked = now();
+		}
 		gbRunFrame(&gb);
+		if (mark >= 0) {
+			continue;
+		}
 		const struct GBCpu* c = &gb.cpu;
 		if (c->b == 3 && c->c == 5 && c->d == 8 && c->e == 13 && c->h == 21 && c->l == 34) {
 			result = "mooneye-pass";
@@ -94,6 +110,9 @@ int main(int argc, char** argv) {
 			result = strstr(serialText, "Passed") ? "serial-pass" : "serial-fail";
 			break;
 		}
+	}
+	if (mark >= 0 && mark < frames) {
+		printf("fps=%.1f\n", (frames - mark) / (now() - marked));
 	}
 	uint64_t hash = 1469598103934665603ULL;
 	for (int y = 0; y < GB_HEIGHT; ++y) {
