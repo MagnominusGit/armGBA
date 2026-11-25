@@ -290,8 +290,16 @@ int main(int argc, char** argv) {
 
 	// armGB.
 	static struct GB gb;
+	// A Mega Duck game, by its extension as armGBA tells it (a .bin taken as one).
+	static const char* const duckKinds[] = { ".bin", ".duck", ".md0", ".md1", ".md2", ".md20s", ".md25s" };
+	const char* dot = strrchr(argv[2], '.');
+	for (int i = 0; dot && i < 7; ++i) {
+		if (!strcasecmp(dot, duckKinds[i])) {
+			gb.megaDuck = 1 + i;
+		}
+	}
 	// NOBOOT=1: armGB without a boot ROM, as the other core runs Sachen's cartridges.
-	if (!getenv("NOBOOT")) {
+	if (!getenv("NOBOOT") && !gb.megaDuck) {
 		gb.boot = colorModel ? armgba_cgb_boot : armgba_dmg_boot;
 		gb.bootSize = colorModel ? sizeof(armgba_cgb_boot) : sizeof(armgba_dmg_boot);
 	}

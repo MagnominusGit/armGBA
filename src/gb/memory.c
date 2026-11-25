@@ -302,6 +302,64 @@ void gbIoWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 	}
 }
 
+// The Mega Duck is a Game Boy with its I/O registers moved and some of their bits rearranged (as
+// SameDuck has them): each of its registers is the Game Boy register here, or none (-1).
+static const int8_t duckIo[0x80] = {
+	// 00-0F: joypad, serial, timer and IF, where the Game Boy has them
+	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+	// 10-1F: LCDC STAT SCY SCX OBP0 OBP1 WY WX LY LYC DMA BGP
+	0x40, 0x41, 0x42, 0x43, 0x48, 0x49, 0x4A, 0x4B, 0x44, 0x45, 0x46, 0x47, -1, -1, -1, -1,
+	// 20-2F: NR10 NR12 NR11 NR13 NR14 NR21 (NR20) NR22 NR23 NR24 NR30 NR31 NR32 NR34 NR33 (NR40)
+	0x10, 0x12, 0x11, 0x13, 0x14, 0x16, 0x15, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1E, 0x1D, 0x1F,
+	// 30-3F: wave RAM
+	0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F,
+	// 40-4F: NR41 NR43 NR42 NR44 NR50 NR52 NR51, then nothing up to the Color's registers
+	0x20, 0x22, 0x21, 0x23, 0x24, 0x26, 0x25, -1, -1, -1, -1, -1, 0x4C, 0x4D, 0x4E, 0x4F,
+	0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F,
+	0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F,
+	0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7A, 0x7B, 0x7C, 0x7D, 0x7E, 0x7F,
+};
+
+// LCDC bit by bit: the Mega Duck's bit 6 is the Game Boy's 0 (background on), 3 is 6 (window map), 2 is
+// 3 (background map), 1 is 2 (sprite size) and 0 is 1 (sprites on); 7, 5 and 4 match. The envelopes
+// (NR12, NR22, NR42) and the noise's frequency (NR43) have their halves swapped. The wave's volume (NR32
+// bits 6-5) has full and a quarter the other way round: 11 is full, 01 a quarter (as GBDK-2020 has it).
+static uint8_t duckValue(uint8_t reg, uint8_t v, bool toGb) {
+	switch (reg) {
+	case 0x40:
+		return toGb ? (v & 0xB0) | (v >> 6 & 0x01) | (v << 3 & 0x40) | (v << 1 & 0x0E)
+		            : (v & 0xB0) | (v << 6 & 0x40) | (v >> 3 & 0x08) | (v >> 1 & 0x07);
+	case 0x12:
+	case 0x17:
+	case 0x21:
+	case 0x22:
+		return (uint8_t) (v << 4 | v >> 4);
+	case 0x1C:
+		return (v & ~0x60) | ((0u - (v & 0x60)) & 0x60);
+	default:
+		return v;
+	}
+}
+
+static uint8_t ioRead(struct GB* gb, uint8_t reg) {
+	if (gb->cart.mapper != GB_MEGADUCK) {
+		return gbIoRead(gb, reg);
+	}
+	int8_t gbReg = duckIo[reg & 0x7F];
+	return gbReg < 0 ? 0xFF : duckValue(gbReg, gbIoRead(gb, gbReg), false);
+}
+
+static void ioWrite(struct GB* gb, uint8_t reg, uint8_t value) {
+	if (gb->cart.mapper != GB_MEGADUCK) {
+		gbIoWrite(gb, reg, value);
+		return;
+	}
+	int8_t gbReg = duckIo[reg & 0x7F];
+	if (gbReg >= 0) {
+		gbIoWrite(gb, gbReg, duckValue(gbReg, value, true));
+	}
+}
+
 uint8_t gbRead(struct GB* gb, uint16_t address) {
 	uint8_t conflict;
 	if (gb->dma.active && dmaConflict(gb, address, &conflict)) {
@@ -344,7 +402,7 @@ uint8_t gbRead(struct GB* gb, uint16_t address) {
 			return 0;
 		}
 		if (address < 0xFF80) {
-			return gbIoRead(gb, address);
+			return ioRead(gb, address);
 		}
 		if (address < 0xFFFF) {
 			return gb->hram[address & 0x7F];
@@ -401,7 +459,7 @@ void gbWrite(struct GB* gb, uint16_t address, uint8_t value) {
 			}
 		} else if (address < 0xFF00) {
 		} else if (address < 0xFF80) {
-			gbIoWrite(gb, address, value);
+			ioWrite(gb, address, value);
 		} else if (address < 0xFFFF) {
 			gb->hram[address & 0x7F] = value;
 		} else {

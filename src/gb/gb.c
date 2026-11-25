@@ -228,10 +228,13 @@ void gbReset(struct GB* gb) {
 	struct GBCpu* cpu = &gb->cpu;
 	gb->joypadSelect = 0;
 	gb->wramBank = 1;
-	if (gb->boot) {
+	if (gb->boot || gb->megaDuck) {
 		// Power on into the boot ROM: everything at 0 but the divider, which starts at 8 (as SameBoy
-		// has it), and the LCD off.
-		gb->bootMapped = true;
+		// has it), and the LCD off. The Mega Duck has no boot ROM: it starts the cartridge at 0000.
+		gb->bootMapped = !gb->megaDuck;
+		if (gb->duckLaptop) {
+			cpu->sp = 0xFFFF;
+		}
 		gb->timer.counter = 8;
 		gb->timer.reloadedAt = gb->now - 0x10000;
 		gbMapRom(gb);
@@ -332,6 +335,8 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	bool rtcRealTime = gb->rtcRealTime;
 	unsigned rtcPercent = gb->rtcPercent ? gb->rtcPercent : 100;
 	int64_t hostMicros = gb->hostMicros;
+	uint8_t megaDuck = gb->megaDuck;
+	bool duckLaptop = gb->duckLaptop;
 	uint32_t videoColors[5];
 	memcpy(videoColors, gb->videoColors, sizeof(videoColors));
 	memset(gb, 0, sizeof(*gb));
@@ -345,6 +350,8 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	gb->rtcRealTime = rtcRealTime;
 	gb->rtcPercent = rtcPercent;
 	gb->hostMicros = hostMicros;
+	gb->megaDuck = megaDuck;
+	gb->duckLaptop = duckLaptop;
 	memcpy(gb->videoColors, videoColors, sizeof(videoColors));
 	gb->rom = rom;
 	gb->romSize = size;

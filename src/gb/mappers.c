@@ -6,7 +6,7 @@
 
 #include <string.h>
 
-// The rarer mappers: armGBA's own (Sachen, PKJD, NT's), and Wisdom Tree, MMM01 and MBC6 as mGBA
+// The rarer mappers: armGBA's own (Sachen, PKJD, NT's, the Mega Duck's), and Wisdom Tree, MMM01 and MBC6 as mGBA
 // documents them. Each sets the banks gbMapRom maps: bank 0's (bank0, with bank0Mapped), the switchable
 // one (romBank), or two 8 KiB halves (half, with halves).
 
@@ -58,6 +58,66 @@ static void ntOldBanks(struct GB* gb) {
 	cart->romBank = (bank + cart->ntBase) & (banks(gb) - 1);
 }
 
+// The Mega Duck's cartridges (as megaduck-info and Super Junior SameDuck have them):
+//   MD1   a write to B000 picks a 32 KiB bank for the whole of 0000-7FFF
+//   MD2   a write to 0001 picks the bank at 4000-7FFF; bank 0 there is bank 1, as on an MBC1 (as the
+//         MiSTer core has it: with bank 0, levels come out as garbage)
+//   MD0   (the laptops' system ROMs and cartridges) a write to 1000 picks a 32 KiB bank with its low
+//         half and an 8 KiB bank of the memory card's 32 KiB with bits 5-4; that RAM is always on
+//   MD20S MD2 with an MD0 memory card: bits 5-4 at 1000 pick its bank
+//   MD25S MD2 with 128 KiB of RAM: 4000 picks its bank (0000 is its enable, which games write but
+//         Super Junior SameDuck doesn't need)
+static void megaDuckWrite(struct GB* gb, uint16_t address, uint8_t value) {
+	struct GBCart* cart = &gb->cart;
+	switch (cart->duckKind) {
+	case GB_DUCK_MD0:
+		if (address == 0x1000) {
+			cart->bank0 = (value & 0xF) * 2;
+			cart->romBank = (value & 0xF) * 2 + 1;
+			cart->ramBank = value >> 4 & 3;
+		}
+		break;
+	case GB_DUCK_AUTO:
+	case GB_DUCK_MD2:
+	case GB_DUCK_MD20S:
+	case GB_DUCK_MD25S:
+		if (address == 0x0001) {
+			cart->romBank = value ? value : 1;
+		} else if (address == 0x1000 && cart->duckKind == GB_DUCK_MD20S) {
+			cart->ramBank = value >> 4 & 3;
+		} else if (address == 0x4000 && cart->duckKind == GB_DUCK_MD25S) {
+			cart->ramBank = value & 0xF;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+// MD1's register, where RAM would be.
+void gbMegaDuckWrite(struct GB* gb, uint16_t address, uint8_t value) {
+	struct GBCart* cart = &gb->cart;
+	if (address == 0xB000 && (cart->duckKind == GB_DUCK_AUTO || cart->duckKind == GB_DUCK_MD1)) {
+		cart->bank0 = value * 2;
+		cart->romBank = value * 2 + 1;
+		gbMapRom(gb);
+	}
+}
+
+void gbSwapMegaDuckRom(struct GB* gb, const uint8_t* rom, size_t size, enum GBDuckKind kind) {
+	struct GBCart* cart = &gb->cart;
+	gb->rom = rom;
+	gb->romSize = size;
+	cart->romBanks = size / 0x4000 ? size / 0x4000 : 1;
+	cart->duckKind = kind;
+	cart->hasRam = cart->ramSize && (kind == GB_DUCK_MD0 || kind == GB_DUCK_MD20S || kind == GB_DUCK_MD25S);
+	cart->ramEnabled = cart->hasRam;
+	cart->bank0 = 0;
+	cart->romBank = 1;
+	cart->ramBank = 0;
+	gbMapRom(gb);
+}
+
 void gbMapperInit(struct GB* gb) {
 	struct GBCart* cart = &gb->cart;
 	switch (cart->mapper) {
@@ -66,6 +126,7 @@ void gbMapperInit(struct GB* gb) {
 	case GB_NT_OLD2:
 	case GB_WISDOM_TREE:
 	case GB_MMM01:
+	case GB_MEGADUCK:
 		cart->bank0Mapped = true;
 		break;
 	default:
@@ -241,6 +302,9 @@ void gbMapperWrite(struct GB* gb, uint16_t address, uint8_t value) {
 			cart->ramBank = value;
 			break;
 		}
+		break;
+	case GB_MEGADUCK:
+		megaDuckWrite(gb, address, value);
 		break;
 	case GB_MBC6:
 		// 8 KiB ROM halves at $2000-$27FF and $3000-$37FF; 4 KiB RAM halves at $0400 and $0800. The flash

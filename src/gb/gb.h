@@ -83,6 +83,19 @@ enum GBMapper {
 	GB_WISDOM_TREE,
 	GB_MMM01,
 	GB_MBC6,
+	GB_MEGADUCK,
+};
+
+// The Mega Duck's cartridge kinds, as the frontend numbers them: with none named (a .bin), MD1's and
+// MD2's registers are both there, as they don't overlap.
+enum GBDuckKind {
+	GB_DUCK_AUTO,
+	GB_DUCK_NONE,
+	GB_DUCK_MD0,
+	GB_DUCK_MD1,
+	GB_DUCK_MD2,
+	GB_DUCK_MD20S,
+	GB_DUCK_MD25S,
 };
 
 // The Pocket Camera (SameBoy's): its sensor's registers, whether they're mapped in place of RAM, and
@@ -378,6 +391,8 @@ struct GBCart {
 	bool mmm01Locked;
 	uint16_t mmm01Base;
 	uint8_t pkjdCounters[2];
+	// The Mega Duck's cartridge kind (GBDuckKind).
+	uint8_t duckKind;
 };
 
 struct GB {
@@ -468,6 +483,10 @@ struct GB {
 	bool rtcRealTime;
 	uint16_t rtcPercent;
 	int64_t hostMicros;
+	// A Mega Duck, set by the frontend before loading: 0, or 1 + its cartridge's GBDuckKind; and
+	// whether it is the laptop, whose system ROM starts with SP at FFFF.
+	uint8_t megaDuck;
+	bool duckLaptop;
 };
 
 // gb.c
@@ -491,6 +510,9 @@ void gbBlankFrame(struct GB*);
 size_t gbStateSize(void);
 void gbSaveState(const struct GB*, void* data);
 bool gbLoadState(struct GB*, const void* data, size_t size);
+// The Mega Duck laptop's slot: the cartridge there takes the running ROM's place (a power of two in
+// size), its mapper as at power on; the memory card's RAM stays.
+void gbSwapMegaDuckRom(struct GB*, const uint8_t* rom, size_t size, enum GBDuckKind);
 
 // cpu.c
 void gbCpuRun(struct GB*, uint32_t until);
@@ -549,6 +571,7 @@ uint8_t gbCartReadRam(struct GB*, uint16_t address);
 void gbCartWriteRam(struct GB*, uint16_t address, uint8_t value);
 uint16_t gbTama5Bank(struct GB*);
 void gbMapperInit(struct GB*);
+void gbMegaDuckWrite(struct GB*, uint16_t address, uint8_t value);
 void gbMapperWrite(struct GB*, uint16_t address, uint8_t value);
 bool gbPkjdRead(struct GB*, uint8_t* value);
 bool gbPkjdWrite(struct GB*, uint8_t value);

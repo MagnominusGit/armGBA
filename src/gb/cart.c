@@ -411,7 +411,7 @@ bool gbCartInit(struct GB* gb) {
 	cart->rtc.lastSync = gb->now;
 	cart->rtc.lastHost = gb->hostMicros;
 	uint8_t type = rom[0x147];
-	cart->variant = variantOf(gb);
+	cart->variant = gb->megaDuck ? GB_PLAIN : variantOf(gb);
 	if (cart->variant == GB_HITEK) {
 		cart->bankOrder = cart->dataOrder = 7;
 	} else if (cart->variant == GB_SINTAX) {
@@ -422,7 +422,7 @@ bool gbCartInit(struct GB* gb) {
 	// Cartridges told by more than their header (armGBA's order): Wisdom Tree's, the variants above,
 	// NT's, Sachen's, MMM01's.
 	cart->romBanks = (uint32_t) (gb->romSize / 0x4000) ? (uint32_t) (gb->romSize / 0x4000) : 1;
-	uint8_t special = cart->variant != GB_PLAIN ? GB_MBC5 : isWisdomTree(gb) ? GB_WISDOM_TREE : ntMapper(gb) ? ntMapper(gb)
+	uint8_t special = gb->megaDuck ? GB_MEGADUCK : cart->variant != GB_PLAIN ? GB_MBC5 : isWisdomTree(gb) ? GB_WISDOM_TREE : ntMapper(gb) ? ntMapper(gb)
 	                : isSachen(gb) ? GB_SACHEN : mmm01Header(gb) ? GB_MMM01 : 0;
 	const uint8_t* header = special == GB_MMM01 ? mmm01Header(gb) : rom;
 	if (special == GB_MMM01) {
@@ -525,10 +525,18 @@ bool gbCartInit(struct GB* gb) {
 		cart->ramSize = 0x100;
 		cart->hasBattery = true;
 	}
+	// A Mega Duck cartridge has no header. A memory card's RAM (32 KiB, 128 KiB on MD25S) is kept as a
+	// battery-backed cartridge's is.
+	if (cart->mapper == GB_MEGADUCK) {
+		cart->duckKind = gb->megaDuck - 1;
+		bool ram = cart->duckKind == GB_DUCK_MD0 || cart->duckKind == GB_DUCK_MD20S || cart->duckKind == GB_DUCK_MD25S;
+		cart->ramSize = !ram ? 0 : cart->duckKind == GB_DUCK_MD25S ? 0x20000 : 0x8000;
+		cart->hasBattery = ram;
+	}
 	cart->hasRam = cart->ramSize != 0;
 
-	// Sintax's cartridge RAM needs no enabling (mGBA), nor HuC1's (SameBoy).
-	if (cart->variant == GB_SINTAX || cart->mapper == GB_HUC1) {
+	// Sintax's cartridge RAM needs no enabling (mGBA), nor HuC1's (SameBoy), nor a Mega Duck's.
+	if (cart->variant == GB_SINTAX || cart->mapper == GB_HUC1 || cart->mapper == GB_MEGADUCK) {
 		cart->ramEnabled = cart->hasRam;
 	}
 	cart->romBank = 1;
@@ -1235,6 +1243,10 @@ uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
 }
 
 void gbCartWriteRam(struct GB* gb, uint16_t address, uint8_t value) {
+	if (gb->cart.mapper == GB_MEGADUCK && !gb->cart.hasRam) {
+		gbMegaDuckWrite(gb, address, value);
+		return;
+	}
 	if (gb->cart.mapper == GB_TAMA5) {
 		gbTama5Write(gb, address, value);
 		return;
