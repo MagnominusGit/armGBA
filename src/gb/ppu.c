@@ -181,9 +181,21 @@ static void drawLine(struct GB* gb) {
 	} else {
 		memset(index, 0, GB_WIDTH);
 	}
-	uint16_t lut[4] = { ppu->bgp & 3, ppu->bgp >> 2 & 3, ppu->bgp >> 4 & 3, ppu->bgp >> 6 & 3 };
-	for (int x = 0; x < GB_WIDTH; ++x) {
-		out[x] = lut[index[x]];
+	// With a frontend's picture, its colors go there; otherwise the shades go to the frame.
+	uint32_t* video = gb->video ? gb->video + y * GB_WIDTH : NULL;
+	if (video) {
+		uint32_t lut[4];
+		for (int i = 0; i < 4; ++i) {
+			lut[i] = gb->videoColors[ppu->bgp >> (i * 2) & 3];
+		}
+		for (int x = 0; x < GB_WIDTH; ++x) {
+			video[x] = lut[index[x]];
+		}
+	} else {
+		uint16_t lut[4] = { ppu->bgp & 3, ppu->bgp >> 2 & 3, ppu->bgp >> 4 & 3, ppu->bgp >> 6 & 3 };
+		for (int x = 0; x < GB_WIDTH; ++x) {
+			out[x] = lut[index[x]];
+		}
 	}
 	if (!(ppu->lcdc & LCDC_OBJ)) {
 		return;
@@ -221,7 +233,11 @@ static void drawLine(struct GB* gb) {
 			if ((flags & 0x80) && index[x]) {
 				continue;
 			}
-			out[x] = palette >> (color * 2) & 3;
+			if (video) {
+				video[x] = gb->videoColors[palette >> (color * 2) & 3];
+			} else {
+				out[x] = palette >> (color * 2) & 3;
+			}
 		}
 	}
 }
@@ -652,11 +668,7 @@ static void lcdOn(struct GB* gb) {
 static void lcdOff(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
 	// The screen shows nothing while the LCD is off.
-	for (int y = 0; y < GB_HEIGHT; ++y) {
-		for (int x = 0; x < GB_WIDTH; ++x) {
-			gb->frame[y][x] = GB_SHADE_OFF;
-		}
-	}
+	gbBlankFrame(gb);
 	ppu->oamReadBlocked = false;
 	ppu->vramReadBlocked = false;
 	ppu->oamWriteBlocked = false;

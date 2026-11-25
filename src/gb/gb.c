@@ -117,11 +117,7 @@ void gbReset(struct GB* gb) {
 	gb->cart = cart;
 	gbCartInit(gb);
 	gb->cgbMode = model == GB_MODEL_CGB && (rom[0x143] & 0x80);
-	for (int y = 0; y < GB_HEIGHT; ++y) {
-		for (int x = 0; x < GB_WIDTH; ++x) {
-			gb->frame[y][x] = GB_SHADE_OFF;
-		}
-	}
+	gbBlankFrame(gb);
 	if (model == GB_MODEL_DMG) {
 		powerOnRam(gb);
 	}
@@ -171,6 +167,18 @@ void gbReset(struct GB* gb) {
 	updateNext(gb);
 }
 
+// The screen showing nothing, as with the LCD off.
+void gbBlankFrame(struct GB* gb) {
+	for (int y = 0; y < GB_HEIGHT; ++y) {
+		for (int x = 0; x < GB_WIDTH; ++x) {
+			gb->frame[y][x] = GB_SHADE_OFF;
+			if (gb->video) {
+				gb->video[y * GB_WIDTH + x] = gb->videoColors[4];
+			}
+		}
+	}
+}
+
 // A state is the struct up to the cartridge's pointer: everything after it is set again on loading.
 size_t gbStateSize(void) {
 	return offsetof(struct GB, rom);
@@ -186,6 +194,11 @@ bool gbLoadState(struct GB* gb, const void* data, size_t size) {
 	}
 	memcpy(gb, data, gbStateSize());
 	gbMapRom(gb);
+	// A frontend's picture isn't in a state: blank while the screen shows nothing, else redrawn by
+	// the next frame.
+	if (gb->video && (!(gb->ppu.lcdc & 0x80) || gb->ppu.hiddenFrame)) {
+		gbBlankFrame(gb);
+	}
 	return true;
 }
 
@@ -195,9 +208,14 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	}
 	const uint8_t* boot = gb->boot;
 	size_t bootSize = gb->bootSize;
+	uint32_t* video = gb->video;
+	uint32_t videoColors[5];
+	memcpy(videoColors, gb->videoColors, sizeof(videoColors));
 	memset(gb, 0, sizeof(*gb));
 	gb->boot = boot;
 	gb->bootSize = bootSize;
+	gb->video = video;
+	memcpy(gb->videoColors, videoColors, sizeof(videoColors));
 	gb->rom = rom;
 	gb->romSize = size;
 	gb->model = model;

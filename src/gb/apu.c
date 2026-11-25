@@ -36,33 +36,37 @@ static uint32_t noisePeriod(struct GB* gb) {
 	return divisor << (nr43 >> 4);
 }
 
-// Adds v over the dots from t to end to the sums of the samples they fall in (bucket 0 is the
-// sample being built, which starts at the APU's sampleStart).
-static inline void addSpan(int32_t* sums, uint32_t sampleStart, uint32_t t, uint32_t end, int32_t v) {
-	if (!v) {
-		return;
+// Where a channel's output goes: the sums of the samples (bucket 0 is the sample being built), the
+// bucket the time has reached, and when that bucket ends.
+struct Spans {
+	int32_t* sums;
+	uint32_t bucket;
+	uint32_t boundary;
+};
+
+// Adds v over the dots from t to end.
+static inline void addSpan(struct Spans* spans, uint32_t t, uint32_t end, int32_t v) {
+	while (gbSince(end, spans->boundary) > 0) {
+		spans->sums[spans->bucket] += v * (int32_t) (spans->boundary - t);
+		t = spans->boundary;
+		++spans->bucket;
+		spans->boundary += SAMPLE_DOTS;
 	}
-	uint32_t k = (t - sampleStart) / SAMPLE_DOTS;
-	while (t != end) {
-		uint32_t boundary = sampleStart + (k + 1) * SAMPLE_DOTS;
-		uint32_t e = gbSince(end, boundary) < 0 ? end : boundary;
-		sums[k] += v * (int32_t) (e - t);
-		t = e;
-		++k;
-	}
+	spans->sums[spans->bucket] += v * (int32_t) (end - t);
 }
 
 // One channel's DAC output (-15 to 15, twice the level less 15) over time, from start to end, stepping
 // its waveform as it goes. A channel whose DAC is off puts out nothing.
 static void integrate(struct GB* gb, int index, uint32_t start, uint32_t end, int32_t* sums) {
 	struct GBApu* apu = &gb->apu;
-	uint32_t s0 = apu->sampleStart;
+	struct Spans spans = { sums, (start - apu->sampleStart) / SAMPLE_DOTS, 0 };
+	spans.boundary = apu->sampleStart + (spans.bucket + 1) * SAMPLE_DOTS;
 	struct GBChannel* ch = index < 2 ? &apu->square[index] : index == 2 ? &apu->wave : &apu->noise;
 	if (!ch->dac) {
 		return;
 	}
 	if (!ch->on) {
-		addSpan(sums, s0, start, end, -15);
+		addSpan(&spans, start, end, -15);
 		return;
 	}
 	uint32_t t = start;
@@ -73,10 +77,10 @@ static void integrate(struct GB* gb, int index, uint32_t start, uint32_t end, in
 		for (;;) {
 			int32_t v = duty >> (7 - ch->position) & 1 ? high : -15;
 			if (gbSince(end, ch->nextStep) < 0) {
-				addSpan(sums, s0, t, end, v);
+				addSpan(&spans, t, end, v);
 				break;
 			}
-			addSpan(sums, s0, t, ch->nextStep, v);
+			addSpan(&spans, t, ch->nextStep, v);
 			t = ch->nextStep;
 			ch->position = (ch->position + 1) & 7;
 			ch->nextStep += period;
@@ -89,10 +93,10 @@ static void integrate(struct GB* gb, int index, uint32_t start, uint32_t end, in
 			uint8_t sample = ch->position & 1 ? apu->waveSample & 0xF : apu->waveSample >> 4;
 			int32_t v = 2 * (sample >> shift) - 15;
 			if (gbSince(end, ch->nextStep) < 0) {
-				addSpan(sums, s0, t, end, v);
+				addSpan(&spans, t, end, v);
 				break;
 			}
-			addSpan(sums, s0, t, ch->nextStep, v);
+			addSpan(&spans, t, ch->nextStep, v);
 			t = ch->nextStep;
 			ch->position = (ch->position + 1) & 31;
 			apu->waveSample = gb->io[0x30 + (ch->position >> 1)];
@@ -106,10 +110,10 @@ static void integrate(struct GB* gb, int index, uint32_t start, uint32_t end, in
 		for (;;) {
 			int32_t v = apu->lfsr & 1 ? -15 : high;
 			if (gbSince(end, ch->nextStep) < 0) {
-				addSpan(sums, s0, t, end, v);
+				addSpan(&spans, t, end, v);
 				break;
 			}
-			addSpan(sums, s0, t, ch->nextStep, v);
+			addSpan(&spans, t, ch->nextStep, v);
 			t = ch->nextStep;
 			uint16_t bit = (apu->lfsr ^ (apu->lfsr >> 1)) & 1;
 			apu->lfsr = (apu->lfsr >> 1) | (bit << 14);

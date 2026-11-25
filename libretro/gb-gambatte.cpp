@@ -798,6 +798,11 @@ LibretroGbModel headerModel(const unsigned char* header, size_t size, bool sache
 	return flag == 0xC0 || (flag == 0x80 && !title) ? LIBRETRO_GB_CGB : LIBRETRO_GB_DMG;
 }
 
+// A color as the screen shows it: through the 15-bit color table, as Gambatte's colors are.
+uint32_t asShown(unsigned long rgb) {
+	return cgbColors[(rgb >> 19 & 0x1F) | (rgb >> 11 & 0x1F) << 5 | (rgb >> 3 & 0x1F) << 10];
+}
+
 void dropArmgb() {
 	std::free(s->armgb);
 	s->armgb = 0;
@@ -833,6 +838,11 @@ void startArmgb(std::vector<unsigned char> const& boot) {
 		s->armgb->boot = &s->armgbBoot[0];
 		s->armgb->bootSize = 0x100;
 	}
+	s->armgb->video = reinterpret_cast<uint32_t*>(s->pixels);
+	for (int i = 0; i < 4; ++i) {
+		s->armgb->videoColors[i] = asShown(shown[i]);
+	}
+	s->armgb->videoColors[4] = asShown(screens[screen].off);
 	if (!gbLoad(s->armgb, &s->armgbRom[0], padded, GB_MODEL_DMG)) {
 		dropArmgb();
 	}
@@ -1357,15 +1367,15 @@ void mixDown(std::size_t count) {
 // A frame of armGB: the shades in the screen's colors, the sound through the output capacitor.
 void runArmgb() {
 	struct GB* gb = s->armgb;
+	// armGB draws in the screen's colors straight into the picture.
+	static_assert(LIBRETRO_GB_WIDTH == GB_WIDTH, "a frame's rows are back to back in both");
+	gb->video = reinterpret_cast<uint32_t*>(s->pixels);
+	for (int i = 0; i < 4; ++i) {
+		gb->videoColors[i] = asShown(shown[i]);
+	}
+	gb->videoColors[4] = asShown(screens[screen].off);
 	gb->keys = s->pressed;
 	gbRunFrame(gb);
-	unsigned long const off = screens[screen].off;
-	for (int y = 0; y < GB_HEIGHT; ++y) {
-		for (int x = 0; x < GB_WIDTH; ++x) {
-			uint16_t const v = gb->frame[y][x];
-			s->pixels[y * LIBRETRO_GB_WIDTH + x] = v == GB_SHADE_OFF ? off : shown[v & 3];
-		}
-	}
 	for (uint32_t i = 0; i + 1 < gb->audioCount && s->sampleCount + 2 <= sizeof(s->samples) / sizeof(s->samples[0]); i += 2) {
 		throughOutput(s->capacitor, gb->audio[i], gb->audio[i + 1], gb->audioDacs[i / 2], &s->samples[s->sampleCount]);
 		s->sampleCount += 2;

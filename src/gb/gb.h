@@ -255,6 +255,10 @@ struct GB {
 	// through gbRead (the boot ROM, OAM DMA).
 	const uint8_t* memMap[16];
 	const uint8_t* readMap[16];
+	// A frontend's picture, when it wants colors drawn there instead of shades in frame: the four
+	// shades' colors, then the screen's with the LCD off.
+	uint32_t* video;
+	uint32_t videoColors[5];
 	// Serial bytes shifted out with no partner, for the test runner.
 	void (*serialOut)(void* user, uint8_t byte);
 	void* user;
@@ -269,6 +273,7 @@ void gbUnschedule(struct GB*, int event);
 void gbRunEvents(struct GB*);
 void gbRequest(struct GB*, uint8_t irq);
 void gbStop(struct GB*);
+void gbBlankFrame(struct GB*);
 size_t gbStateSize(void);
 void gbSaveState(const struct GB*, void* data);
 bool gbLoadState(struct GB*, const void* data, size_t size);
