@@ -474,8 +474,8 @@ void gbApuWrite(struct GB* gb, uint8_t address, uint8_t value) {
 	if (address >= 0x30) {
 		if (apu->wave.on) {
 			// While it plays, the byte being read takes the write; on the original Game Boy, only
-			// if it is read just then.
-			if (gbColor(gb) || (gbSince(gb->now, apu->waveReadAt) >= 2 && gbSince(gb->now, apu->waveReadAt) < 4)) {
+			// if it is read just then; on the Advance, never (Pan Docs).
+			if (gb->model != GB_MODEL_AGB && (gbColor(gb) || (gbSince(gb->now, apu->waveReadAt) >= 2 && gbSince(gb->now, apu->waveReadAt) < 4))) {
 				gb->io[0x30 + (apu->wave.position >> 1)] = value;
 			}
 		} else {
@@ -574,7 +574,11 @@ uint8_t gbApuRead(struct GB* gb, uint8_t address) {
 	gbApuSync(gb);
 	if (address >= 0x30) {
 		if (apu->wave.on) {
-			// While it plays, a read gets the byte the channel is reading, if it reads it just then.
+			// While it plays, a read gets the byte the channel is reading, if it reads it just then;
+			// on the Advance, FF (Pan Docs).
+			if (gb->model == GB_MODEL_AGB) {
+				return 0xFF;
+			}
 			if (gbColor(gb)) {
 				// The Color: the byte being read, the step due this very dot not yet taken.
 				unsigned position = apu->waveReadAt == gb->now ? (apu->wave.position - 1) & 31 : apu->wave.position;
