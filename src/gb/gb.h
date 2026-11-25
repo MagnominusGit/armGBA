@@ -544,6 +544,8 @@ struct GB {
 	// or the console's, at rtcPercent of its speed.
 	bool rtcRealTime;
 	uint16_t rtcPercent;
+	// Whether the frontend set rtcPercent (0 is stopped); else it is 100.
+	bool rtcSpeedSet;
 	int64_t hostMicros;
 	// A Mega Duck, set by the frontend before loading: 0, or 1 + its cartridge's GBDuckKind; and
 	// whether it is the laptop, whose system ROM starts with SP at FFFF.

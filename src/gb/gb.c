@@ -353,7 +353,8 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	uint8_t layersHidden = gb->layersHidden, channelsMuted = gb->channelsMuted;
 	unsigned cpuQuarters = gb->cpuQuarters ? gb->cpuQuarters : 4;
 	bool rtcRealTime = gb->rtcRealTime;
-	unsigned rtcPercent = gb->rtcPercent ? gb->rtcPercent : 100;
+	unsigned rtcPercent = gb->rtcSpeedSet ? gb->rtcPercent : 100;
+	bool rtcSpeedSet = gb->rtcSpeedSet;
 	int64_t hostMicros = gb->hostMicros;
 	uint8_t megaDuck = gb->megaDuck;
 	bool duckLaptop = gb->duckLaptop;
@@ -369,6 +370,7 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	gb->channelsMuted = channelsMuted;
 	gb->rtcRealTime = rtcRealTime;
 	gb->rtcPercent = rtcPercent;
+	gb->rtcSpeedSet = rtcSpeedSet;
 	gb->hostMicros = hostMicros;
 	gb->megaDuck = megaDuck;
 	gb->duckLaptop = duckLaptop;

@@ -871,6 +871,7 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	gb->cpuQuarters = cpuQuarters;
 	gb->rtcRealTime = deviceClock;
 	gb->rtcPercent = clockPercent;
+	gb->rtcSpeedSet = true;
 	gb->hostMicros = deviceMicros();
 	gb->megaDuck = megaDuck ? megaDuckKind + 1 : 0;
 	gb->duckLaptop = laptop;

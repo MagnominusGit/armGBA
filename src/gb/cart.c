@@ -836,6 +836,7 @@ void gbRtcSet(struct GB* gb, const uint32_t r[11]) {
 void gbRtcSetSpeed(struct GB* gb, unsigned percent) {
 	gbRtcSync(gb);
 	gb->rtcPercent = percent;
+	gb->rtcSpeedSet = true;
 }
 
 void gbRtcSetRealTime(struct GB* gb, bool on) {
