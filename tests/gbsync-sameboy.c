@@ -50,3 +50,12 @@ void sbApu(int on[4], int volume[4]) {
 	volume[0] = gb.apu.square_channels[0].current_volume; volume[1] = gb.apu.square_channels[1].current_volume;
 	volume[2] = -1; volume[3] = gb.apu.noise_channel.current_volume;
 }
+// Channel 1's sweep, for SWEEP traces: on, frequency, shadow, addend, calculation countdown, reload timer,
+// restart hold, sweep countdown.
+void sbSweep(int v[8]) {
+	GB_apu_run(&gb, true);
+	v[0] = gb.apu.is_active[0]; v[1] = gb.apu.square_channels[0].sample_length; v[2] = gb.apu.shadow_sweep_sample_length;
+	v[3] = gb.apu.sweep_length_addend; v[4] = gb.apu.square_sweep_calculate_countdown; v[5] = gb.apu.square_sweep_calculate_countdown_reload_timer;
+	v[6] = gb.apu.channel_1_restart_hold; v[7] = gb.apu.square_sweep_countdown;
+}
+int sbLfDiv(void) { GB_apu_run(&gb, true); return gb.apu.lf_div; }

@@ -645,7 +645,8 @@ void gbApuSync(struct GB* gb) {
 			writeNoiseControl(gb, *reg(gb, 0x23) | 0x80);
 			continue;
 		}
-		advance(gb, next);
+		// The divider's events come before the 2 MHz cycles of their M-cycle (SameBoy's order).
+		advance(gb, kind == 0 && gbSince(next - gb->mcycle, apu->lastSync) > 0 ? next - gb->mcycle : next);
 		if (kind == 1) {
 			apu->envelopePending = false;
 			tickEnvelopes(gb);

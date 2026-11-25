@@ -14,7 +14,7 @@
 #include <string.h>
 void sbLoad(int cgb, const uint8_t* boot, size_t bootSize, const uint8_t* rom, size_t romSize);
 int sbStep(void); uint8_t sbRead(uint16_t); void sbRegs(uint16_t r[6]); int sbHalted(void); uint16_t sbDiv(void); int sbLine(void);
-uint8_t sbIo(int); uint8_t sbIe(void); int sbIme(void); void sbApu(int on[4], int volume[4]);
+uint8_t sbIo(int); uint8_t sbIe(void); int sbIme(void); void sbApu(int on[4], int volume[4]); void sbSweep(int v[8]); int sbLfDiv(void);
 const uint8_t* sbRam(void); size_t sbRamSize(void); const uint8_t* sbHram(void); const uint8_t* sbOam(void);
 const uint8_t* sbSram(void); size_t sbSramSize(void); int sbDouble(void);
 static struct GB gb;
@@ -79,6 +79,26 @@ int main(int argc, char** argv) {
 			gbPpuSync(&gb);
 			lyA = gbPpuRead(&gb, 0x44); statA = gbPpuRead(&gb, 0x41);
 			ppu = lyA != sbIo(0x44) || (statA & 3) != (sbIo(0x41) & 3);
+		}
+		// LFDIV=1: where the 1 MHz phase first differs.
+		if (getenv("LFDIV") && gb.apu.power) {
+			gbApuSync(&gb);
+			int mine = !(((gb.apu.lastSync - gb.apu.epoch) >> 1) & 1), theirs = sbLfDiv();
+			static int last = -1;
+			if (mine != theirs && last != 0) {
+				printf("lf_div differs from instruction %ld pc %04x double %d: armGB %d SameBoy %d\n", i, a[5], gb.doubleSpeed, mine, theirs);
+			}
+			last = mine == theirs;
+		}
+		// SWEEP=n: from instruction n on, channel 1's sweep on each side.
+		if (getenv("SWEEP") && i >= atol(getenv("SWEEP"))) {
+			gbApuSync(&gb);
+			int v[8];
+			sbSweep(v);
+			const struct GBApu* p = &gb.apu;
+			printf("%ld pc %04x | armGB on %d f %03x sh %03x add %03x calc %d rel %d hold %d cd %d | SameBoy on %d f %03x sh %03x add %03x calc %d rel %d hold %d cd %d\n", i, a[5],
+			       p->square[0].on, p->square[0].frequency, p->sweepShadow, p->sweepAddend, p->sweepCalcCountdown, p->sweepReloadTimer, p->restartHold, p->sweepCountdown,
+			       v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
 		}
 		// APU=1: the sound channels too, which are on and their envelopes' volumes.
 		bool apu = false;
