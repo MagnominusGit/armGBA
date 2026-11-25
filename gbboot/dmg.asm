@@ -139,10 +139,10 @@ Boot:
 	ld b, HOLD
 	call Wait
 	ldh [$FFFF], a
-	; 5 cycles, which the steps of 6 below can't make.
+	; 5 cycles, which the steps of 6 below can't make: 4 here, and setting l below takes 1 more than
+	; inc l would.
 	ld a, [hl]
 	ld a, [hl]
-	nop
 	ld b, AFTER_FRAME
 .late
 	ld a, [hl]
@@ -158,7 +158,8 @@ ENDC
 	; What Nintendo's leaves below the stack.
 	ld hl, $FFFC
 	ld [hl], $2E
-	inc l
+	; Not inc l, which would change the flags pop af just set.
+	ld l, LOW($FFFD)
 	ld [hl], 0
 	ld bc, $0013
 	ld de, $00D8
