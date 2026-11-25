@@ -59,6 +59,9 @@ void gbRunEvents(struct GB* gb) {
 		case GB_EVENT_HDMA:
 			gbHdmaEvent(gb);
 			break;
+		case GB_EVENT_SPEED:
+			gbSpeedEvent(gb);
+			break;
 		default:
 			break;
 		}
@@ -71,16 +74,62 @@ void gbRequest(struct GB* gb, uint8_t irq) {
 	gb->attention = true;
 }
 
+// The speed switch (SameBoy's stop() and GB_advance_cycles()): to double speed 6 cycles on, back to
+// single at once; the PPU stands still for 5 cycles (1 to double with an interrupt pending), and unless
+// an interrupt is pending the CPU halts for 0x20008 cycles counted at each speed, the divider running.
+enum { SWITCH_CYCLES = 0x20008, SWITCH_TO_DOUBLE = 6 };
+
+static void setSpeed(struct GB* gb, bool doubleSpeed) {
+	gbApuSync(gb);
+	gbTimerSync(gb);
+	gb->doubleSpeed = doubleSpeed;
+	gb->mcycle = doubleSpeed ? 2 : 4;
+	gb->io[0x4D] = doubleSpeed ? 0x80 : 0;
+}
+
+void gbSpeedEvent(struct GB* gb) {
+	struct GBCpu* cpu = &gb->cpu;
+	if (cpu->switching == 1) {
+		setSpeed(gb, true);
+		if (cpu->halted) {
+			cpu->switching = 2;
+			// 4 dots short of the count, where SameBoy's CPU goes on (measured with gbsync).
+			gbSchedule(gb, GB_EVENT_SPEED, gb->now + (SWITCH_CYCLES - SWITCH_TO_DOUBLE) / 2 - 4);
+		} else {
+			cpu->switching = 0;
+		}
+		return;
+	}
+	if (cpu->switching == 2) {
+		cpu->switching = 0;
+		cpu->halted = false;
+		gb->attention = true;
+	}
+}
+
 // STOP: on the Color with a speed switch armed, switches speed; otherwise sleeps until a button.
 void gbStop(struct GB* gb) {
 	gb->attention = true;
 	if (gb->cgbMode && (gb->io[0x4D] & 1)) {
-		gbApuSync(gb);
-		gbTimerSync(gb);
-		gb->doubleSpeed = !gb->doubleSpeed;
-		gb->mcycle = gb->doubleSpeed ? 2 : 4;
-		gb->io[0x4D] = gb->doubleSpeed ? 0x80 : 0;
-		gb->timer.counter = 0;
+		struct GBCpu* cpu = &gb->cpu;
+		bool pending = gb->ie & gb->ifl & 0x1F;
+		bool toDouble = !gb->doubleSpeed;
+		gb->io[0x4D] &= 0x80;
+		gbPpuFreeze(gb, pending ? (toDouble ? 1 : 0) : 5);
+		if (!pending) {
+			cpu->halted = true;
+			cpu->justHalted = true;
+		}
+		if (toDouble) {
+			cpu->switching = 1;
+			gbSchedule(gb, GB_EVENT_SPEED, gb->now + SWITCH_TO_DOUBLE);
+		} else {
+			setSpeed(gb, false);
+			if (!pending) {
+				cpu->switching = 2;
+				gbSchedule(gb, GB_EVENT_SPEED, gb->now + SWITCH_CYCLES);
+			}
+		}
 		return;
 	}
 	gb->cpu.stopped = true;
@@ -135,7 +184,6 @@ void gbReset(struct GB* gb) {
 		// Power on into the boot ROM: everything at 0 but the divider, which starts at 8 (as SameBoy
 		// has it), and the LCD off.
 		gb->bootMapped = true;
-		gb->firstFrame = true;
 		gb->timer.counter = 8;
 		gb->timer.reloadedAt = gb->now - 0x10000;
 		gbMapRom(gb);
@@ -235,24 +283,13 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	return true;
 }
 
-// Runs to the start of the next V-blank, or a frame's time with the LCD off. Frames with the LCD off
-// keep the timing armGBA's frames have always had: the first after power-on ends where V-blank would
-// start a second time, and one the LCD goes off in ends 158 lines after that.
+// Runs to the start of the next V-blank, or a frame's time with the LCD off.
 void gbRunFrame(struct GB* gb) {
 	uint32_t limit = gb->now + GB_FRAME_DOTS;
-	if (gb->firstFrame) {
-		gb->firstFrame = false;
-		limit += GB_LINE_DOTS * 144;
-	}
 	gb->frameEnded = false;
 	gb->audioCount = 0;
-	gb->lcdWentOff = false;
 	while (!gb->frameEnded && gbSince(limit, gb->now) > 0) {
 		gbCpuRun(gb, limit);
-		if (gb->lcdWentOff) {
-			gb->lcdWentOff = false;
-			limit = gb->lcdOffAt + GB_LINE_DOTS * 158;
-		}
 		// With the LCD on, a frame goes on to V-blank, however late it started.
 		if (!gb->frameEnded && (gb->ppu.lcdc & 0x80) && gbSince(gb->now, limit) >= 0) {
 			limit = gb->now + GB_FRAME_DOTS;

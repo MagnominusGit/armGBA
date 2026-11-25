@@ -358,8 +358,16 @@ static bool wake(struct GB* gb, uint32_t until) {
 	if (gbSince(gb->now, gb->nextEvent) >= 0) {
 		gbRunEvents(gb);
 	}
+	// A speed switch done: the CPU goes on at once.
+	if (!cpu->halted) {
+		gb->now = start;
+		return true;
+	}
 	if (gb->ie & gb->ifl & 0x1F) {
 		cpu->halted = false;
+		if (cpu->switching == 2) {
+			cpu->switching = 0;
+		}
 		gb->now = start + gb->mcycle;
 		return true;
 	}
@@ -508,10 +516,22 @@ static void step(struct GB* gb) {
 		tick(gb);
 		break;
 	}
-	case 0x10: // STOP
-		fetch(gb);
+	case 0x10: { // STOP
+		// DIV resets (held an M-cycle longer with IME off), and the second byte is skipped only when
+		// no interrupt is pending (SameBoy's stop()).
+		bool pending = gb->ie & gb->ifl & 0x1F;
+		if (cpu->ime) {
+			gbTimerWrite(gb, 0x04, 0);
+		}
+		if (!pending) {
+			fetch(gb);
+		}
+		if (!cpu->ime) {
+			gbTimerWrite(gb, 0x04, 0);
+		}
 		gbStop(gb);
 		break;
+	}
 	case 0x18: { // JR e
 		int8_t e = fetch(gb);
 		cpu->pc += e;

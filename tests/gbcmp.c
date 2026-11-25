@@ -31,6 +31,10 @@ static bool colorModel;
 #define RAM_MAX 0x8000
 static size_t ramBytes = 0x2000;
 static uint8_t (*theirRam)[RAM_MAX];
+// Cartridge RAM, the first 32 KiB, each frame: games keep variables there too.
+#define SRAM_MAX 0x8000
+static uint8_t (*theirSram)[SRAM_MAX];
+static uint8_t (*ourSram)[SRAM_MAX];
 static uint8_t (*ourRam)[RAM_MAX];
 static int theirCount;
 static unsigned pixelFormat = RETRO_PIXEL_FORMAT_0RGB1555;
@@ -76,7 +80,8 @@ static bool environment(unsigned cmd, void* data) {
 		return true;
 	case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
 	case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY:
-		*(const char**) data = systemDir;
+		// SYSDIR: the other core's system folder (boot ROMs), else an empty one.
+		*(const char**) data = getenv("SYSDIR") ? getenv("SYSDIR") : systemDir;
 		return true;
 	default:
 		return false;
@@ -231,6 +236,8 @@ int main(int argc, char** argv) {
 	ramBytes = colorModel ? 0x8000 : 0x2000;
 	theirs = calloc(MAX_FRAMES, sizeof(*theirs));
 	theirRam = calloc(frames, sizeof(*theirRam));
+	theirSram = calloc(frames, sizeof(*theirSram));
+	ourSram = calloc(frames, sizeof(*ourSram));
 	ourRam = calloc(frames, sizeof(*ourRam));
 	uint16_t(*ours)[GB_HEIGHT][GB_WIDTH] = calloc(frames, sizeof(*ours));
 
@@ -267,6 +274,11 @@ int main(int argc, char** argv) {
 		if (ram && ramSize >= ramBytes) {
 			memcpy(theirRam[i], ram, ramBytes);
 		}
+		const uint8_t* sram = ((void* (*)(unsigned)) dlsym(core, "retro_get_memory_data"))(RETRO_MEMORY_SAVE_RAM);
+		size_t sramSize = ((size_t (*)(unsigned)) dlsym(core, "retro_get_memory_size"))(RETRO_MEMORY_SAVE_RAM);
+		if (sram) {
+			memcpy(theirSram[i], sram, sramSize < SRAM_MAX ? sramSize : SRAM_MAX);
+		}
 		// A frame with no picture keeps the last.
 		if (theirCount == before && theirCount && theirCount < MAX_FRAMES) {
 			memcpy(theirs[theirCount], theirs[theirCount - 1], sizeof(theirs[0]));
@@ -297,10 +309,10 @@ int main(int argc, char** argv) {
 		uint32_t started = gb.now;
 		gbRunFrame(&gb);
 		if (getenv("TIMES") && i < atoi(getenv("TIMES"))) {
-			int offAt = gbSince(gb.lcdOffAt, started) >= 0 && gbSince(gb.now, gb.lcdOffAt) >= 0 ? (int) (gb.lcdOffAt - started) : -1;
-			fprintf(stderr, "ours %d: %u dots lcdc %02x frameCount %u double %d pc %04x line %u dot %d off %d\n", i, gb.now - started, gb.ppu.lcdc, gb.frameCount, gb.doubleSpeed, gb.cpu.pc, gb.ppu.line, (int) (gb.now - gb.ppu.lineStart), offAt);
+			fprintf(stderr, "ours %d: %u dots lcdc %02x frameCount %u double %d pc %04x line %u dot %d\n", i, gb.now - started, gb.ppu.lcdc, gb.frameCount, gb.doubleSpeed, gb.cpu.pc, gb.ppu.line, (int) (gb.now - gb.ppu.lineStart));
 		}
 		memcpy(ourRam[i], gb.wram, ramBytes);
+		memcpy(ourSram[i], gb.sram, gb.cart.ramSize < SRAM_MAX ? gb.cart.ramSize : SRAM_MAX);
 		for (int y = 0; y < GB_HEIGHT; ++y) {
 			for (int x = 0; x < GB_WIDTH; ++x) {
 				ours[i][y][x] = !colorModel && gb.frame[y][x] == GB_SHADE_OFF ? 0 : gb.frame[y][x];
@@ -388,6 +400,41 @@ int main(int argc, char** argv) {
 	for (int i = 0; i < frames; ++i) {
 		ramFrames += memcmp(ourRam[i], theirRam[i], ramBytes) != 0;
 	}
+	// The first frame whose cartridge RAM differs (the part both have), and where.
+	int sramFirst = -1, sramAt = -1;
+	size_t sramBytes = gb.cart.ramSize < SRAM_MAX ? gb.cart.ramSize : SRAM_MAX;
+	for (int i = 0; i < frames && sramFirst < 0 && gb.cart.hasBattery; ++i) {
+		for (size_t a = 0; a < sramBytes; ++a) {
+			if (ourSram[i][a] != theirSram[i][a]) {
+				sramFirst = i;
+				sramAt = 0xA000 + (int) a;
+				break;
+			}
+		}
+	}
+	if (getenv("SRAMDIFF") && sramFirst >= 0) {
+		for (size_t a = 0, shown = 0; a < sramBytes && shown < 12; ++a) {
+			if (ourSram[sramFirst][a] != theirSram[sramFirst][a]) {
+				++shown;
+				fprintf(stderr, "frame %d cart $%05zX ours %02X theirs %02X (frame before: ours %02X theirs %02X)\n", sramFirst, 0xA000 + a, ourSram[sramFirst][a], theirSram[sramFirst][a], sramFirst ? ourSram[sramFirst - 1][a] : 0, sramFirst ? theirSram[sramFirst - 1][a] : 0);
+			}
+		}
+	}
+	// RAMFROM=n: the first frame from n on whose work RAM differs, and how many bytes.
+	if (getenv("RAMFROM")) {
+		for (int i = atoi(getenv("RAMFROM")); i < frames; ++i) {
+			int bytes = 0, at = -1;
+			for (int a = 0; a < (int) ramBytes; ++a) {
+				if (ourRam[i][a] != theirRam[i][a]) {
+					at = at < 0 ? a : at;
+					++bytes;
+				}
+			}
+			if (bytes) {
+				fprintf(stderr, "frame %d: %d bytes differ from $%04X\n", i, bytes, 0xC000 + at);
+			}
+		}
+	}
 	if (getenv("RAMFRAMES")) {
 		fprintf(stderr, "work RAM differs in %d frames\n", ramFrames);
 	}
@@ -414,6 +461,6 @@ int main(int argc, char** argv) {
 	if (getenv("AUDIORMS")) {
 		fprintf(stderr, "audio rms %.1f over %ld samples\n", audioCount ? sqrt(audioSquares / audioCount) : 0.0, audioCount);
 	}
-	printf("type=%02x matched=%d/%d exact=%d first=%d pixels=%d ram=%d@%04X drift=%d\n", rom[0x147], matched, n, exact, first, differing, ramFirst, ramAt < 0 ? 0 : ramAt, maxDrift);
+	printf("type=%02x matched=%d/%d exact=%d first=%d pixels=%d ram=%d@%04X drift=%d sram=%d@%04X\n", rom[0x147], matched, n, exact, first, differing, ramFirst, ramAt < 0 ? 0 : ramAt, maxDrift, sramFirst, sramAt < 0 ? 0 : sramAt);
 	return 0;
 }

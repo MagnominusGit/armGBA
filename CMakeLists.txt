@@ -182,3 +182,14 @@ if(ARMGBA_SDL)
 		SOURCES ${LIBRETRO_SOURCES} ${HOOK_SOURCES} INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/libretro
 		LIBS armgba gambatte ARCHIVE retro-archive)
 endif()
+
+# gbsync: armGB against SameBoy, an instruction at a time: -DSAMEBOY_DIR=<SameBoy source tree>
+if(SAMEBOY_DIR)
+	file(GLOB SAMEBOY_SOURCES ${SAMEBOY_DIR}/Core/*.c)
+	add_library(sameboy-oracle STATIC EXCLUDE_FROM_ALL ${SAMEBOY_SOURCES} tests/gbsync-sameboy.c)
+	target_include_directories(sameboy-oracle PRIVATE ${SAMEBOY_DIR})
+	target_compile_definitions(sameboy-oracle PRIVATE GB_INTERNAL _GNU_SOURCE GB_VERSION="1.0.4")
+	target_compile_options(sameboy-oracle PRIVATE -w)
+	add_executable(gbsync EXCLUDE_FROM_ALL tests/gbsync.c)
+	target_link_libraries(gbsync armgb sameboy-oracle m)
+endif()

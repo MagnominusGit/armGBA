@@ -74,6 +74,7 @@ enum {
 	GB_EVENT_FRAME,
 	GB_EVENT_DMA,
 	GB_EVENT_HDMA,
+	GB_EVENT_SPEED,
 	GB_EVENTS,
 };
 
@@ -89,6 +90,9 @@ struct GBCpu {
 	bool haltBug;
 	bool stopped;
 	bool locked;
+	// A speed switch: 1 while the speed is about to change to double, 2 while halted until it is done
+	// (an interrupt wakes it sooner).
+	uint8_t switching;
 };
 
 struct GBTimer {
@@ -267,11 +271,6 @@ struct GB {
 	// Set when the CPU must look again before its next instruction: an interrupt requested or enabled,
 	// HALT, STOP, EI, RETI, a lock-up or the frame's end.
 	bool attention;
-	// Powered on with the LCD off: the first frame runs on to where V-blank would start a second time.
-	bool firstFrame;
-	// When the LCD was last switched off: the frame then ends a frame's length later.
-	bool lcdWentOff;
-	uint32_t lcdOffAt;
 
 	// Not saved: the cartridge and where it is mapped, and the frontend's hooks.
 	const uint8_t* rom;
@@ -302,6 +301,7 @@ void gbUnschedule(struct GB*, int event);
 void gbRunEvents(struct GB*);
 void gbRequest(struct GB*, uint8_t irq);
 void gbStop(struct GB*);
+void gbSpeedEvent(struct GB*);
 void gbBlankFrame(struct GB*);
 size_t gbStateSize(void);
 void gbSaveState(const struct GB*, void* data);
@@ -332,6 +332,7 @@ uint8_t gbPpuRead(struct GB*, uint8_t reg);
 void gbPpuWrite(struct GB*, uint8_t reg, uint8_t value);
 void gbPpuEvent(struct GB*);
 void gbPpuReplan(struct GB*);
+void gbPpuFreeze(struct GB*, uint32_t dots);
 
 // apu.c
 void gbApuReset(struct GB*);

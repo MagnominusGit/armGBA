@@ -545,8 +545,7 @@ static void advance(struct GB* gb) {
 			ppu->oamReadBlocked = false;
 			ppu->vramReadBlocked = false;
 			ppu->oamWriteBlocked = false;
-			// The Color takes VRAM writes again a dot later.
-			ppu->vramWriteBlocked = gb->model == GB_MODEL_CGB;
+			ppu->vramWriteBlocked = false;
 		}
 		next(gb, STEP_HBLANK_INT, ppu->nextAt + 1);
 		break;
@@ -816,6 +815,20 @@ void gbPpuSync(struct GB* gb) {
 	catchUp(gb);
 }
 
+// The PPU stands still for some dots (a speed switch freezes it): its timeline moves on by that much.
+void gbPpuFreeze(struct GB* gb, uint32_t dots) {
+	struct GBPpu* ppu = &gb->ppu;
+	catchUp(gb);
+	if (!(ppu->lcdc & LCDC_ON)) {
+		return;
+	}
+	ppu->lineStart += dots;
+	ppu->lineEnd += dots;
+	ppu->drawStart += dots;
+	ppu->nextAt += dots;
+	plan(gb);
+}
+
 void gbPpuReplan(struct GB* gb) {
 	catchUp(gb);
 	plan(gb);
@@ -841,8 +854,6 @@ static void lcdOff(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
 	// The screen shows nothing while the LCD is off.
 	gbBlankFrame(gb);
-	gb->lcdWentOff = true;
-	gb->lcdOffAt = gb->now;
 	ppu->oamReadBlocked = false;
 	ppu->vramReadBlocked = false;
 	ppu->oamWriteBlocked = false;
