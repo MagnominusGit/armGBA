@@ -10,6 +10,7 @@
 extern "C" {
 #include "gb.h"
 #include "libretro.h"
+#include "../src/gb/gb.h"
 }
 #include "dmg07.h"
 #include "link.h"
@@ -194,6 +195,11 @@ struct Console {
 	long heardRight;
 	int32_t heardCapacitor[2];
 	bool heardApart;
+	// armGB running the game instead of Gambatte, whose machine stays loaded beside it for what armGB
+	// doesn't do yet; its ROM padded to a power of two, and its boot ROM.
+	struct GB* armgb;
+	std::vector<unsigned char> armgbRom;
+	std::vector<unsigned char> armgbBoot;
 };
 Console consoles[MAX_PLAYERS];
 
@@ -207,6 +213,9 @@ static void applyShownAndHeard(gambatte::GB* gb) {
 	gb->setMutedChannels(channelsMuted);
 }
 Console* s = &consoles[0];
+
+// Game Boy Core: armGB for the games it can run.
+static bool armgbWanted;
 
 // The Game Boy Audio Filter, and the output capacitor's charge factor a 4 MiHz cycle (Pan Docs, Audio
 // Details): the original Game Boy's 0.999958 (about 28 Hz), the Pocket's and the Color's 0.998943
@@ -789,6 +798,46 @@ LibretroGbModel headerModel(const unsigned char* header, size_t size, bool sache
 	return flag == 0xC0 || (flag == 0x80 && !title) ? LIBRETRO_GB_CGB : LIBRETRO_GB_DMG;
 }
 
+void dropArmgb() {
+	std::free(s->armgb);
+	s->armgb = 0;
+}
+
+// The cartridges armGB knows: none, MBC1, MBC2, MBC3 without its clock, MBC5.
+bool armgbCartridge(const unsigned char* bytes, size_t size) {
+	if (size < 0x150) {
+		return false;
+	}
+	switch (bytes[0x147]) {
+	case 0x00: case 0x01: case 0x02: case 0x03: case 0x05: case 0x06: case 0x08: case 0x09:
+	case 0x11: case 0x12: case 0x13: case 0x19: case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1E:
+		return true;
+	default:
+		return false;
+	}
+}
+
+void startArmgb(std::vector<unsigned char> const& boot) {
+	size_t padded = 0x8000;
+	while (padded < s->game.size()) {
+		padded <<= 1;
+	}
+	s->armgbRom.assign(padded, 0);
+	std::memcpy(&s->armgbRom[0], &s->game[0], s->game.size());
+	s->armgbBoot.assign(boot.begin(), boot.begin() + std::min<size_t>(boot.size(), 0x100));
+	s->armgb = static_cast<struct GB*>(std::calloc(1, sizeof(struct GB)));
+	if (!s->armgb) {
+		return;
+	}
+	if (s->armgbBoot.size() == 0x100) {
+		s->armgb->boot = &s->armgbBoot[0];
+		s->armgb->bootSize = 0x100;
+	}
+	if (!gbLoad(s->armgb, &s->armgbRom[0], padded, GB_MODEL_DMG)) {
+		dropArmgb();
+	}
+}
+
 // Starts the game as the chosen model, or as its header asks for, reusing the existing machine if
 // there is one.
 bool start(LibretroGbModel model, char* error, size_t errorSize) {
@@ -887,6 +936,13 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	} else if (needed > s->stateSize) {
 		s->stateSize = needed;
 	}
+	// armGB runs the game instead when chosen and it can: an original Game Boy or Pocket game on a
+	// cartridge it knows, one console, at the console's own clock.
+	dropArmgb();
+	if (armgbWanted && (model == LIBRETRO_GB_DMG || model == LIBRETRO_GB_MGB) && !megaDuck && !sachen && replayProgram.empty()
+	    && players == 1 && !s->linked && cpuQuarters == 4 && armgbCartridge(bytes, size)) {
+		startArmgb(!bootBytes.empty() ? bootBytes : builtIn);
+	}
 	return true;
 }
 
@@ -935,7 +991,12 @@ bool libretroGbLoad(const void* rom, size_t size, const char* systemDirectory, e
 	return true;
 }
 
+void libretroGbSetArmgb(bool on) {
+	armgbWanted = on;
+}
+
 void libretroGbUnload(void) {
+	dropArmgb();
 	delete s->gb;
 	s->gb = 0;
 	s->gameGenie.clear();
@@ -946,6 +1007,9 @@ void libretroGbReset(enum LibretroGbModel model) {
 	s->wanted = model;
 	if (model == s->chosen && s->bootUsed == bootWanted) {
 		s->gb->reset(stall());
+		if (s->armgb) {
+			gbReset(s->armgb);
+		}
 		return;
 	}
 	restartAs(model);
@@ -1290,6 +1354,24 @@ void mixDown(std::size_t count) {
 	}
 }
 
+// A frame of armGB: the shades in the screen's colors, the sound through the output capacitor.
+void runArmgb() {
+	struct GB* gb = s->armgb;
+	gb->keys = s->pressed;
+	gbRunFrame(gb);
+	unsigned long const off = screens[screen].off;
+	for (int y = 0; y < GB_HEIGHT; ++y) {
+		for (int x = 0; x < GB_WIDTH; ++x) {
+			uint16_t const v = gb->frame[y][x];
+			s->pixels[y * LIBRETRO_GB_WIDTH + x] = v == GB_SHADE_OFF ? off : shown[v & 3];
+		}
+	}
+	for (uint32_t i = 0; i + 1 < gb->audioCount && s->sampleCount + 2 <= sizeof(s->samples) / sizeof(s->samples[0]); i += 2) {
+		throughOutput(s->capacitor, gb->audio[i], gb->audio[i + 1], gb->audioDacs[i / 2], &s->samples[s->sampleCount]);
+		s->sampleCount += 2;
+	}
+}
+
 // Starts a frame on the selected console: its buttons, and its clock file once loaded.
 void beginFrame(uint16_t keys) {
 	s->pressed = keys & 0xFF;
@@ -1494,6 +1576,14 @@ extern "C" {
 // screen off and on faster than a frame never finishes one, so after four frames' worth the
 // frontend gets the last picture again.
 const uint32_t* libretroGbRunFrame(uint16_t keys, const int16_t** out, size_t* frames) {
+	if (s->armgb) {
+		beginFrame(keys);
+		runArmgb();
+		endFrame();
+		*out = s->samples;
+		*frames = s->sampleCount / 2;
+		return reinterpret_cast<const uint32_t*>(s->pixels);
+	}
 	beginFrame(keys);
 	updateLink();
 	bool const exactly = s->linked && linkExactOn() && !duckLaptopConnected();
@@ -1566,6 +1656,10 @@ void* libretroGbSaveRam(size_t* size) {
 	unsigned char* data = 0;
 	int length = 0;
 	*size = 0;
+	if (s->armgb) {
+		*size = s->armgb->cart.ramSize;
+		return *size ? s->armgb->sram : 0;
+	}
 	if (!s->gb || !s->gb->getMemoryArea(3, &data, &length)) {
 		return 0;
 	}
@@ -1646,6 +1740,10 @@ void* libretroGbSystemRam(size_t* size) {
 	unsigned char* data = 0;
 	int length = 0;
 	*size = 0;
+	if (s->armgb) {
+		*size = 0x2000;
+		return s->armgb->wram;
+	}
 	if (!s->gb || !s->gb->getMemoryArea(2, &data, &length)) {
 		return 0;
 	}
@@ -1654,6 +1752,29 @@ void* libretroGbSystemRam(size_t* size) {
 }
 
 size_t libretroGbMemoryMap(struct retro_memory_descriptor* out) {
+	if (s->armgb) {
+		struct GB* gb = s->armgb;
+		unsigned char* rom = &s->armgbRom[0];
+		struct retro_memory_descriptor const areas[] = {
+			{ RETRO_MEMDESC_SYSTEM_RAM, gb->wram, 0, 0xC000, 0, 0, 0x1000, 0 },
+			{ RETRO_MEMDESC_SYSTEM_RAM, gb->wram, 0x1000, 0xD000, 0, 0, 0x1000, 0 },
+			{ RETRO_MEMDESC_SYSTEM_RAM, gb->hram, 0, 0xFF80, 0, 0, GB_SIZE_HRAM, 0 },
+			{ 0, gb->vram, 0, 0x8000, 0, 0, 0x2000, 0 },
+			{ 0, gb->oam, 0, 0xFE00, 0xFFFFFFE0, 0, GB_SIZE_OAM, 0 },
+			{ RETRO_MEMDESC_CONST, rom, 0, 0x0000, 0, 0, 0x4000, 0 },
+			{ RETRO_MEMDESC_CONST, rom, 0x4000, 0x4000, 0, 0, 0x4000, 0 },
+			{ 0, gb->io, 0, 0xFF00, 0, 0, 0x80, 0 },
+		};
+		size_t count = 0;
+		for (std::size_t i = 0; i < sizeof(areas) / sizeof(areas[0]); ++i) {
+			out[count++] = areas[i];
+		}
+		if (gb->cart.ramSize) {
+			struct retro_memory_descriptor const area = { 0, gb->sram, 0, 0xA000, ~(std::size_t) 0x1FFF, 0, gb->cart.ramSize, 0 };
+			out[count++] = area;
+		}
+		return count;
+	}
 	unsigned char* vram;
 	unsigned char* rom;
 	unsigned char* wram;
@@ -1693,10 +1814,13 @@ size_t libretroGbMemoryMap(struct retro_memory_descriptor* out) {
 }
 
 bool libretroGbIsColor(void) {
-	return s->gb && s->gb->isCgb();
+	return !s->armgb && s->gb && s->gb->isCgb();
 }
 
 bool libretroGbBooting(void) {
+	if (s->armgb) {
+		return s->armgb->bootMapped;
+	}
 	for (int i = 0; i < MAX_PLAYERS; ++i) {
 		if (consoles[i].gb && consoles[i].gb->inBootRom()) {
 			return true;
@@ -1753,7 +1877,17 @@ bool libretroGbSetCheats(const char* const* codes, size_t count) {
 namespace {
 
 // Save states: the size reported to the frontend leaves room for a state to grow.
+// armGB's state: a mark, the machine, and the output capacitor's charge.
+uint32_t const ARMGB_STATE = 0x42476D61u;
+
+size_t armgbStateSize() {
+	return sizeof(ARMGB_STATE) + gbStateSize() + sizeof(s->capacitor);
+}
+
 size_t stateSizeOne() {
+	if (s->armgb) {
+		return armgbStateSize();
+	}
 	return s->gb ? s->stateSize : 0;
 }
 
@@ -1968,6 +2102,16 @@ bool saveExact(void* data) {
 
 // Saves the state's length, then the state.
 bool saveOne(void* data, size_t size) {
+	if (s->armgb) {
+		if (size < armgbStateSize()) {
+			return false;
+		}
+		char* at = static_cast<char*>(data);
+		std::memcpy(at, &ARMGB_STATE, sizeof(ARMGB_STATE));
+		gbSaveState(s->armgb, at + sizeof(ARMGB_STATE));
+		std::memcpy(at + sizeof(ARMGB_STATE) + gbStateSize(), s->capacitor, sizeof(s->capacitor));
+		return true;
+	}
 	if (!s->gb || size < s->stateSize) {
 		return false;
 	}
@@ -2043,6 +2187,19 @@ bool readState(const void* data, size_t size) {
 // On the device's time, a loaded state leaves the clock as it was, as the Advance's does, except
 // before the first frame, where the state's clock wins over the .rtc file.
 bool loadOne(const void* data, size_t size) {
+	if (s->armgb) {
+		uint32_t mark;
+		const char* at = static_cast<const char*>(data);
+		if (size < armgbStateSize()) {
+			return false;
+		}
+		std::memcpy(&mark, at, sizeof(mark));
+		if (mark != ARMGB_STATE || !gbLoadState(s->armgb, at + sizeof(ARMGB_STATE), gbStateSize())) {
+			return false;
+		}
+		std::memcpy(s->capacitor, at + sizeof(ARMGB_STATE) + gbStateSize(), sizeof(s->capacitor));
+		return true;
+	}
 	if (!s->gb) {
 		return false;
 	}

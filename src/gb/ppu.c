@@ -651,8 +651,12 @@ static void lcdOn(struct GB* gb) {
 
 static void lcdOff(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
-	// The screen shows white while the LCD is off.
-	memset(gb->frame, 0, sizeof(gb->frame));
+	// The screen shows nothing while the LCD is off.
+	for (int y = 0; y < GB_HEIGHT; ++y) {
+		for (int x = 0; x < GB_WIDTH; ++x) {
+			gb->frame[y][x] = GB_SHADE_OFF;
+		}
+	}
 	ppu->oamReadBlocked = false;
 	ppu->vramReadBlocked = false;
 	ppu->oamWriteBlocked = false;

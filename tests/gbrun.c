@@ -121,7 +121,7 @@ int main(int argc, char** argv) {
 	uint64_t hash = 1469598103934665603ULL;
 	for (int y = 0; y < GB_HEIGHT; ++y) {
 		for (int x = 0; x < GB_WIDTH; ++x) {
-			hash = (hash ^ gb.frame[y][x]) * 1099511628211ULL;
+			hash = (hash ^ (gb.frame[y][x] == GB_SHADE_OFF ? 0 : gb.frame[y][x])) * 1099511628211ULL;
 		}
 	}
 	if (getenv("SHOT")) {
@@ -129,7 +129,7 @@ int main(int argc, char** argv) {
 		fprintf(o, "P5\n%d %d\n255\n", GB_WIDTH, GB_HEIGHT);
 		for (int y = 0; y < GB_HEIGHT; ++y) {
 			for (int x = 0; x < GB_WIDTH; ++x) {
-				uint16_t v = gb.frame[y][x];
+				uint16_t v = gb.frame[y][x] == GB_SHADE_OFF ? 0 : gb.frame[y][x];
 				fputc(gb.cgbMode ? (((v & 31) + (v >> 5 & 31) + (v >> 10 & 31)) * 255 / 93) : 255 - v * 85, o);
 			}
 		}

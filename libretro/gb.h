@@ -40,6 +40,9 @@ enum LibretroGbBoot {
 bool libretroGbLoad(const void* rom, size_t size, const char* systemDirectory, enum LibretroGbModel, bool colorCorrection,
                     unsigned audioRate, char* error, size_t errorSize);
 void libretroGbUnload(void);
+// Game Boy Core: armGB for the original Game Boy games it can run (Gambatte stays loaded beside it).
+// Applies when a game starts.
+void libretroGbSetArmgb(bool on);
 // Takes effect when a game is loaded or reset.
 void libretroGbSetBootRom(enum LibretroGbBoot);
 // The Game Boy's output capacitor, which keeps DC out of its sound: as each model has it, the

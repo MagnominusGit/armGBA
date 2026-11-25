@@ -27,6 +27,9 @@ enum {
 	GB_SIZE_OAM = 0xA0,
 	GB_SIZE_HRAM = 0x7F,
 	GB_SAMPLE_RATE = 32768,
+	// What the frame holds where the LCD shows nothing (off, or its first frame on), besides the shades
+	// 0 (lightest) to 3.
+	GB_SHADE_OFF = 4,
 };
 
 // The interrupt flags.
@@ -236,6 +239,9 @@ struct GB {
 	// The frame's sound, left and right interleaved, at GB_SAMPLE_RATE: the frontend takes it.
 	int16_t audio[4096];
 	uint32_t audioCount;
+	// For each sample pair, whether any channel's DAC was on (the console's output capacitor is
+	// connected only then).
+	uint8_t audioDacs[2048];
 	uint32_t frameCount;
 	// Set when V-blank starts, so a frame's run can end there.
 	bool frameEnded;
@@ -263,6 +269,9 @@ void gbUnschedule(struct GB*, int event);
 void gbRunEvents(struct GB*);
 void gbRequest(struct GB*, uint8_t irq);
 void gbStop(struct GB*);
+size_t gbStateSize(void);
+void gbSaveState(const struct GB*, void* data);
+bool gbLoadState(struct GB*, const void* data, size_t size);
 
 // cpu.c
 void gbCpuRun(struct GB*, uint32_t until);

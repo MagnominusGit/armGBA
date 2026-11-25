@@ -141,7 +141,8 @@ static void render(struct GB* gb, uint32_t end) {
 		uint8_t nr50 = *reg(gb, 0x24);
 		int32_t leftVolume = (nr50 >> 4 & 7) + 1;
 		int32_t rightVolume = (nr50 & 7) + 1;
-		// Mixed as they stand now; the sample being built carries over what it has, mixed as it was.
+		// Mixed as they stand now; the sample being built carries over what it has, mixed as it was. A
+		// sample is the mean over its 128 dots, times 64: all four channels at full volume reach 30720.
 		for (uint32_t k = 0; k <= complete; ++k) {
 			int32_t left = 0, right = 0;
 			for (int i = 0; i < 4; ++i) {
@@ -162,8 +163,9 @@ static void render(struct GB* gb, uint32_t end) {
 				apu->partialLeft = left;
 				apu->partialRight = right;
 			} else if (gb->audioCount + 2 <= sizeof(gb->audio) / sizeof(gb->audio[0])) {
-				gb->audio[gb->audioCount++] = left / (SAMPLE_DOTS * 2);
-				gb->audio[gb->audioCount++] = right / (SAMPLE_DOTS * 2);
+				gb->audioDacs[gb->audioCount / 2] = apu->square[0].dac || apu->square[1].dac || apu->wave.dac || apu->noise.dac;
+				gb->audio[gb->audioCount++] = left / 2;
+				gb->audio[gb->audioCount++] = right / 2;
 			}
 		}
 		apu->sampleStart += complete * SAMPLE_DOTS;

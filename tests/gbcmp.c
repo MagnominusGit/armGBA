@@ -14,6 +14,7 @@
 #include "../libretro/libretro.h"
 
 #include <dlfcn.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,7 +50,11 @@ static bool environment(unsigned cmd, void* data) {
 	switch (cmd) {
 	case RETRO_ENVIRONMENT_GET_VARIABLE: {
 		struct retro_variable* v = data;
-		v->value = NULL;
+		// The environment can set any option, over the ones below.
+		v->value = getenv(v->key);
+		if (v->value) {
+			return true;
+		}
 		for (size_t i = 0; i < sizeof(options) / sizeof(options[0]); ++i) {
 			if (!strcmp(v->key, options[i].key)) {
 				v->value = options[i].value;
@@ -105,8 +110,18 @@ static void audioSample(int16_t l, int16_t r) {
 	(void) r;
 }
 
+// The other core's sound: its root mean square, from frame 600 on.
+static double audioSquares;
+static long audioCount;
+static int currentFrame;
+
 static size_t audioBatch(const int16_t* data, size_t frames) {
-	(void) data;
+	if (currentFrame >= 600) {
+		for (size_t i = 0; i < frames * 2; ++i) {
+			audioSquares += (double) data[i] * data[i];
+		}
+		audioCount += frames * 2;
+	}
 	return frames;
 }
 
@@ -228,6 +243,7 @@ int main(int argc, char** argv) {
 	}
 	for (int i = 0; i < frames; ++i) {
 		heldButtons = buttonsAt(script, i);
+		currentFrame = i;
 		int before = theirCount;
 		SYM(retro_run)();
 		const uint8_t* ram = ((void* (*)(unsigned)) dlsym(core, "retro_get_memory_data"))(RETRO_MEMORY_SYSTEM_RAM);
@@ -266,7 +282,7 @@ int main(int argc, char** argv) {
 		memcpy(ourRam[i], gb.wram, 0x2000);
 		for (int y = 0; y < GB_HEIGHT; ++y) {
 			for (int x = 0; x < GB_WIDTH; ++x) {
-				ours[i][y][x] = gb.frame[y][x];
+				ours[i][y][x] = gb.frame[y][x] == GB_SHADE_OFF ? 0 : gb.frame[y][x];
 			}
 		}
 	}
@@ -348,6 +364,9 @@ int main(int argc, char** argv) {
 				++shown;
 			}
 		}
+	}
+	if (getenv("AUDIORMS")) {
+		fprintf(stderr, "audio rms %.1f over %ld samples\n", audioCount ? sqrt(audioSquares / audioCount) : 0.0, audioCount);
 	}
 	printf("type=%02x matched=%d/%d exact=%d first=%d pixels=%d ram=%d@%04X\n", rom[0x147], matched, n, exact, first, differing, ramFirst, ramAt < 0 ? 0 : ramAt);
 	return 0;

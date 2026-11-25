@@ -96,9 +96,9 @@ if(ipo)
 endif()
 target_include_directories(armgba PUBLIC src)
 
-# armGB, the Game Boy and Game Boy Color, built only when asked for until the libretro core uses it
+# armGB, the Game Boy and Game Boy Color
 file(GLOB ARMGB_SOURCES src/gb/*.c)
-add_library(armgb STATIC EXCLUDE_FROM_ALL ${ARMGB_SOURCES})
+add_library(armgb STATIC ${ARMGB_SOURCES})
 set_target_properties(armgb PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_options(armgb PRIVATE -O3)
 if(ipo)
@@ -111,7 +111,7 @@ add_executable(gbrun EXCLUDE_FROM_ALL tests/gbrun.c)
 target_link_libraries(gbrun armgb)
 # Compares armGB's pictures with another core's, run as a black box through libretro
 add_executable(gbcmp EXCLUDE_FROM_ALL tests/gbcmp.c)
-target_link_libraries(gbcmp armgb ${CMAKE_DL_LIBS})
+target_link_libraries(gbcmp armgb ${CMAKE_DL_LIBS} m)
 
 # The table-driven CPU against the exact one, an instruction at a time
 add_executable(leancmp EXCLUDE_FROM_ALL tests/leancmp.c)
@@ -166,7 +166,7 @@ add_library(armgba_libretro SHARED ${LIBRETRO_SOURCES})
 if(ANDROID)
 	set_target_properties(armgba_libretro PROPERTIES OUTPUT_NAME armgba_libretro_android)
 endif()
-target_link_libraries(armgba_libretro armgba gambatte retro-archive m z)
+target_link_libraries(armgba_libretro armgba armgb gambatte retro-archive m z)
 # A toolchain file may leave C++ without an optimisation level
 target_compile_options(armgba_libretro PRIVATE -O2)
 set_target_properties(armgba_libretro PROPERTIES PREFIX "")

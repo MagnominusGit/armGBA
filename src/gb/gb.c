@@ -117,6 +117,11 @@ void gbReset(struct GB* gb) {
 	gb->cart = cart;
 	gbCartInit(gb);
 	gb->cgbMode = model == GB_MODEL_CGB && (rom[0x143] & 0x80);
+	for (int y = 0; y < GB_HEIGHT; ++y) {
+		for (int x = 0; x < GB_WIDTH; ++x) {
+			gb->frame[y][x] = GB_SHADE_OFF;
+		}
+	}
 	if (model == GB_MODEL_DMG) {
 		powerOnRam(gb);
 	}
@@ -164,6 +169,24 @@ void gbReset(struct GB* gb) {
 	gb->apu.regs[0x25 - 0x10] = 0xF3;
 	gbPpuReset(gb);
 	updateNext(gb);
+}
+
+// A state is the struct up to the cartridge's pointer: everything after it is set again on loading.
+size_t gbStateSize(void) {
+	return offsetof(struct GB, rom);
+}
+
+void gbSaveState(const struct GB* gb, void* data) {
+	memcpy(data, gb, gbStateSize());
+}
+
+bool gbLoadState(struct GB* gb, const void* data, size_t size) {
+	if (size < gbStateSize()) {
+		return false;
+	}
+	memcpy(gb, data, gbStateSize());
+	gbMapRom(gb);
+	return true;
 }
 
 bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) {
