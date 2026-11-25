@@ -52,7 +52,10 @@ void gbMapRom(struct GB* gb) {
 	gb->memMap[0xE] = gb->wram;
 	for (int i = 0; i < 16; ++i) {
 		gb->readMap[i] = gb->dma.active ? NULL : gb->memMap[i];
+		gb->writeMap[i] = NULL;
 	}
+	gb->writeMap[0xC] = gb->writeMap[0xE] = gb->wram;
+	gb->writeMap[0xD] = (uint8_t*) gb->memMap[0xD];
 	// Sachen's header page reads through its scrambled address lines.
 	if (gb->bootMapped || cart->mapper == GB_SACHEN) {
 		gb->readMap[0] = NULL;

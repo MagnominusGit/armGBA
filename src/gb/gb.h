@@ -539,6 +539,8 @@ struct GB {
 	// through gbRead (the boot ROM, OAM DMA).
 	const uint8_t* memMap[16];
 	const uint8_t* readMap[16];
+	// The work RAM's pages, which the CPU writes straight to; NULL for the rest.
+	uint8_t* writeMap[16];
 	// A frontend's picture, when it wants colors drawn there instead of shades in frame: the four
 	// shades' colors, then the screen's with the LCD off.
 	uint32_t* video;

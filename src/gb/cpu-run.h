@@ -19,7 +19,14 @@ static inline __attribute__((always_inline)) void CPU(tick)(struct GB* gb) {
 
 static inline uint8_t CPU(readNow)(struct GB* gb, uint16_t address) {
 	const uint8_t* page = gb->readMap[address >> 12];
-	return page ? page[address & 0xFFF] : gbRead(gb, address);
+	if (page) {
+		return page[address & 0xFFF];
+	}
+	// High RAM, which OAM DMA leaves alone.
+	if (address >= 0xFF80 && address != 0xFFFF) {
+		return gb->hram[address & 0x7F];
+	}
+	return gbRead(gb, address);
 }
 
 static inline uint8_t CPU(read8)(struct GB* gb, uint16_t address) {
@@ -29,7 +36,14 @@ static inline uint8_t CPU(read8)(struct GB* gb, uint16_t address) {
 }
 
 static inline void CPU(write8)(struct GB* gb, uint16_t address, uint8_t value) {
-	gbWrite(gb, address, value);
+	uint8_t* page = gb->writeMap[address >> 12];
+	if (page) {
+		page[address & 0xFFF] = value;
+	} else if (address >= 0xFF80 && address != 0xFFFF) {
+		gb->hram[address & 0x7F] = value;
+	} else {
+		gbWrite(gb, address, value);
+	}
 	CPU(tick)(gb);
 }
 
