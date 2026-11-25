@@ -71,6 +71,7 @@ void gbHdmaEvent(struct GB* gb) {
 static void writePalette(struct GB* gb, uint8_t* palette, uint8_t* index, uint8_t value) {
 	if (!palettesLocked(gb)) {
 		palette[*index & 0x3F] = value;
+		gb->colorsBuilt = false;
 	}
 	if (*index & 0x80) {
 		*index = 0x80 | ((*index + 1) & 0x3F);

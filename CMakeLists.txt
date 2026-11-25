@@ -106,6 +106,10 @@ if(ipo)
 endif()
 target_include_directories(armgb PUBLIC src/gb)
 
+# armGB's SIMD drawing against its plain loop
+add_executable(gbsimd EXCLUDE_FROM_ALL tests/gbsimd.c)
+target_link_libraries(gbsimd armgb)
+
 # Runs a Game Boy test ROM and reports what it says
 add_executable(gbrun EXCLUDE_FROM_ALL tests/gbrun.c)
 target_link_libraries(gbrun armgb)

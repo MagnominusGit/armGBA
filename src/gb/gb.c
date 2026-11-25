@@ -219,6 +219,7 @@ void gbReset(struct GB* gb) {
 	gb->frameLimit = GB_FRAME_DOTS;
 	// A reset starts the cartridge's mapper over; its battery-backed RAM and clocks run on.
 	gbCartInit(gb);
+	gb->colorsBuilt = false;
 	if (gb->cheatCart) {
 		gbCheatCartReset(gb->cheatCart);
 	}
@@ -331,6 +332,7 @@ bool gbLoadState(struct GB* gb, const void* data, size_t size) {
 		return false;
 	}
 	memcpy(gb, data, gbStateSize());
+	gb->colorsBuilt = false;
 	gbMapRom(gb);
 	// The device's time goes on from now, not from when the state was saved.
 	gb->cart.rtc.lastHost = gb->hostMicros;

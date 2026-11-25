@@ -744,6 +744,7 @@ void setColors() {
 			continue;
 		}
 		gb->videoTable = cgbColors;
+		gb->colorsBuilt = false;
 		for (int i = 0; i < 4; ++i) {
 			gb->videoColors[i] = asShown(shown[i]);
 		}

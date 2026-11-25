@@ -195,9 +195,7 @@ static void drawLineDmg(struct GB* gb) {
 		for (int i = 0; i < 4; ++i) {
 			lut[i] = gb->videoColors[ppu->bgp >> (i * 2) & 3];
 		}
-		for (int x = 0; x < GB_WIDTH; ++x) {
-			video[x] = lut[index[x]];
-		}
+		gbShadeLine(video, index, lut, GB_WIDTH);
 	} else {
 		uint16_t lut[4] = { ppu->bgp & 3, ppu->bgp >> 2 & 3, ppu->bgp >> 4 & 3, ppu->bgp >> 6 & 3 };
 		for (int x = 0; x < GB_WIDTH; ++x) {
@@ -291,29 +289,36 @@ static void drawLineCgb(struct GB* gb) {
 	uint32_t line[21 * 8];
 	uint8_t info[21 * 8];
 	unsigned const o = ppu->scx & 7;
-	uint32_t bg[8][4];
+	// A Color game's palettes change rarely: built once until they do. An original game's go through
+	// BGP, OBP0 and OBP1, which change often, so they're built for each line.
+	uint32_t compatBg[8][4];
 	uint8_t const bgShades[1] = { ppu->bgp };
-	lineColors(gb, cgb->bgPalette, color ? 8 : 1, color ? NULL : bgShades, bg);
+	if (color && !gb->colorsBuilt) {
+		lineColors(gb, cgb->bgPalette, 8, NULL, gb->bgColors);
+		lineColors(gb, cgb->objPalette, 8, NULL, gb->objColors);
+		gb->colorsBuilt = true;
+	} else if (!color) {
+		lineColors(gb, cgb->bgPalette, 1, bgShades, compatBg);
+	}
+	uint32_t (*const bg)[4] = color ? gb->bgColors : compatBg;
 	bool const hideBg = gb->layersHidden & GB_LAYER_BG, hideWindow = gb->layersHidden & GB_LAYER_WINDOW;
 	if (color || (ppu->lcdc & LCDC_BG)) {
 		uint16_t map = (ppu->lcdc & LCDC_BG_MAP ? 0x1C00 : 0x1800) + ((ppu->scy + y) & 0xFF) / 8 * 32;
 		unsigned fineY = (ppu->scy + y) & 7;
 		unsigned column = ppu->scx >> 3;
+		uint64_t pixels[21];
+		const uint32_t* colors[21];
+		uint8_t front[21];
 		for (int t = 0; t < 21; ++t) {
 			uint16_t at = map + ((column + t) & 31);
 			uint8_t tile = gb->vram[at];
 			uint8_t a = color ? gb->vram[0x2000 + at] : 0;
 			unsigned row = a & 0x40 ? 7 - fineY : fineY;
-			uint64_t pixels = flipRow(tileRow(gb, (a & 0x08 ? 0x2000 : 0) + tileAddress(ppu, tile) + row * 2), a & 0x20);
-			uint8_t indices[8];
-			memcpy(indices, &pixels, 8);
-			const uint32_t* colors = bg[a & 7];
-			uint8_t front = a & 0x80 ? 4 : 0;
-			for (int i = 0; i < 8; ++i) {
-				line[t * 8 + i] = colors[indices[i]];
-				info[t * 8 + i] = indices[i] | front;
-			}
+			pixels[t] = flipRow(tileRow(gb, (a & 0x08 ? 0x2000 : 0) + tileAddress(ppu, tile) + row * 2), a & 0x20);
+			colors[t] = bg[a & 7];
+			front[t] = a & 0x80 ? 4 : 0;
 		}
+		gbExpandTiles(line, info, pixels, colors, front, 21);
 		// Layer Selection: a hidden background is colour 0 of each tile's palette, drawn over
 		// afterwards so the loop above stays as it is.
 		for (int t = 0; hideBg && t < 21; ++t) {
@@ -328,22 +333,28 @@ static void drawLineCgb(struct GB* gb) {
 			unsigned wfine = ppu->windowLine & 7;
 			int start = ppu->wx - 7;
 			int first = start < 0 ? 0 : start;
-			for (int t = (first - start) / 8; !hideWindow && t * 8 + start < GB_WIDTH; ++t) {
+			// The window's tiles from its first one on screen, drawn apart and copied in from where
+			// it starts.
+			int firstTile = (first - start) / 8;
+			int tiles = 0;
+			uint64_t pixels[21];
+			const uint32_t* colors[21];
+			uint8_t front[21];
+			for (int t = firstTile; !hideWindow && t * 8 + start < GB_WIDTH; ++t, ++tiles) {
 				uint8_t tile = gb->vram[wmap + t];
 				uint8_t a = color ? gb->vram[0x2000 + wmap + t] : 0;
 				unsigned row = a & 0x40 ? 7 - wfine : wfine;
-				uint64_t pixels = flipRow(tileRow(gb, (a & 0x08 ? 0x2000 : 0) + tileAddress(ppu, tile) + row * 2), a & 0x20);
-				uint8_t indices[8];
-				memcpy(indices, &pixels, 8);
-				const uint32_t* colors = bg[a & 7];
-				uint8_t front = a & 0x80 ? 4 : 0;
-				for (int i = 0; i < 8; ++i) {
-					int x = t * 8 + i + start;
-					if (x >= first && x < GB_WIDTH) {
-						line[o + x] = colors[indices[i]];
-						info[o + x] = indices[i] | front;
-					}
-				}
+				pixels[tiles] = flipRow(tileRow(gb, (a & 0x08 ? 0x2000 : 0) + tileAddress(ppu, tile) + row * 2), a & 0x20);
+				colors[tiles] = bg[a & 7];
+				front[tiles] = a & 0x80 ? 4 : 0;
+			}
+			if (tiles) {
+				uint32_t windowLine[21 * 8];
+				uint8_t windowInfo[21 * 8];
+				gbExpandTiles(windowLine, windowInfo, pixels, colors, front, tiles);
+				int from = first - (firstTile * 8 + start);
+				memcpy(&line[o + first], &windowLine[from], (GB_WIDTH - first) * sizeof(uint32_t));
+				memcpy(&info[o + first], &windowInfo[from], GB_WIDTH - first);
 			}
 			++ppu->windowLine;
 		}
@@ -354,9 +365,12 @@ static void drawLineCgb(struct GB* gb) {
 		}
 	}
 	if ((ppu->lcdc & LCDC_OBJ) && ppu->objectCount && !(gb->layersHidden & GB_LAYER_OBJ)) {
-		uint32_t obj[8][4];
+		uint32_t compatObj[8][4];
 		uint8_t const objShades[2] = { ppu->obp0, ppu->obp1 };
-		lineColors(gb, cgb->objPalette, color ? 8 : 2, color ? NULL : objShades, obj);
+		if (!color) {
+			lineColors(gb, cgb->objPalette, 2, objShades, compatObj);
+		}
+		uint32_t (*const obj)[4] = color ? gb->objColors : compatObj;
 		int height = ppu->lcdc & LCDC_TALL ? 16 : 8;
 		// Which object has each pixel: by OAM position in a Color game (unless OPRI says by X), else
 		// the smallest X, then the first in OAM.

@@ -553,6 +553,10 @@ struct GB {
 	bool duckLaptop;
 	// Set by the frontend for a frame it won't show: lines aren't drawn.
 	bool noDraw;
+	// A Color game's palettes as drawn (through videoTable), built when first needed after palette
+	// RAM, a reset, a loaded state or the frontend's colours change them (which clear colorsBuilt).
+	bool colorsBuilt;
+	uint32_t bgColors[8][4], objColors[8][4];
 	// A cheat cartridge in front of the game, set by the frontend (and powered on by gbReset).
 	struct GBCheatCart* cheatCart;
 	// Cheat codes, set by the frontend after loading (gbAddCheat).
@@ -639,6 +643,11 @@ void gbPpuWrite(struct GB*, uint8_t reg, uint8_t value);
 void gbPpuEvent(struct GB*);
 void gbPpuReplan(struct GB*);
 void gbPpuFreeze(struct GB*, uint32_t dots);
+// ppu-simd.c: a line's tiles through their palettes (see there).
+void gbExpandTiles(uint32_t* line, uint8_t* info, const uint64_t* pixels, const uint32_t* const* colors, const uint8_t* front, int count);
+void gbShadeLine(uint32_t* out, const uint8_t* index, const uint32_t* lut, int count);
+void gbShadeLinePlain(uint32_t* out, const uint8_t* index, const uint32_t* lut, int count);
+void gbExpandTilesPlain(uint32_t* line, uint8_t* info, const uint64_t* pixels, const uint32_t* const* colors, const uint8_t* front, int count);
 
 // apu.c
 void gbApuReset(struct GB*);
