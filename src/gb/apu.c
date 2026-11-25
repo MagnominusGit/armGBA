@@ -378,9 +378,10 @@ void gbApuSync(struct GB* gb) {
 	uint32_t c = (uint16_t) (gb->timer.counter - (uint32_t) dots * per);
 	// Each edge of the sequencer's bit: falling, a step; rising, the envelopes' half step.
 	unsigned bit = sequencerBit(gb);
+	uint32_t from = apu->lastSync;
 	for (;;) {
 		uint32_t edge = ((c >> bit) + 1) << bit;
-		uint32_t at = apu->lastSync + (edge - c + per - 1) / per;
+		uint32_t at = from + (edge - c + per - 1) / per;
 		if (gbSince(at, gb->now) > 0) {
 			break;
 		}
@@ -391,6 +392,7 @@ void gbApuSync(struct GB* gb) {
 			render(gb, at);
 			frameSequencer(gb);
 		}
+		from = at;
 		c = edge & 0xFFFF;
 	}
 	render(gb, gb->now);
