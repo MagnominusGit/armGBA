@@ -67,6 +67,16 @@ enum GBMapper {
 	GB_HUC1,
 	GB_MBC7,
 	GB_HUC3,
+	GB_CAMERA,
+};
+
+// The Pocket Camera (SameBoy's): its sensor's registers, whether they're mapped in place of RAM, and
+// a shot in progress until busyUntil; with no camera, the sensor sees noise from seed.
+struct GBCamera {
+	uint8_t regs[0x36];
+	bool mapped;
+	uint32_t busyUntil;
+	uint32_t seed;
 };
 
 // HuC3 (SameBoy's): the mode written at $0000, the clock's minutes and days, its alarm, and the
@@ -313,6 +323,7 @@ struct GBCart {
 	bool irMode;
 	struct GBMbc7 mbc7;
 	struct GBHuc3 huc3;
+	struct GBCamera camera;
 };
 
 struct GB {

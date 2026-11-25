@@ -299,6 +299,9 @@ bool gbCartInit(struct GB* gb) {
 	case 0xFF:
 		cart->mapper = GB_HUC1;
 		break;
+	case 0xFC:
+		cart->mapper = GB_CAMERA;
+		break;
 	case 0xFE:
 		cart->mapper = GB_HUC3;
 		cart->hasRtc = true;
@@ -313,7 +316,7 @@ bool gbCartInit(struct GB* gb) {
 		break;
 	}
 	cart->hasBattery = type == 0x03 || type == 0x06 || type == 0x09 || type == 0x0F || type == 0x10 || type == 0x13 ||
-	                   type == 0x1B || type == 0x1E || type == 0xFE || type == 0xFF;
+	                   type == 0x1B || type == 0x1E || type == 0xFC || type == 0xFE || type == 0xFF;
 	cart->ramSize = rom[0x149] < 6 ? ramSizes[rom[0x149]] : 0;
 	if (cart->mapper == GB_MBC2) {
 		cart->ramSize = 0x200;
@@ -423,6 +426,22 @@ void gbCartWrite(struct GB* gb, uint16_t address, uint8_t value) {
 		case 4:
 		case 5:
 			cart->mbc7.secondary = value == 0x40;
+			break;
+		default:
+			break;
+		}
+		break;
+	case GB_CAMERA:
+		switch (address >> 13) {
+		case 0:
+			cart->ramEnabled = (value & 0xF) == 0xA;
+			break;
+		case 1:
+			cart->romBank = value;
+			break;
+		case 2:
+			cart->ramBank = value & 0xF;
+			cart->camera.mapped = value & 0x10;
 			break;
 		default:
 			break;
@@ -866,7 +885,111 @@ void gbHuc3Set(struct GB* gb, const uint8_t state[GB_HUC3_STATE]) {
 	rtc->lastHost = gb->hostMicros;
 }
 
+// The Pocket Camera (SameBoy's camera.c): register 0 starts a shot (bit 0, busy until it's done), the
+// others set gain, exposure, edge enhancement and the 4x4 dithering thresholds; RAM bank 0 at
+// $A100-$AEFF reads the picture as 16x14 tiles. RAM can't be reached during a shot.
+static bool cameraBusy(struct GB* gb) {
+	struct GBCamera* camera = &gb->cart.camera;
+	if ((camera->regs[0] & 1) && gbSince(gb->now, camera->busyUntil) >= 0) {
+		camera->regs[0] &= ~1;
+	}
+	return camera->regs[0] & 1;
+}
+
+static uint8_t cameraNoise(const struct GBCamera* camera, uint8_t x, uint8_t y) {
+	uint32_t value = (x * 151 + y * 149) ^ camera->seed;
+	uint32_t hash = 0;
+	while (value) {
+		hash <<= 1;
+		if (hash & 0x100) {
+			hash ^= 0x101;
+		}
+		if (value & 0x80000000) {
+			hash ^= 0xA1;
+		}
+		value <<= 1;
+	}
+	return hash;
+}
+
+static long cameraPixel(const struct GBCamera* camera, int x, int y) {
+	static const double gains[32] = {
+		0.8809390, 0.9149149, 0.9457498, 0.9739758, 1.0000000, 1.0241412, 1.0466537, 1.0677433,
+		1.0875793, 1.1240310, 1.1568911, 1.1868043, 1.2142561, 1.2396208, 1.2743837, 1.3157323,
+		1.3525190, 1.3856512, 1.4157897, 1.4434309, 1.4689574, 1.4926697, 1.5148087, 1.5355703,
+		1.5551159, 1.5735801, 1.5910762, 1.6077008, 1.6235366, 1.6386550, 1.6531183, 1.6669808,
+	};
+	x = x == 128 ? 127 : x > 128 || x < 0 ? 0 : x;
+	y = y == 112 ? 111 : y > 112 || y < 0 ? 0 : y;
+	long color = cameraNoise(camera, x, y);
+	color = (long) (color * gains[camera->regs[1] & 0x1F]);
+	return color * ((camera->regs[2] << 8) + camera->regs[3]) / 0x1000;
+}
+
+static uint8_t cameraImage(const struct GBCamera* camera, uint16_t offset) {
+	static const double edges[8] = { 0.5, 0.75, 1, 1.25, 2, 3, 4, 5 };
+	int tileX = offset / 0x10 % 0x10;
+	int y = (offset >> 1 & 7) + offset / 0x100 * 8;
+	int bit = offset & 1;
+	uint8_t result = 0;
+	for (int x = tileX * 8; x < tileX * 8 + 8; ++x) {
+		long color = cameraPixel(camera, x, y);
+		if ((camera->regs[1] & 0xE0) == 0xE0) {
+			double edge = edges[camera->regs[4] >> 4 & 7];
+			color += (long) (color * 4 * edge);
+			color -= (long) (cameraPixel(camera, x - 1, y) * edge);
+			color -= (long) (cameraPixel(camera, x + 1, y) * edge);
+			color -= (long) (cameraPixel(camera, x, y - 1) * edge);
+			color -= (long) (cameraPixel(camera, x, y + 1) * edge);
+		}
+		const uint8_t* thresholds = &camera->regs[6 + ((x & 3) + (y & 3) * 4) * 3];
+		int shade = color < thresholds[0] ? 3 : color < thresholds[1] ? 2 : color < thresholds[2] ? 1 : 0;
+		result = result << 1 | (shade >> bit & 1);
+	}
+	return result;
+}
+
+static void cameraWrite(struct GB* gb, uint16_t address, uint8_t value) {
+	struct GBCamera* camera = &gb->cart.camera;
+	unsigned reg = address & 0x7F;
+	if (reg != 0) {
+		if (reg < 0x36) {
+			camera->regs[reg] = value;
+		}
+		return;
+	}
+	value &= 7;
+	bool busy = cameraBusy(gb);
+	// A new sensor reading each time, its noise from a counter (SameBoy draws a random one).
+	camera->seed = camera->seed * 1103515245 + 12345;
+	if ((value & 1) && !busy) {
+		// SameBoy's time for a shot, in CPU cycles: as dots, halved at double speed.
+		uint32_t exposure = camera->regs[2] << 8 | camera->regs[3];
+		uint32_t cycles = 129792 + (camera->regs[1] & 0x80 ? 0 : 2048) + exposure * 64;
+		camera->busyUntil = gb->now + (gb->doubleSpeed ? cycles / 2 : cycles);
+	}
+	// A shot can't be stopped.
+	if (busy) {
+		value |= 1;
+	}
+	camera->regs[0] = value;
+}
+
 uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
+	if (gb->cart.mapper == GB_CAMERA) {
+		if (gb->cart.camera.mapped) {
+			return (address & 0x7F) == 0 ? (cameraBusy(gb), gb->cart.camera.regs[0]) : 0;
+		}
+		if (!gb->cart.ramEnabled) {
+			return 0xFF;
+		}
+		if (cameraBusy(gb)) {
+			return 0;
+		}
+		if (gb->cart.ramBank == 0 && address >= 0xA100 && address < 0xAF00) {
+			return cameraImage(&gb->cart.camera, address - 0xA100);
+		}
+	}
 	if (gb->cart.mapper == GB_MBC7) {
 		return mbc7Read(gb, address);
 	}
@@ -898,6 +1021,15 @@ uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
 }
 
 void gbCartWriteRam(struct GB* gb, uint16_t address, uint8_t value) {
+	if (gb->cart.mapper == GB_CAMERA) {
+		if (gb->cart.camera.mapped) {
+			cameraWrite(gb, address, value);
+			return;
+		}
+		if (cameraBusy(gb)) {
+			return;
+		}
+	}
 	if (gb->cart.mapper == GB_MBC7) {
 		mbc7Write(gb, address, value);
 		return;
