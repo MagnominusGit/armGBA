@@ -56,20 +56,16 @@ enum {
 	LCDC_ON = 0x80,
 };
 
-// The objects on a line, in OAM order: at most ten.
-struct LineObjects {
-	int count;
-	uint8_t index[10];
-};
-
-static void findObjects(const struct GB* gb, int y, struct LineObjects* out) {
-	const struct GBPpu* ppu = &gb->ppu;
+// The objects on the line, in OAM order: at most ten.
+static void findObjects(struct GB* gb) {
+	struct GBPpu* ppu = &gb->ppu;
 	int height = ppu->lcdc & LCDC_TALL ? 16 : 8;
-	out->count = 0;
-	for (int i = 0; i < 40 && out->count < 10; ++i) {
+	int y = ppu->line;
+	ppu->objectCount = 0;
+	for (int i = 0; i < 40 && ppu->objectCount < 10; ++i) {
 		int top = gb->oam[i * 4] - 16;
 		if (y >= top && y < top + height) {
-			out->index[out->count++] = i;
+			ppu->objects[ppu->objectCount++] = i;
 		}
 	}
 }
@@ -81,8 +77,9 @@ static bool windowOnLine(const struct GB* gb) {
 
 // How long mode 3 lasts: 172 dots, the fine scroll's, 6 for the window, and each object's penalty
 // (Pan Docs, "Mode 3 length").
-static unsigned drawLength(const struct GB* gb) {
-	const struct GBPpu* ppu = &gb->ppu;
+static unsigned drawLength(struct GB* gb) {
+	struct GBPpu* ppu = &gb->ppu;
+	findObjects(gb);
 	unsigned length = 172 + (ppu->scx & 7);
 	bool window = windowOnLine(gb);
 	if (window) {
@@ -91,11 +88,9 @@ static unsigned drawLength(const struct GB* gb) {
 	if (!(ppu->lcdc & LCDC_OBJ) && !gb->cgbMode) {
 		return length;
 	}
-	struct LineObjects objects;
-	findObjects(gb, ppu->line, &objects);
 	bool tileSeen[32] = { false };
-	for (int i = 0; i < objects.count; ++i) {
-		int x = gb->oam[objects.index[i] * 4 + 1];
+	for (int i = 0; i < ppu->objectCount; ++i) {
+		int x = gb->oam[ppu->objects[i] * 4 + 1];
 		if (x >= 168) {
 			continue;
 		}
@@ -193,14 +188,12 @@ static void drawLine(struct GB* gb) {
 	if (!(ppu->lcdc & LCDC_OBJ)) {
 		return;
 	}
-	struct LineObjects objects;
-	findObjects(gb, y, &objects);
 	int height = ppu->lcdc & LCDC_TALL ? 16 : 8;
 	// Which object owns each pixel: the one with the smallest X, then the first in OAM.
 	uint8_t ownerX[GB_WIDTH];
 	memset(ownerX, 0xFF, sizeof(ownerX));
-	for (int i = 0; i < objects.count; ++i) {
-		const uint8_t* object = &gb->oam[objects.index[i] * 4];
+	for (int i = 0; i < ppu->objectCount; ++i) {
+		const uint8_t* object = &gb->oam[ppu->objects[i] * 4];
 		int left = object[1] - 8;
 		if (left <= -8 || left >= GB_WIDTH) {
 			continue;
@@ -283,7 +276,6 @@ static void next(struct GB* gb, int step, uint32_t at) {
 	struct GBPpu* ppu = &gb->ppu;
 	ppu->step = step;
 	ppu->nextAt = at;
-	gbSchedule(gb, GB_EVENT_PPU, at);
 }
 
 // A new line starts, at time start.
@@ -488,14 +480,156 @@ static void advance(struct GB* gb) {
 	}
 }
 
-void gbPpuEvent(struct GB* gb) {
+// Whether a step can request an interrupt, as STAT and LYC stand: only such steps are events. The
+// others run when something reads or writes the PPU, or on the way to one that is.
+static bool interrupting(const struct GB* gb, int step, int line) {
+	const struct GBPpu* ppu = &gb->ppu;
+	bool lyc = ppu->stat & 0x40;
+	switch (step) {
+	case STEP_LY:
+		return (line && (ppu->stat & 0x20)) || (!line && lyc && ppu->lyc == 0);
+	case STEP_OAM:
+		return (ppu->stat & 0x20) || (lyc && ppu->lyc == line);
+	case STEP_DRAW:
+	case STEP_FIRST_VRAM:
+		// Where mode 3 ends is worked out here.
+		return ppu->stat & 0x08;
+	case STEP_HBLANK_INT:
+		return ppu->stat & 0x08;
+	case STEP_FIRST:
+		return lyc && ppu->lyc == 0;
+	case STEP_V_LY:
+		return line == GB_HEIGHT && (ppu->stat & 0x20);
+	case STEP_V_COMPARE:
+		return lyc && ppu->lyc == line;
+	case STEP_V_BLANK:
+		return true;
+	case STEP_L153_ZERO:
+		return lyc && ppu->lyc == 153;
+	case STEP_L153_COMPARE:
+		return lyc && ppu->lyc == 0;
+	default:
+		return false;
+	}
+}
+
+// Schedules the PPU's event at the first step from here that can request an interrupt, following the
+// steps' times as advance() takes them without running them. Past the start of mode 3, where its
+// length is not yet known, it goes on from the line's end.
+static void plan(struct GB* gb) {
+	const struct GBPpu* ppu = &gb->ppu;
+	if (!(ppu->lcdc & LCDC_ON)) {
+		gbUnschedule(gb, GB_EVENT_PPU);
+		return;
+	}
+	int step = ppu->step;
+	int line = ppu->line;
+	uint32_t at = ppu->nextAt;
+	uint32_t lineStart = ppu->lineStart;
+	uint32_t lineEnd = ppu->lineEnd;
+	unsigned late153 = gb->model == GB_MODEL_CGB ? 4 : 6;
+	for (int guard = 0; guard < 2400; ++guard) {
+		if (interrupting(gb, step, line)) {
+			break;
+		}
+		switch (step) {
+		case STEP_OAM_WRITE:
+			step = STEP_LY;
+			at = lineStart + 3;
+			break;
+		case STEP_LY:
+			step = STEP_OAM;
+			at = lineStart + 4;
+			break;
+		case STEP_OAM:
+			step = STEP_OAM_LATE;
+			at = lineStart + 80;
+			break;
+		case STEP_OAM_LATE:
+			step = STEP_MODE3;
+			at = lineStart + 84;
+			break;
+		case STEP_MODE3:
+			step = STEP_DRAW;
+			at = lineStart + 89;
+			break;
+		case STEP_FIRST:
+			step = STEP_FIRST_OAM_WRITE;
+			at += 76;
+			break;
+		case STEP_FIRST_OAM_WRITE:
+			step = STEP_FIRST_MODE3;
+			at += 2;
+			break;
+		case STEP_FIRST_MODE3:
+			step = STEP_FIRST_VRAM;
+			at += 5;
+			break;
+		case STEP_MODE0:
+			// Mode 3's end is known once it has started.
+			step = STEP_HBLANK_INT;
+			at += 1;
+			break;
+		case STEP_DRAW:
+		case STEP_FIRST_VRAM:
+		case STEP_HBLANK_INT:
+			step = STEP_PRE_OAM;
+			at = lineEnd - 2;
+			break;
+		case STEP_PRE_OAM:
+			step = STEP_LINE_END;
+			at = lineEnd;
+			break;
+		case STEP_LINE_END:
+			line = line + 1 == GB_LINES ? 0 : line + 1;
+			lineStart = lineEnd;
+			lineEnd = lineStart + GB_LINE_DOTS;
+			step = line < GB_HEIGHT ? STEP_OAM_WRITE : line == GB_LINES - 1 ? STEP_L153_LY : STEP_V_LY;
+			at = lineStart + 2;
+			break;
+		case STEP_V_LY:
+			step = STEP_V_COMPARE;
+			at = lineStart + 4;
+			break;
+		case STEP_V_COMPARE:
+			step = line == GB_HEIGHT ? STEP_V_BLANK : STEP_LINE_END;
+			at = line == GB_HEIGHT ? lineStart + 5 : lineEnd;
+			break;
+		case STEP_V_BLANK:
+		case STEP_L153_COMPARE:
+			step = STEP_LINE_END;
+			at = lineEnd;
+			break;
+		case STEP_L153_LY:
+			step = STEP_L153_ZERO;
+			at = lineStart + late153;
+			break;
+		case STEP_L153_ZERO:
+			step = STEP_L153_LYC0;
+			at = lineStart + 8;
+			break;
+		case STEP_L153_LYC0:
+			step = STEP_L153_COMPARE;
+			at = lineStart + 12;
+			break;
+		}
+	}
+	gbSchedule(gb, GB_EVENT_PPU, at);
+}
+
+static void catchUp(struct GB* gb) {
 	while (gb->ppu.lcdc & LCDC_ON && gbSince(gb->now, gb->ppu.nextAt) >= 0) {
 		advance(gb);
 	}
 }
 
+void gbPpuEvent(struct GB* gb) {
+	catchUp(gb);
+	plan(gb);
+}
+
 void gbPpuSync(struct GB* gb) {
-	gbPpuEvent(gb);
+	catchUp(gb);
 }
 
 static void lcdOn(struct GB* gb) {
@@ -510,6 +644,7 @@ static void lcdOn(struct GB* gb) {
 	ppu->lineStart = gb->now + late;
 	ppu->lineEnd = gb->now + late + GB_LINE_DOTS - 8;
 	next(gb, STEP_FIRST, gb->now + late);
+	plan(gb);
 }
 
 static void lcdOff(struct GB* gb) {
@@ -583,6 +718,7 @@ void gbPpuWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 	case 0x41:
 		ppu->stat = value & 0x78;
 		updateStat(gb);
+		plan(gb);
 		break;
 	case 0x42:
 		ppu->scy = value;
@@ -595,6 +731,7 @@ void gbPpuWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 	case 0x45:
 		ppu->lyc = value;
 		updateStat(gb);
+		plan(gb);
 		break;
 	case 0x46:
 		ppu->dma = value;

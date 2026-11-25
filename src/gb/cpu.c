@@ -719,10 +719,11 @@ static void step(struct GB* gb) {
 	}
 }
 
-// Runs instructions until the time reaches until, stopping for events as they come due.
+// Runs instructions until the time reaches until or V-blank starts, stopping for events as they come
+// due.
 void gbCpuRun(struct GB* gb, uint32_t until) {
 	struct GBCpu* cpu = &gb->cpu;
-	while (gbSince(until, gb->now) > 0) {
+	while (gbSince(until, gb->now) > 0 && !gb->frameEnded) {
 		if (gbSince(gb->now, gb->nextEvent) >= 0) {
 			gbRunEvents(gb);
 		}

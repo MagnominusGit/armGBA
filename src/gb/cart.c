@@ -80,6 +80,8 @@ static void mbc1Banks(struct GB* gb) {
 
 void gbCartWrite(struct GB* gb, uint16_t address, uint8_t value) {
 	struct GBCart* cart = &gb->cart;
+	uint16_t romBank = cart->romBank;
+	uint8_t mode = cart->mbc1Mode, upper = cart->mbc1Upper;
 	switch (cart->mapper) {
 	case GB_MBC1:
 		switch (address >> 13) {
@@ -147,7 +149,10 @@ void gbCartWrite(struct GB* gb, uint16_t address, uint8_t value) {
 	default:
 		return;
 	}
-	gbMapRom(gb);
+	// Games write the bank they already have all the time.
+	if (cart->romBank != romBank || cart->mbc1Mode != mode || cart->mbc1Upper != upper) {
+		gbMapRom(gb);
+	}
 }
 
 static int32_t ramOffset(const struct GB* gb, uint16_t address) {

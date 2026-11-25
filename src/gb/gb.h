@@ -110,6 +110,9 @@ struct GBPpu {
 	uint32_t drawStart;
 	uint32_t nextAt;
 	uint16_t mode3Length;
+	// The objects on the line, found at mode 3's start, in OAM order: at most ten.
+	uint8_t objectCount;
+	uint8_t objects[10];
 	uint8_t lcdc, stat, scy, scx, lyc, bgp, obp0, obp1, wy, wx, dma;
 	// The mode STAT shows, and the one its interrupt line goes by (-1: none), which differ for a dot
 	// at some edges.

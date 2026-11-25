@@ -88,6 +88,8 @@ void gbDmaSync(struct GB* gb) {
 		return;
 	}
 	int index = dmaIndex(gb);
+	// Lines still to be drawn see OAM as it was.
+	gbPpuSync(gb);
 	// The byte of the M-cycle ending now is moved by its end too.
 	int upTo = index < 0 ? 0 : index < 160 ? index + 1 : 160;
 	for (; dma->done < upTo; ++dma->done) {
