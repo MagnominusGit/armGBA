@@ -74,6 +74,7 @@ enum GBMapper {
 	GB_MBC7,
 	GB_HUC3,
 	GB_CAMERA,
+	GB_TAMA5,
 };
 
 // The Pocket Camera (SameBoy's): its sensor's registers, whether they're mapped in place of RAM, and
@@ -519,6 +520,9 @@ bool gbCartInit(struct GB*);
 void gbCartWrite(struct GB*, uint16_t address, uint8_t value);
 uint8_t gbCartReadRam(struct GB*, uint16_t address);
 void gbCartWriteRam(struct GB*, uint16_t address, uint8_t value);
+uint16_t gbTama5Bank(struct GB*);
+uint8_t gbTama5Read(struct GB*, uint16_t address);
+void gbTama5Write(struct GB*, uint16_t address, uint8_t value);
 // A ROM read on a Vast Fame cartridge, where its protection may answer instead.
 uint8_t gbCartReadVastFame(struct GB*, uint16_t address);
 // A switchable-bank ROM byte as an unlicensed cartridge scrambles it.

@@ -300,6 +300,9 @@ bool gbCartInit(struct GB* gb) {
 	case 0xFC:
 		cart->mapper = GB_CAMERA;
 		break;
+	case 0xFD:
+		cart->mapper = GB_TAMA5;
+		break;
 	case 0xFE:
 		cart->mapper = GB_HUC3;
 		cart->hasRtc = true;
@@ -319,12 +322,18 @@ bool gbCartInit(struct GB* gb) {
 	if (cart->mapper == GB_MBC2) {
 		cart->ramSize = 0x200;
 	}
+	// TAMA5: its chip and clock in one 8 KiB bank, always reachable.
+	if (cart->mapper == GB_TAMA5) {
+		cart->ramSize = 0x2000;
+		cart->hasRam = cart->hasBattery = true;
+	}
 	// MBC7's EEPROM: 128 16-bit words, kept as the save.
 	if (cart->mapper == GB_MBC7) {
 		cart->ramSize = 0x100;
 		cart->hasBattery = true;
 	}
 	cart->hasRam = cart->ramSize != 0;
+
 	// Sintax's cartridge RAM needs no enabling (mGBA), nor HuC1's (SameBoy).
 	if (cart->variant == GB_SINTAX || cart->mapper == GB_HUC1) {
 		cart->ramEnabled = cart->hasRam;
@@ -335,6 +344,9 @@ bool gbCartInit(struct GB* gb) {
 		cart->romBanks = 1;
 	}
 	cart->romBank = 1;
+	if (cart->mapper == GB_TAMA5) {
+		cart->romBank = gbTama5Bank(gb);
+	}
 	// A 1 MiB MBC1 cartridge with a second header at bank $10 is a multicart.
 	if (cart->mapper == GB_MBC1 && gb->romSize == 0x100000 && !memcmp(rom + 0x104, rom + 0x40104, 0x30)) {
 		cart->mbc1Multicart = true;
@@ -974,6 +986,9 @@ static void cameraWrite(struct GB* gb, uint16_t address, uint8_t value) {
 }
 
 uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
+	if (gb->cart.mapper == GB_TAMA5) {
+		return gbTama5Read(gb, address);
+	}
 	if (gb->cart.mapper == GB_CAMERA) {
 		if (gb->cart.camera.mapped) {
 			return (address & 0x7F) == 0 ? (cameraBusy(gb), gb->cart.camera.regs[0]) : 0;
@@ -1019,6 +1034,10 @@ uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
 }
 
 void gbCartWriteRam(struct GB* gb, uint16_t address, uint8_t value) {
+	if (gb->cart.mapper == GB_TAMA5) {
+		gbTama5Write(gb, address, value);
+		return;
+	}
 	if (gb->cart.mapper == GB_CAMERA) {
 		if (gb->cart.camera.mapped) {
 			cameraWrite(gb, address, value);
