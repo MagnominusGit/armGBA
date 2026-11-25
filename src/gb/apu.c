@@ -221,11 +221,32 @@ static void runNoise(struct GB* gb, uint32_t t, uint32_t cycles, struct Spans* s
 					if (left >= period) {
 						// The steps in a run, the output added only where it changes.
 						uint32_t steps = left / period;
-						uint16_t lfsr = apu->lfsr, before = lfsr;
+						uint16_t lfsr = apu->lfsr;
+						bool bit7 = lfsr & 0x80;
 						unsigned mask = apu->narrow ? 0x4040 : 0x4000;
 						int32_t high = 2 * ch->volume - 15, v = dacOut(ch);
-						for (uint32_t k = 1; k <= steps; ++k) {
-							before = lfsr;
+						uint32_t k = 1;
+						// The 15-bit LFSR eight steps at a time: the outputs are bits 1-8, the new bits each
+						// pair's XNOR.
+						for (; !apu->narrow && k + 7 <= steps; k += 8) {
+							uint32_t x = lfsr;
+							uint32_t outs = (x >> 1) & 0xFF;
+							bit7 = x >> 14 & 1;
+							lfsr = (uint16_t) ((x >> 8) | ((~(x ^ (x >> 1)) & 0xFF) << 7));
+							if (spans && high != -15) {
+								uint32_t changes = (outs ^ ((outs << 1) | (v == high))) & 0xFF;
+								for (; changes; changes &= changes - 1) {
+									int j = __builtin_ctz(changes);
+									at = t + (cycles - left + (k + j) * period) * 2;
+									addSpan(spans, from, at, v);
+									from = at;
+									v = outs >> j & 1 ? high : -15;
+								}
+							}
+						}
+						for (; k <= steps; ++k) {
+							uint16_t before = lfsr;
+							bit7 = before & 0x80;
 							lfsr = lfsr >> 1;
 							lfsr = (((before ^ (before >> 1) ^ 1) & 1) ? lfsr | mask : lfsr & ~mask);
 							int32_t next = lfsr & 1 ? high : -15;
@@ -238,7 +259,7 @@ static void runNoise(struct GB* gb, uint32_t t, uint32_t cycles, struct Spans* s
 						}
 						left -= steps * period;
 						apu->noiseCounter += steps << (bit + 1);
-						apu->lfsrBit7 = before & 0x80;
+						apu->lfsrBit7 = bit7;
 						apu->lfsr = lfsr;
 						updateLfsr(gb);
 					}
