@@ -66,6 +66,17 @@ enum GBMapper {
 	GB_MBC5,
 };
 
+// Unlicensed cartridges built on MBC5 that scramble bank numbers or data (told apart, as mGBA does,
+// by a second logo at $184 their boot code checks).
+enum GBVariant {
+	GB_PLAIN,
+	GB_SINTAX,
+	GB_BBD,
+	GB_HITEK,
+	GB_GGB81,
+	GB_LI_CHENG,
+};
+
 // The events, each at a time; the earliest decides when the CPU next stops to run them.
 enum {
 	GB_EVENT_PPU,
@@ -242,6 +253,14 @@ struct GBCart {
 	uint32_t romBanks;
 	uint32_t ramSize;
 	struct GBRtc rtc;
+	// An unlicensed variant's state: the bit orders chosen for bank numbers and for data, Sintax's
+	// bank as written and its four XOR keys; and what the switchable bank's bytes read as.
+	uint8_t variant;
+	uint8_t bankOrder, dataOrder;
+	uint8_t bankWritten;
+	uint8_t xorKeys[4];
+	bool romTransformed;
+	uint8_t romLut[256];
 };
 
 struct GB {
@@ -378,6 +397,10 @@ bool gbCartInit(struct GB*);
 void gbCartWrite(struct GB*, uint16_t address, uint8_t value);
 uint8_t gbCartReadRam(struct GB*, uint16_t address);
 void gbCartWriteRam(struct GB*, uint16_t address, uint8_t value);
+// A switchable-bank ROM byte as an unlicensed cartridge scrambles it.
+static inline uint8_t gbCartRomByte(const struct GB* gb, uint8_t raw) {
+	return gb->cart.romTransformed ? gb->cart.romLut[raw] : raw;
+}
 void gbRtcSync(struct GB*);
 // The clock as 11 values: DH, DL, H, M, S, the ticks into the second, then the latched DH to S.
 void gbRtcGet(struct GB*, uint32_t r[11]);

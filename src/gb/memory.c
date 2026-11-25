@@ -48,6 +48,11 @@ void gbMapRom(struct GB* gb) {
 	if (gb->bootMapped) {
 		gb->readMap[0] = NULL;
 	}
+	if (cart->romTransformed) {
+		for (int i = 4; i < 8; ++i) {
+			gb->readMap[i] = NULL;
+		}
+	}
 }
 
 // The bus a DMA source or a CPU access is on: the external bus (the cartridge, and on the original
@@ -73,6 +78,11 @@ static uint8_t dmaByte(struct GB* gb, uint16_t address) {
 	case 0xE:
 	case 0xF:
 		return gb->memMap[0xC + (address >> 12 & 1)][address & 0xFFF];
+	case 0x4:
+	case 0x5:
+	case 0x6:
+	case 0x7:
+		return gbCartRomByte(gb, gb->memMap[address >> 12][address & 0xFFF]);
 	default:
 		return gb->memMap[address >> 12][address & 0xFFF];
 	}
@@ -309,6 +319,11 @@ uint8_t gbRead(struct GB* gb, uint16_t address) {
 			return gb->hram[address & 0x7F];
 		}
 		return gb->ie;
+	case 0x4:
+	case 0x5:
+	case 0x6:
+	case 0x7:
+		return gbCartRomByte(gb, gb->memMap[address >> 12][address & 0xFFF]);
 	default:
 		return gb->memMap[address >> 12][address & 0xFFF];
 	}

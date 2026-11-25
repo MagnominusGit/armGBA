@@ -10,6 +10,157 @@
 
 static const uint32_t ramSizes[6] = { 0, 0x800, 0x2000, 0x8000, 0x20000, 0x10000 };
 
+// Unlicensed MBC5 variants (bit orders and the second-logo CRCs as mGBA documents them, src/gb/mbc).
+// Each order lists, for each bit of the result, the bit of the input it comes from.
+static const uint8_t sintaxOrders[16][8] = {
+	{ 2, 1, 4, 3, 6, 5, 0, 7 }, { 3, 2, 5, 4, 7, 6, 1, 0 }, { 0, 1, 2, 3, 4, 5, 6, 7 }, { 0, 1, 2, 3, 4, 5, 6, 7 },
+	{ 0, 1, 2, 3, 4, 5, 6, 7 }, { 4, 5, 2, 3, 0, 1, 6, 7 }, { 0, 1, 2, 3, 4, 5, 6, 7 }, { 6, 7, 4, 5, 1, 3, 0, 2 },
+	{ 0, 1, 2, 3, 4, 5, 6, 7 }, { 7, 6, 1, 0, 3, 2, 5, 4 }, { 0, 1, 2, 3, 4, 5, 6, 7 }, { 5, 4, 7, 6, 1, 0, 3, 2 },
+	{ 0, 1, 2, 3, 4, 5, 6, 7 }, { 2, 3, 4, 5, 6, 7, 0, 1 }, { 0, 1, 2, 3, 4, 5, 6, 7 }, { 0, 1, 2, 3, 4, 5, 6, 7 },
+};
+static const uint8_t bbdData[8][8] = {
+	{ 0, 1, 2, 3, 4, 5, 6, 7 }, { 0, 1, 2, 3, 4, 5, 6, 7 }, { 0, 1, 2, 3, 4, 5, 6, 7 }, { 0, 1, 2, 3, 4, 5, 6, 7 },
+	{ 0, 5, 1, 3, 4, 2, 6, 7 }, { 0, 4, 2, 3, 1, 5, 6, 7 }, { 0, 1, 2, 3, 4, 5, 6, 7 }, { 0, 1, 5, 3, 4, 2, 6, 7 },
+};
+static const uint8_t bbdBanks[8][8] = {
+	{ 0, 1, 2, 3, 4, 5, 6, 7 }, { 0, 1, 2, 3, 4, 5, 6, 7 }, { 0, 1, 2, 3, 4, 5, 6, 7 }, { 3, 4, 2, 0, 1, 5, 6, 7 },
+	{ 0, 1, 2, 3, 4, 5, 6, 7 }, { 1, 2, 3, 4, 0, 5, 6, 7 }, { 0, 1, 2, 3, 4, 5, 6, 7 }, { 0, 1, 2, 3, 4, 5, 6, 7 },
+};
+static const uint8_t hitekData[8][8] = {
+	{ 0, 1, 2, 3, 4, 5, 6, 7 }, { 0, 6, 5, 3, 4, 1, 2, 7 }, { 0, 5, 6, 3, 4, 2, 1, 7 }, { 0, 6, 2, 3, 4, 5, 1, 7 },
+	{ 0, 6, 1, 3, 4, 5, 2, 7 }, { 0, 1, 6, 3, 4, 5, 2, 7 }, { 0, 2, 6, 3, 4, 1, 5, 7 }, { 0, 6, 2, 3, 4, 1, 5, 7 },
+};
+static const uint8_t hitekBanks[8][8] = {
+	{ 0, 1, 2, 3, 4, 5, 6, 7 }, { 3, 2, 1, 0, 4, 5, 6, 7 }, { 2, 1, 0, 3, 4, 5, 6, 7 }, { 1, 0, 3, 2, 4, 5, 6, 7 },
+	{ 0, 3, 2, 1, 4, 5, 6, 7 }, { 2, 3, 0, 1, 4, 5, 6, 7 }, { 3, 0, 1, 2, 4, 5, 6, 7 }, { 2, 0, 3, 1, 4, 5, 6, 7 },
+};
+static const uint8_t ggb81Data[8][8] = {
+	{ 0, 1, 2, 3, 4, 5, 6, 7 }, { 0, 2, 1, 3, 4, 6, 5, 7 }, { 0, 6, 5, 3, 4, 2, 1, 7 }, { 0, 5, 1, 3, 4, 2, 6, 7 },
+	{ 0, 5, 2, 3, 4, 1, 6, 7 }, { 0, 2, 6, 3, 4, 5, 1, 7 }, { 0, 1, 6, 3, 4, 2, 5, 7 }, { 0, 2, 5, 3, 4, 6, 1, 7 },
+};
+
+static uint8_t reorder(uint8_t value, const uint8_t order[8]) {
+	uint8_t result = 0;
+	for (int i = 0; i < 8; ++i) {
+		result |= (value >> order[i] & 1) << i;
+	}
+	return result;
+}
+
+static uint32_t crc32(const uint8_t* data, size_t size) {
+	uint32_t crc = 0xFFFFFFFF;
+	for (size_t i = 0; i < size; ++i) {
+		crc ^= data[i];
+		for (int k = 0; k < 8; ++k) {
+			crc = crc >> 1 ^ (0xEDB88320 & -(crc & 1));
+		}
+	}
+	return ~crc;
+}
+
+// Which variant a cartridge is, by its second logo; a "fixed" dump (its last bank-0 byte 1) is plain.
+static uint8_t variantOf(const struct GB* gb) {
+	const uint8_t* rom = gb->rom;
+	if (gb->romSize < 0x8000) {
+		return GB_PLAIN;
+	}
+	switch (crc32(&rom[0x184], 0x30)) {
+	case 0x4FDAB691:
+		return GB_HITEK;
+	case 0xC7D8C1DF:
+	case 0x6D1EA662:
+		return rom[0x7FFF] != 0x01 ? GB_BBD : GB_PLAIN;
+	case 0x79F34594:
+	case 0x7E8C539B:
+		return GB_GGB81;
+	case 0x20D092E2:
+	case 0xD2B57657:
+		return rom[0x147] == 0x01 || (0x8000u << rom[0x148]) != gb->romSize ? GB_LI_CHENG : GB_PLAIN;
+	case 0x6C1DCF2D:
+	case 0x99E3449D:
+		// Sintax cartridges hold up to 2 MiB; larger dumps of them are already unscrambled.
+		return rom[0x7FFF] != 0x01 && gb->romSize <= 0x200000 ? GB_SINTAX : GB_PLAIN;
+	default:
+		return GB_PLAIN;
+	}
+}
+
+// What the switchable bank's bytes read as: in a data bit order, or XORed with Sintax's key for the
+// bank written.
+static void romScramble(struct GBCart* cart) {
+	const uint8_t* order = NULL;
+	uint8_t key = 0;
+	switch (cart->variant) {
+	case GB_SINTAX:
+		key = cart->xorKeys[cart->bankWritten & 3];
+		break;
+	case GB_BBD:
+		order = bbdData[cart->dataOrder];
+		break;
+	case GB_HITEK:
+		order = hitekData[cart->dataOrder];
+		break;
+	case GB_GGB81:
+		order = ggb81Data[cart->dataOrder];
+		break;
+	default:
+		break;
+	}
+	cart->romTransformed = key || (order && memcmp(order, bbdData[0], 8));
+	for (int i = 0; i < 256; ++i) {
+		cart->romLut[i] = (order ? reorder(i, order) : i) ^ key;
+	}
+}
+
+// An unlicensed variant's writes, before MBC5 sees them: false when MBC5 doesn't.
+static bool variantWrite(struct GB* gb, uint16_t address, uint8_t* value) {
+	struct GBCart* cart = &gb->cart;
+	switch (cart->variant) {
+	case GB_SINTAX:
+		if (address >= 0x2000 && address < 0x3000) {
+			cart->bankWritten = *value;
+			*value = reorder(*value, sintaxOrders[cart->bankOrder]);
+		} else if ((address & 0xF0F0) == 0x5010) {
+			// The bank order, then the bank written again in it.
+			cart->bankOrder = *value & 0xF;
+			gbCartWrite(gb, 0x2000, cart->bankWritten);
+			return false;
+		} else if (address >= 0x7000 && (address & 0xF0) >= 0x20 && (address & 0xF0) <= 0x50) {
+			cart->xorKeys[((address & 0xF0) >> 4) - 2] = *value;
+		}
+		romScramble(cart);
+		return true;
+	case GB_BBD:
+	case GB_HITEK:
+		if (cart->variant == GB_HITEK && (address & 0xF0FF) == 0x0300) {
+			return false;
+		}
+		switch (address & 0xF0FF) {
+		case 0x2000:
+			*value = reorder(*value, (cart->variant == GB_BBD ? bbdBanks : hitekBanks)[cart->bankOrder]);
+			break;
+		case 0x2001:
+			cart->dataOrder = *value & 7;
+			break;
+		case 0x2080:
+			cart->bankOrder = *value & 7;
+			break;
+		}
+		romScramble(cart);
+		return true;
+	case GB_GGB81:
+		if ((address & 0xF0FF) == 0x2001) {
+			cart->dataOrder = *value & 7;
+		}
+		romScramble(cart);
+		return true;
+	case GB_LI_CHENG:
+		return !(address > 0x2100 && address < 0x3000);
+	default:
+		return true;
+	}
+}
+
 bool gbCartInit(struct GB* gb) {
 	struct GBCart* cart = &gb->cart;
 	const uint8_t* rom = gb->rom;
@@ -19,7 +170,14 @@ bool gbCartInit(struct GB* gb) {
 	// Cartridge RAM with no save yet reads as all 1s, as other emulators start it.
 	memset(gb->sram, 0xFF, sizeof(gb->sram));
 	uint8_t type = rom[0x147];
-	switch (type) {
+	cart->variant = variantOf(gb);
+	if (cart->variant == GB_HITEK) {
+		cart->bankOrder = cart->dataOrder = 7;
+	} else if (cart->variant == GB_SINTAX) {
+		cart->bankOrder = 0xF;
+	}
+	romScramble(cart);
+	switch (cart->variant != GB_PLAIN ? 0x1B : type) {
 	case 0x00:
 	case 0x08:
 	case 0x09:
@@ -61,6 +219,10 @@ bool gbCartInit(struct GB* gb) {
 		cart->ramSize = 0x200;
 	}
 	cart->hasRam = cart->ramSize != 0;
+	// Sintax's cartridge RAM needs no enabling (mGBA).
+	if (cart->variant == GB_SINTAX) {
+		cart->ramEnabled = cart->hasRam;
+	}
 	// Banks of 16 KiB; the ROM's size is rounded up to a power of two when it is loaded.
 	cart->romBanks = (uint32_t) (gb->romSize / 0x4000);
 	if (!cart->romBanks) {
@@ -86,6 +248,14 @@ void gbCartWrite(struct GB* gb, uint16_t address, uint8_t value) {
 	struct GBCart* cart = &gb->cart;
 	uint16_t romBank = cart->romBank;
 	uint8_t mode = cart->mbc1Mode, upper = cart->mbc1Upper;
+	if (cart->variant != GB_PLAIN) {
+		bool mbc5 = variantWrite(gb, address, &value);
+		// Its bytes may read differently now.
+		gbMapRom(gb);
+		if (!mbc5) {
+			return;
+		}
+	}
 	switch (cart->mapper) {
 	case GB_MBC1:
 		switch (address >> 13) {
