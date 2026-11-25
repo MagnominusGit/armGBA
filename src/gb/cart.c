@@ -299,6 +299,10 @@ bool gbCartInit(struct GB* gb) {
 	case 0xFF:
 		cart->mapper = GB_HUC1;
 		break;
+	case 0xFE:
+		cart->mapper = GB_HUC3;
+		cart->hasRtc = true;
+		break;
 	case 0x22:
 		cart->mapper = GB_MBC7;
 		cart->mbc7.x = cart->mbc7.y = 0x8000;
@@ -309,7 +313,7 @@ bool gbCartInit(struct GB* gb) {
 		break;
 	}
 	cart->hasBattery = type == 0x03 || type == 0x06 || type == 0x09 || type == 0x0F || type == 0x10 || type == 0x13 ||
-	                   type == 0x1B || type == 0x1E || type == 0xFF;
+	                   type == 0x1B || type == 0x1E || type == 0xFE || type == 0xFF;
 	cart->ramSize = rom[0x149] < 6 ? ramSizes[rom[0x149]] : 0;
 	if (cart->mapper == GB_MBC2) {
 		cart->ramSize = 0x200;
@@ -419,6 +423,22 @@ void gbCartWrite(struct GB* gb, uint16_t address, uint8_t value) {
 		case 4:
 		case 5:
 			cart->mbc7.secondary = value == 0x40;
+			break;
+		default:
+			break;
+		}
+		break;
+	case GB_HUC3:
+		switch (address >> 13) {
+		case 0:
+			cart->huc3.mode = value;
+			cart->ramEnabled = value == 0x0A;
+			break;
+		case 1:
+			cart->romBank = value;
+			break;
+		case 2:
+			cart->ramBank = value;
 			break;
 		default:
 			break;
@@ -535,6 +555,16 @@ void gbRtcSync(struct GB* gb) {
 	}
 	rtc->lastSync = gb->now;
 	rtc->lastHost = gb->hostMicros;
+	// HuC3: minutes up to a day's, then days.
+	if (gb->cart.mapper == GB_HUC3) {
+		struct GBHuc3* huc3 = &gb->cart.huc3;
+		ticks += rtc->ticks;
+		rtc->ticks = ticks % (GB_RTC_SECOND * 60ull);
+		uint64_t minutes = huc3->minutes + ticks / (GB_RTC_SECOND * 60ull);
+		huc3->days += minutes / 1440;
+		huc3->minutes = minutes % 1440;
+		return;
+	}
 	if (rtc->regs[4] & 0x40) {
 		return;
 	}
@@ -719,9 +749,136 @@ static void mbc7Write(struct GB* gb, uint16_t address, uint8_t value) {
 	}
 }
 
+// HuC3 (SameBoy's): mode $B takes commands at $Axxx (high nibble 1: read the nibble at the index and
+// step on, 2: write it, 3: write and step on, 4 and 5: the index's low and high nibbles, 6: flags);
+// $C reads the nibble read, $D the status, $E the infrared port. Nibbles 0-2 are the minutes, 3-6 the
+// days, $58-$5F the alarm.
+static void huc3SetNibble(uint16_t* field, unsigned nibble, uint8_t value) {
+	*field = (*field & ~(0xF << nibble * 4)) | (value & 0xF) << nibble * 4;
+}
+
+static bool huc3Write(struct GB* gb, uint8_t value) {
+	struct GBHuc3* h = &gb->cart.huc3;
+	switch (h->mode) {
+	case 0xB:
+		gbRtcSync(gb);
+		switch (value >> 4) {
+		case 1:
+			if (h->index < 3) {
+				h->nibble = h->minutes >> h->index * 4 & 0xF;
+			} else if (h->index < 7) {
+				h->nibble = h->days >> (h->index - 3) * 4 & 0xF;
+			}
+			++h->index;
+			break;
+		case 2:
+		case 3:
+			if (h->index < 3) {
+				huc3SetNibble(&h->minutes, h->index, value);
+			} else if (h->index < 7) {
+				huc3SetNibble(&h->days, h->index - 3, value);
+			} else if (h->index >= 0x58 && h->index <= 0x5A) {
+				huc3SetNibble(&h->alarmMinutes, h->index - 0x58, value);
+			} else if (h->index >= 0x5B && h->index <= 0x5E) {
+				huc3SetNibble(&h->alarmDays, h->index - 0x5B, value);
+			} else if (h->index == 0x5F) {
+				h->alarmOn = value & 1;
+			}
+			if (value >> 4 == 3) {
+				++h->index;
+			}
+			break;
+		case 4:
+			h->index = (h->index & 0xF0) | (value & 0xF);
+			break;
+		case 5:
+			h->index = (h->index & 0x0F) | (value & 0xF) << 4;
+			break;
+		case 6:
+			h->flags = value & 0xF;
+			break;
+		default:
+			break;
+		}
+		return true;
+	case 0xC:
+	case 0xD:
+	case 0xE:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool huc3Read(const struct GB* gb, uint8_t* value) {
+	const struct GBHuc3* h = &gb->cart.huc3;
+	switch (h->mode) {
+	case 0x0:
+	case 0xA:
+		return false;
+	case 0xC:
+		*value = h->flags == 2 ? 1 : h->nibble;
+		return true;
+	case 0xE:
+		// The infrared port: no light seen.
+		*value = 0;
+		return true;
+	default:
+		*value = 1;
+		return true;
+	}
+}
+
+static uint32_t huc3Nibbles(const uint8_t* at) {
+	return (at[0] & 0xF) | (at[1] & 0xF) << 4 | (at[2] & 0xF) << 8;
+}
+
+void gbHuc3Get(struct GB* gb, uint8_t state[GB_HUC3_STATE]) {
+	const struct GBHuc3* h = &gb->cart.huc3;
+	gbRtcSync(gb);
+	memset(state, 0, GB_HUC3_STATE);
+	uint32_t ticks = gb->cart.rtc.ticks;
+	for (int i = 0; i < 4; ++i) {
+		state[i] = ticks >> (24 - i * 8);
+	}
+	for (int i = 0; i < 3; ++i) {
+		state[4 + 0x10 + i] = h->minutes >> i * 4 & 0xF;
+		state[4 + 0x13 + i] = h->days >> i * 4 & 0xF;
+		state[4 + 0x58 + i] = h->alarmMinutes >> i * 4 & 0xF;
+	}
+	for (int i = 0; i < 4; ++i) {
+		state[4 + 0x5B + i] = h->alarmDays >> i * 4 & 0xF;
+	}
+	state[4 + 0x5F] = h->alarmOn;
+}
+
+void gbHuc3Set(struct GB* gb, const uint8_t state[GB_HUC3_STATE]) {
+	struct GBHuc3* h = &gb->cart.huc3;
+	struct GBRtc* rtc = &gb->cart.rtc;
+	rtc->ticks = ((uint32_t) state[0] << 24 | state[1] << 16 | state[2] << 8 | state[3]) % (GB_RTC_SECOND * 60u);
+	h->minutes = huc3Nibbles(&state[4 + 0x10]) % 1440;
+	h->days = huc3Nibbles(&state[4 + 0x13]);
+	h->alarmMinutes = huc3Nibbles(&state[4 + 0x58]);
+	h->alarmDays = huc3Nibbles(&state[4 + 0x5B]) | (state[4 + 0x5E] & 0xF) << 12;
+	h->alarmOn = state[4 + 0x5F] & 1;
+	rtc->fraction = 0;
+	rtc->lastSync = gb->now;
+	rtc->lastHost = gb->hostMicros;
+}
+
 uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
 	if (gb->cart.mapper == GB_MBC7) {
 		return mbc7Read(gb, address);
+	}
+	uint8_t value;
+	if (gb->cart.mapper == GB_HUC3) {
+		if (huc3Read(gb, &value)) {
+			return value;
+		}
+		// Mode 0 still reads RAM.
+		if (gb->cart.huc3.mode == 0 && gb->cart.hasRam) {
+			return gb->sram[(gb->cart.ramBank * 0x2000 + (address & 0x1FFF)) & (gb->cart.ramSize - 1)];
+		}
 	}
 	// HuC1's infrared port: no light seen.
 	if (gb->cart.mapper == GB_HUC1 && gb->cart.irMode) {
@@ -743,6 +900,9 @@ uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
 void gbCartWriteRam(struct GB* gb, uint16_t address, uint8_t value) {
 	if (gb->cart.mapper == GB_MBC7) {
 		mbc7Write(gb, address, value);
+		return;
+	}
+	if (gb->cart.mapper == GB_HUC3 && huc3Write(gb, value)) {
 		return;
 	}
 	// HuC1's infrared LED: nothing to see it.

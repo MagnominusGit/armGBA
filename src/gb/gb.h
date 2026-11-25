@@ -66,6 +66,17 @@ enum GBMapper {
 	GB_MBC5,
 	GB_HUC1,
 	GB_MBC7,
+	GB_HUC3,
+};
+
+// HuC3 (SameBoy's): the mode written at $0000, the clock's minutes and days, its alarm, and the
+// command port's index, flags and last nibble read. Its time base is GBRtc's, ticks into the minute.
+struct GBHuc3 {
+	uint8_t mode;
+	uint16_t minutes, days;
+	uint16_t alarmMinutes, alarmDays;
+	bool alarmOn;
+	uint8_t index, flags, nibble;
 };
 
 // MBC7 (SameBoy's): the accelerometer's latched readings, and the 93LC56 EEPROM's serial port: its
@@ -301,6 +312,7 @@ struct GBCart {
 	// HuC1: RAM's place taken by the infrared port.
 	bool irMode;
 	struct GBMbc7 mbc7;
+	struct GBHuc3 huc3;
 };
 
 struct GB {
@@ -453,6 +465,11 @@ void gbRtcGet(struct GB*, uint32_t r[11]);
 void gbRtcSet(struct GB*, const uint32_t r[11]);
 void gbRtcSetSpeed(struct GB*, unsigned percent);
 void gbRtcSetRealTime(struct GB*, bool on);
+// HuC3's clock as the frontend's file keeps it: ticks into the minute (4 bytes, big-endian), then 256
+// nibbles with the minutes at $10 and the days at $13, 3 each, lowest first.
+enum { GB_HUC3_STATE = 0x104 };
+void gbHuc3Get(struct GB*, uint8_t state[GB_HUC3_STATE]);
+void gbHuc3Set(struct GB*, const uint8_t state[GB_HUC3_STATE]);
 
 static inline int32_t gbSince(uint32_t now, uint32_t then) {
 	return (int32_t) (now - then);

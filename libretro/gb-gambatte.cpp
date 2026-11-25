@@ -440,6 +440,22 @@ void setClock(Console& c, gb_ulong r[11]) {
 	c.gb->setRtcRegs(r);
 }
 
+// A HuC3's clock, as Gambatte keeps its state: armGB's when armGB runs the game.
+void getHuC3(Console& c, unsigned char* state) {
+	if (c.armgb) {
+		gbHuc3Get(c.armgb, state);
+		return;
+	}
+	c.gb->getHuC3Regs(state);
+}
+
+void setHuC3(Console& c, unsigned char* state) {
+	if (c.armgb) {
+		gbHuc3Set(c.armgb, state);
+	}
+	c.gb->setHuC3Regs(state);
+}
+
 void setClockSpeed(Console& c, unsigned percent) {
 	if (c.armgb) {
 		gbRtcSetSpeed(c.armgb, percent);
@@ -478,7 +494,7 @@ void readRtcFile() {
 			if (!base || base < SANE_TIME / 2 || now < SANE_TIME || base > now) {
 				return;
 			}
-			s->gb->getHuC3Regs(state);
+			getHuC3(*s, state);
 			std::memset(state, 0, 4);
 			putNibbles(state + HUC3_MINUTES, 0);
 			putNibbles(state + HUC3_DAYS, 0);
@@ -487,7 +503,7 @@ void readRtcFile() {
 		if (!gameTime && saved >= SANE_TIME / 2 && now >= SANE_TIME && now >= saved) {
 			runHuC3(state, now - saved);
 		}
-		s->gb->setHuC3Regs(state);
+		setHuC3(*s, state);
 		return;
 	}
 	gb_ulong r[11] = { 0 };
@@ -546,7 +562,7 @@ void writeRtcFile() {
 	if (s->gb->hasHuC3()) {
 		std::memcpy(file + RTC_MAGIC, "aGBh", 4);
 		unsigned char* const state = file + RTC_REGS;
-		s->gb->getHuC3Regs(state);
+		getHuC3(*s, state);
 		unsigned long long const cycles = (unsigned long long) state[0] << 24 | state[1] << 16 | state[2] << 8 | state[3];
 		unsigned long long const shown = getNibbles(state + HUC3_DAYS) * 86400ull + getNibbles(state + HUC3_MINUTES) * 60 + cycles / RTC_SECOND;
 		put64(file + RTC_BASE, now - shown);
@@ -855,7 +871,7 @@ void dropArmgb() {
 	s->armgb = 0;
 }
 
-// The cartridges armGB knows: none, MBC1, MBC2, MBC3 with or without its clock, MBC5, MBC7, and HuC1 (a
+// The cartridges armGB knows: none, MBC1, MBC2, MBC3 with or without its clock, MBC5, MBC7, HuC3, and HuC1 (a
 // header with Nintendo's logo: a ROM that only reads $FF there isn't one).
 bool armgbCartridge(const unsigned char* bytes, size_t size) {
 	if (size < 0x150) {
@@ -863,7 +879,7 @@ bool armgbCartridge(const unsigned char* bytes, size_t size) {
 	}
 	switch (bytes[0x147]) {
 	case 0x00: case 0x01: case 0x02: case 0x03: case 0x05: case 0x06: case 0x08: case 0x09: case 0x0F: case 0x10:
-	case 0x11: case 0x12: case 0x13: case 0x19: case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1E: case 0x22:
+	case 0x11: case 0x12: case 0x13: case 0x19: case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1E: case 0x22: case 0xFE:
 		return true;
 	case 0xFF:
 		return bytes[0x104] == 0xCE && bytes[0x105] == 0xED;
@@ -1111,7 +1127,7 @@ void restartAs(LibretroGbModel model) {
 	if (s->gb->hasMbc3Rtc()) {
 		getClock(*s, clock);
 	} else if (s->gb->hasHuC3()) {
-		s->gb->getHuC3Regs(huc3);
+		getHuC3(*s, huc3);
 	}
 	LibretroGbModel const before = s->chosen;
 	char error[64];
@@ -1125,7 +1141,7 @@ void restartAs(LibretroGbModel model) {
 	if (s->gb->hasMbc3Rtc() && !s->rtcPending) {
 		setClock(*s, clock);
 	} else if (s->gb->hasHuC3() && !s->rtcPending) {
-		s->gb->setHuC3Regs(huc3);
+		setHuC3(*s, huc3);
 	}
 }
 
