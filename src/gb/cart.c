@@ -64,6 +64,14 @@ static uint8_t variantOf(const struct GB* gb) {
 	if (gb->romSize < 0x8000) {
 		return GB_PLAIN;
 	}
+	// Vast Fame's logos ("V.fame", "SOUL", "DIGI" in italics) by the sum of their bytes (hhugboy).
+	unsigned sum = 0;
+	for (int i = 0x184; i < 0x1B4; ++i) {
+		sum += rom[i];
+	}
+	if (sum == 4844 || sum == 6127 || sum == 4406) {
+		return GB_VAST_FAME;
+	}
 	switch (crc32(&rom[0x184], 0x30)) {
 	case 0x4FDAB691:
 		return GB_HITEK;
@@ -112,6 +120,82 @@ static void romScramble(struct GBCart* cart) {
 	}
 }
 
+// Vast Fame's configuration writes ($6000-$7FFF, address bits 4-11 ignored). $96 at $7000 starts
+// configuring and at $700F ends it; in between, each write to $6000 or $7000-$700A turns a running
+// value right a bit and XORs it with the value written, and stores it. $7000 then sets the bytes given
+// out (how many, then where, and the bytes) and $7008 what covers bank 0.
+static bool vastFameSensible(const uint8_t at[11]) {
+	unsigned length = at[0] & 7;
+	uint16_t address = at[2] << 8 | at[1];
+	return length < 4 || (at[3] == 0 ? address < 0x4000 : address >= 0x4000 && address < 0x8000);
+}
+
+static void vastFameWrite(struct GB* gb, uint16_t address, uint8_t value) {
+	struct GBVastFame* vf = &gb->cart.vf;
+	uint16_t at = address & 0xF00F;
+	if (at == 0x7000 && value == 0x96) {
+		vf->config = true;
+		vf->running[0] = 0x00;
+		vf->running[1] = 0x10;
+		return;
+	}
+	if (at == 0x700F && value == 0x96) {
+		vf->config = false;
+		return;
+	}
+	if (!vf->config || !(at == 0x6000 || (at >= 0x7000 && at <= 0x700A))) {
+		return;
+	}
+	for (int k = 0; k < 2; ++k) {
+		vf->running[k] = (uint8_t) (vf->running[k] >> 1 | vf->running[k] << 7) ^ value;
+		if (at == 0x6000) {
+			vf->at6000[k] = vf->running[k];
+		} else {
+			vf->at7000[k][at - 0x7000] = vf->running[k];
+		}
+	}
+	if (at == 0x7000) {
+		// The starting value is the one whose bytes are given out somewhere they can be read.
+		if (vf->which < 0) {
+			vf->which = !vastFameSensible(vf->at7000[0]) && vastFameSensible(vf->at7000[1]);
+		}
+		const uint8_t* stored = vf->at7000[vf->which];
+		unsigned length = stored[0] & 7;
+		vf->length = length >= 4 ? length - 3 : 0;
+		vf->left = 0;
+		vf->bank = stored[3];
+		vf->address = stored[2] << 8 | stored[1];
+		memcpy(vf->bytes, &stored[4], 4);
+	} else if (at == 0x7008) {
+		int which = vf->which < 0 ? 0 : vf->which;
+		const uint8_t* stored = vf->at7000[which];
+		vf->replaceFrom = stored[10] << 8 | stored[9];
+		vf->replaceBank = vf->at6000[which];
+		vf->replace = (stored[8] & 0xF) == 0xF;
+	}
+	gbMapRom(gb);
+}
+
+uint8_t gbCartReadVastFame(struct GB* gb, uint16_t address) {
+	struct GBVastFame* vf = &gb->cart.vf;
+	bool waited = vf->bank == 0 ? address < 0x4000 : vf->bank == gb->cart.romBank && address >= 0x4000;
+	if (waited && address == vf->address && !vf->left && vf->length) {
+		vf->left = vf->length;
+		gbMapRom(gb);
+	}
+	if (vf->left) {
+		uint8_t value = vf->bytes[vf->length - vf->left];
+		if (!--vf->left) {
+			gbMapRom(gb);
+		}
+		return value;
+	}
+	if (vf->replace && address >= vf->replaceFrom && address < 0x4000) {
+		return gb->rom[(((size_t) vf->replaceBank << 14) & (gb->romSize - 1)) + address];
+	}
+	return address < 0x4000 ? gb->memMap[address >> 12][address & 0xFFF] : gbCartRomByte(gb, gb->memMap[address >> 12][address & 0xFFF]);
+}
+
 // An unlicensed variant's writes, before MBC5 sees them: false when MBC5 doesn't.
 static bool variantWrite(struct GB* gb, uint16_t address, uint8_t* value) {
 	struct GBCart* cart = &gb->cart;
@@ -132,9 +216,6 @@ static bool variantWrite(struct GB* gb, uint16_t address, uint8_t* value) {
 		return true;
 	case GB_BBD:
 	case GB_HITEK:
-		if (cart->variant == GB_HITEK && (address & 0xF0FF) == 0x0300) {
-			return false;
-		}
 		switch (address & 0xF0FF) {
 		case 0x2000:
 			*value = reorder(*value, (cart->variant == GB_BBD ? bbdBanks : hitekBanks)[cart->bankOrder]);
@@ -156,6 +237,12 @@ static bool variantWrite(struct GB* gb, uint16_t address, uint8_t* value) {
 		return true;
 	case GB_LI_CHENG:
 		return !(address > 0x2100 && address < 0x3000);
+	case GB_VAST_FAME:
+		if (address < 0x6000) {
+			return true;
+		}
+		vastFameWrite(gb, address, *value);
+		return false;
 	default:
 		return true;
 	}
@@ -177,6 +264,7 @@ bool gbCartInit(struct GB* gb) {
 		cart->bankOrder = 0xF;
 	}
 	romScramble(cart);
+	cart->vf.which = -1;
 	switch (cart->variant != GB_PLAIN ? 0x1B : type) {
 	case 0x00:
 	case 0x08:

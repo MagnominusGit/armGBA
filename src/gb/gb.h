@@ -75,6 +75,27 @@ enum GBVariant {
 	GB_HITEK,
 	GB_GGB81,
 	GB_LI_CHENG,
+	GB_VAST_FAME,
+};
+
+// Vast Fame's protection (as hhugboy documents it, src/memory/mbc/MbcUnlVf001): configured through
+// $6000 and $7000-$700A, it gives a few bytes in place of a chosen ROM address's, and can put another
+// bank's bytes over bank 0 from an address on.
+struct GBVastFame {
+	bool config;
+	// Kept for both starting values of the running value, $00 and $10 (hhugboy's VF001 and VF001A);
+	// the first set of bytes given out tells which this cartridge uses.
+	uint8_t running[2];
+	uint8_t at6000[2];
+	uint8_t at7000[2][11];
+	int8_t which;
+	uint8_t length, left;
+	uint8_t bank;
+	uint16_t address;
+	uint8_t bytes[4];
+	bool replace;
+	uint16_t replaceFrom;
+	uint8_t replaceBank;
 };
 
 // The events, each at a time; the earliest decides when the CPU next stops to run them.
@@ -261,6 +282,7 @@ struct GBCart {
 	uint8_t xorKeys[4];
 	bool romTransformed;
 	uint8_t romLut[256];
+	struct GBVastFame vf;
 };
 
 struct GB {
@@ -397,6 +419,8 @@ bool gbCartInit(struct GB*);
 void gbCartWrite(struct GB*, uint16_t address, uint8_t value);
 uint8_t gbCartReadRam(struct GB*, uint16_t address);
 void gbCartWriteRam(struct GB*, uint16_t address, uint8_t value);
+// A ROM read on a Vast Fame cartridge, where its protection may answer instead.
+uint8_t gbCartReadVastFame(struct GB*, uint16_t address);
 // A switchable-bank ROM byte as an unlicensed cartridge scrambles it.
 static inline uint8_t gbCartRomByte(const struct GB* gb, uint8_t raw) {
 	return gb->cart.romTransformed ? gb->cart.romLut[raw] : raw;
