@@ -64,6 +64,7 @@ enum GBMapper {
 	GB_MBC2,
 	GB_MBC3,
 	GB_MBC5,
+	GB_HUC1,
 };
 
 // Unlicensed cartridges built on MBC5 that scramble bank numbers or data (told apart, as mGBA does,
@@ -283,6 +284,8 @@ struct GBCart {
 	bool romTransformed;
 	uint8_t romLut[256];
 	struct GBVastFame vf;
+	// HuC1: RAM's place taken by the infrared port.
+	bool irMode;
 };
 
 struct GB {

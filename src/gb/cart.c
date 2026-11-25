@@ -296,19 +296,22 @@ bool gbCartInit(struct GB* gb) {
 	case 0x1E:
 		cart->mapper = GB_MBC5;
 		break;
+	case 0xFF:
+		cart->mapper = GB_HUC1;
+		break;
 	default:
 		cart->mapper = GB_MBC5;
 		break;
 	}
 	cart->hasBattery = type == 0x03 || type == 0x06 || type == 0x09 || type == 0x0F || type == 0x10 || type == 0x13 ||
-	                   type == 0x1B || type == 0x1E;
+	                   type == 0x1B || type == 0x1E || type == 0xFF;
 	cart->ramSize = rom[0x149] < 6 ? ramSizes[rom[0x149]] : 0;
 	if (cart->mapper == GB_MBC2) {
 		cart->ramSize = 0x200;
 	}
 	cart->hasRam = cart->ramSize != 0;
-	// Sintax's cartridge RAM needs no enabling (mGBA).
-	if (cart->variant == GB_SINTAX) {
+	// Sintax's cartridge RAM needs no enabling (mGBA), nor HuC1's (SameBoy).
+	if (cart->variant == GB_SINTAX || cart->mapper == GB_HUC1) {
 		cart->ramEnabled = cart->hasRam;
 	}
 	// Banks of 16 KiB; the ROM's size is rounded up to a power of two when it is loaded.
@@ -390,6 +393,22 @@ void gbCartWrite(struct GB* gb, uint16_t address, uint8_t value) {
 				gbRtcSync(gb);
 				memcpy(cart->rtc.latched, cart->rtc.regs, sizeof(cart->rtc.latched));
 			}
+			break;
+		}
+		break;
+	case GB_HUC1:
+		// SameBoy's HuC1: $0E at $0000-$1FFF puts the infrared port where RAM was; 8-bit ROM bank, 0 too.
+		switch (address >> 13) {
+		case 0:
+			cart->irMode = (value & 0xF) == 0xE;
+			break;
+		case 1:
+			cart->romBank = value;
+			break;
+		case 2:
+			cart->ramBank = value;
+			break;
+		default:
 			break;
 		}
 		break;
@@ -530,6 +549,10 @@ void gbRtcSetRealTime(struct GB* gb, bool on) {
 }
 
 uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
+	// HuC1's infrared port: no light seen.
+	if (gb->cart.mapper == GB_HUC1 && gb->cart.irMode) {
+		return 0xC0;
+	}
 	if (rtcSelected(gb)) {
 		return gb->cart.ramEnabled ? gb->cart.rtc.latched[gb->cart.ramBank - 0x08] : 0xFF;
 	}
@@ -544,6 +567,10 @@ uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
 }
 
 void gbCartWriteRam(struct GB* gb, uint16_t address, uint8_t value) {
+	// HuC1's infrared LED: nothing to see it.
+	if (gb->cart.mapper == GB_HUC1 && gb->cart.irMode) {
+		return;
+	}
 	if (rtcSelected(gb)) {
 		if (gb->cart.ramEnabled) {
 			struct GBRtc* rtc = &gb->cart.rtc;
