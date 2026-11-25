@@ -148,8 +148,6 @@ struct GBChannel {
 	uint8_t position;
 	uint8_t volume;
 	uint8_t envelopeTimer;
-	// The level it puts out now, 0 to 15.
-	uint8_t level;
 };
 
 struct GBApu {
@@ -170,9 +168,9 @@ struct GBApu {
 	uint8_t frameStep;
 	uint8_t regs[0x30];
 	uint32_t lastSync;
-	// Sample building: the time each sample's window starts, and the sums over it so far.
+	// Sample building: the time the sample being built starts, and its mixed sums so far.
 	uint32_t sampleStart;
-	int32_t accumLeft, accumRight;
+	int32_t partialLeft, partialRight;
 };
 
 // OAM DMA (Pan Docs, "OAM DMA Transfer"): written at start, an M-cycle's wait, then a byte an M-cycle.

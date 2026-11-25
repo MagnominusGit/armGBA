@@ -36,131 +36,139 @@ static uint32_t noisePeriod(struct GB* gb) {
 	return divisor << (nr43 >> 4);
 }
 
-static void squareLevel(struct GB* gb, int i) {
-	struct GBChannel* ch = &gb->apu.square[i];
-	uint8_t duty = duties[*reg(gb, i ? 0x16 : 0x11) >> 6];
-	ch->level = ch->on && (duty >> (7 - ch->position) & 1) ? ch->volume : 0;
-}
-
-static void waveLevel(struct GB* gb) {
-	struct GBChannel* ch = &gb->apu.wave;
-	static const uint8_t shifts[4] = { 4, 0, 1, 2 };
-	uint8_t sample = gb->apu.waveSample;
-	sample = ch->position & 1 ? sample & 0xF : sample >> 4;
-	ch->level = ch->on ? sample >> shifts[*reg(gb, 0x1C) >> 5 & 3] : 0;
-}
-
-static void noiseLevel(struct GB* gb) {
-	struct GBChannel* ch = &gb->apu.noise;
-	ch->level = ch->on && !(gb->apu.lfsr & 1) ? ch->volume : 0;
-}
-
-static void allLevels(struct GB* gb) {
-	squareLevel(gb, 0);
-	squareLevel(gb, 1);
-	waveLevel(gb);
-	noiseLevel(gb);
-}
-
-// Adds a stretch of dots at the channels' present levels to the sample being built.
-static void accumulate(struct GB* gb, uint32_t dots) {
-	struct GBApu* apu = &gb->apu;
-	uint8_t nr51 = *reg(gb, 0x25);
-	uint8_t nr50 = *reg(gb, 0x24);
-	const struct GBChannel* channels[4] = { &apu->square[0], &apu->square[1], &apu->wave, &apu->noise };
-	int left = 0, right = 0;
-	for (int i = 0; i < 4; ++i) {
-		if (!channels[i]->dac) {
-			continue;
-		}
-		int analog = 2 * channels[i]->level - 15;
-		if (nr51 >> (4 + i) & 1) {
-			left += analog;
-		}
-		if (nr51 >> i & 1) {
-			right += analog;
-		}
+// Adds v over the dots from t to end to the sums of the samples they fall in (bucket 0 is the
+// sample being built, which starts at the APU's sampleStart).
+static inline void addSpan(int32_t* sums, uint32_t sampleStart, uint32_t t, uint32_t end, int32_t v) {
+	if (!v) {
+		return;
 	}
-	apu->accumLeft += left * ((nr50 >> 4 & 7) + 1) * (int32_t) dots;
-	apu->accumRight += right * ((nr50 & 7) + 1) * (int32_t) dots;
+	uint32_t k = (t - sampleStart) / SAMPLE_DOTS;
+	while (t != end) {
+		uint32_t boundary = sampleStart + (k + 1) * SAMPLE_DOTS;
+		uint32_t e = gbSince(end, boundary) < 0 ? end : boundary;
+		sums[k] += v * (int32_t) (e - t);
+		t = e;
+		++k;
+	}
 }
 
-// Moves the running channels' waveforms through the steps due by end.
-static void stepAll(struct GB* gb, uint32_t end) {
+// One channel's DAC output (-15 to 15, twice the level less 15) over time, from start to end, stepping
+// its waveform as it goes. A channel whose DAC is off puts out nothing.
+static void integrate(struct GB* gb, int index, uint32_t start, uint32_t end, int32_t* sums) {
 	struct GBApu* apu = &gb->apu;
-	for (int i = 0; i < 2; ++i) {
-		struct GBChannel* ch = &apu->square[i];
-		if (!ch->on) {
-			continue;
-		}
-		while (gbSince(end, ch->nextStep) >= 0) {
+	uint32_t s0 = apu->sampleStart;
+	struct GBChannel* ch = index < 2 ? &apu->square[index] : index == 2 ? &apu->wave : &apu->noise;
+	if (!ch->dac) {
+		return;
+	}
+	if (!ch->on) {
+		addSpan(sums, s0, start, end, -15);
+		return;
+	}
+	uint32_t t = start;
+	if (index < 2) {
+		uint8_t duty = duties[*reg(gb, index ? 0x16 : 0x11) >> 6];
+		uint32_t period = squarePeriod(ch);
+		int32_t high = 2 * ch->volume - 15;
+		for (;;) {
+			int32_t v = duty >> (7 - ch->position) & 1 ? high : -15;
+			if (gbSince(end, ch->nextStep) < 0) {
+				addSpan(sums, s0, t, end, v);
+				break;
+			}
+			addSpan(sums, s0, t, ch->nextStep, v);
+			t = ch->nextStep;
 			ch->position = (ch->position + 1) & 7;
-			ch->nextStep += squarePeriod(ch);
+			ch->nextStep += period;
 		}
-	}
-	struct GBChannel* wave = &apu->wave;
-	if (wave->on) {
-		while (gbSince(end, wave->nextStep) >= 0) {
-			wave->position = (wave->position + 1) & 31;
-			apu->waveSample = gb->io[0x30 + (wave->position >> 1)];
-			apu->waveReadAt = wave->nextStep;
-			wave->nextStep += wavePeriod(wave);
+	} else if (index == 2) {
+		static const uint8_t shifts[4] = { 4, 0, 1, 2 };
+		unsigned shift = shifts[*reg(gb, 0x1C) >> 5 & 3];
+		uint32_t period = wavePeriod(ch);
+		for (;;) {
+			uint8_t sample = ch->position & 1 ? apu->waveSample & 0xF : apu->waveSample >> 4;
+			int32_t v = 2 * (sample >> shift) - 15;
+			if (gbSince(end, ch->nextStep) < 0) {
+				addSpan(sums, s0, t, end, v);
+				break;
+			}
+			addSpan(sums, s0, t, ch->nextStep, v);
+			t = ch->nextStep;
+			ch->position = (ch->position + 1) & 31;
+			apu->waveSample = gb->io[0x30 + (ch->position >> 1)];
+			apu->waveReadAt = ch->nextStep;
+			ch->nextStep += period;
 		}
-	}
-	struct GBChannel* noise = &apu->noise;
-	if (noise->on) {
+	} else {
 		bool narrow = *reg(gb, 0x22) & 8;
 		uint32_t period = noisePeriod(gb);
-		while (gbSince(end, noise->nextStep) >= 0) {
+		int32_t high = 2 * ch->volume - 15;
+		for (;;) {
+			int32_t v = apu->lfsr & 1 ? -15 : high;
+			if (gbSince(end, ch->nextStep) < 0) {
+				addSpan(sums, s0, t, end, v);
+				break;
+			}
+			addSpan(sums, s0, t, ch->nextStep, v);
+			t = ch->nextStep;
 			uint16_t bit = (apu->lfsr ^ (apu->lfsr >> 1)) & 1;
 			apu->lfsr = (apu->lfsr >> 1) | (bit << 14);
 			if (narrow) {
 				apu->lfsr = (apu->lfsr & ~0x40) | (bit << 6);
 			}
-			noise->nextStep += period;
+			ch->nextStep += period;
 		}
 	}
-	allLevels(gb);
 }
 
-// The earliest step any running channel takes after from, or limit.
-static uint32_t nextChange(struct GB* gb, uint32_t from, uint32_t limit) {
-	struct GBApu* apu = &gb->apu;
-	uint32_t best = limit;
-	const struct GBChannel* channels[4] = { &apu->square[0], &apu->square[1], &apu->wave, &apu->noise };
-	for (int i = 0; i < 4; ++i) {
-		if (channels[i]->on && gbSince(channels[i]->nextStep, from) > 0 && gbSince(channels[i]->nextStep, best) < 0) {
-			best = channels[i]->nextStep;
-		}
-	}
-	return best;
-}
-
-// The sound from the last sync to end, sample by sample.
+// The sound from the last sync to end: each channel on its own over the whole stretch, then the
+// samples mixed from their sums. A stretch is at most a frame or a frame sequencer step long.
 static void render(struct GB* gb, uint32_t end) {
 	struct GBApu* apu = &gb->apu;
-	uint32_t t = apu->lastSync;
-	while (gbSince(end, t) > 0) {
-		uint32_t sampleEnd = apu->sampleStart + SAMPLE_DOTS;
-		uint32_t stop = gbSince(end, sampleEnd) < 0 ? end : sampleEnd;
-		// Within the sample, from one change of level to the next.
-		while (gbSince(stop, t) > 0) {
-			uint32_t change = nextChange(gb, t, stop);
-			accumulate(gb, change - t);
-			t = change;
-			stepAll(gb, t);
+	enum { MAX_SAMPLES = 1024 };
+	while (gbSince(end, apu->lastSync) > 0) {
+		uint32_t stop = end;
+		if (gbSince(stop, apu->sampleStart + (MAX_SAMPLES - 1) * SAMPLE_DOTS) > 0) {
+			stop = apu->sampleStart + (MAX_SAMPLES - 1) * SAMPLE_DOTS;
 		}
-		if (t == sampleEnd) {
-			if (gb->audioCount + 2 <= sizeof(gb->audio) / sizeof(gb->audio[0])) {
-				gb->audio[gb->audioCount++] = apu->accumLeft / (SAMPLE_DOTS * 2);
-				gb->audio[gb->audioCount++] = apu->accumRight / (SAMPLE_DOTS * 2);
+		uint32_t complete = (stop - apu->sampleStart) / SAMPLE_DOTS;
+		static int32_t sums[4][MAX_SAMPLES];
+		for (int i = 0; i < 4; ++i) {
+			memset(sums[i], 0, (complete + 1) * sizeof(int32_t));
+			integrate(gb, i, apu->lastSync, stop, sums[i]);
+		}
+		uint8_t nr51 = *reg(gb, 0x25);
+		uint8_t nr50 = *reg(gb, 0x24);
+		int32_t leftVolume = (nr50 >> 4 & 7) + 1;
+		int32_t rightVolume = (nr50 & 7) + 1;
+		// Mixed as they stand now; the sample being built carries over what it has, mixed as it was.
+		for (uint32_t k = 0; k <= complete; ++k) {
+			int32_t left = 0, right = 0;
+			for (int i = 0; i < 4; ++i) {
+				if (nr51 >> (4 + i) & 1) {
+					left += sums[i][k];
+				}
+				if (nr51 >> i & 1) {
+					right += sums[i][k];
+				}
 			}
-			apu->accumLeft = 0;
-			apu->accumRight = 0;
-			apu->sampleStart = sampleEnd;
+			left *= leftVolume;
+			right *= rightVolume;
+			if (!k) {
+				left += apu->partialLeft;
+				right += apu->partialRight;
+			}
+			if (k == complete) {
+				apu->partialLeft = left;
+				apu->partialRight = right;
+			} else if (gb->audioCount + 2 <= sizeof(gb->audio) / sizeof(gb->audio[0])) {
+				gb->audio[gb->audioCount++] = left / (SAMPLE_DOTS * 2);
+				gb->audio[gb->audioCount++] = right / (SAMPLE_DOTS * 2);
+			}
 		}
+		apu->sampleStart += complete * SAMPLE_DOTS;
+		apu->lastSync = stop;
 	}
-	apu->lastSync = end;
 }
 
 // The sweep's next frequency; past 2047, channel 1 stops.
@@ -241,7 +249,6 @@ static void frameSequencer(struct GB* gb) {
 		clockEnvelope(&apu->noise, *reg(gb, 0x21));
 	}
 	apu->frameStep = (step + 1) & 7;
-	allLevels(gb);
 }
 
 // The counter bit whose falling edges step the frame sequencer: 512 Hz at either speed.
@@ -364,7 +371,6 @@ static void writeControl(struct GB* gb, uint8_t address, uint8_t value) {
 		apu->lfsr = 0x7FFF;
 		ch->nextStep = gb->now + noisePeriod(gb);
 	}
-	allLevels(gb);
 }
 
 void gbApuWrite(struct GB* gb, uint8_t address, uint8_t value) {
@@ -374,7 +380,7 @@ void gbApuWrite(struct GB* gb, uint8_t address, uint8_t value) {
 		if (apu->wave.on) {
 			// While it plays, the byte being read takes the write; on the original Game Boy, only
 			// if it is read just then.
-			if (gb->model == GB_MODEL_CGB || gbSince(gb->now, apu->waveReadAt) >= 2 && gbSince(gb->now, apu->waveReadAt) < 4) {
+			if (gb->model == GB_MODEL_CGB || (gbSince(gb->now, apu->waveReadAt) >= 2 && gbSince(gb->now, apu->waveReadAt) < 4)) {
 				gb->io[0x30 + (apu->wave.position >> 1)] = value;
 			}
 		} else {
@@ -398,8 +404,7 @@ void gbApuWrite(struct GB* gb, uint8_t address, uint8_t value) {
 				apu->wave.length = lengths[2];
 				apu->noise.length = lengths[3];
 			}
-			allLevels(gb);
-		} else if (!apu->power && power) {
+				} else if (!apu->power && power) {
 			apu->frameStep = 0;
 		}
 		apu->power = power;
@@ -460,7 +465,6 @@ void gbApuWrite(struct GB* gb, uint8_t address, uint8_t value) {
 	default:
 		break;
 	}
-	allLevels(gb);
 }
 
 uint8_t gbApuRead(struct GB* gb, uint8_t address) {
@@ -469,7 +473,7 @@ uint8_t gbApuRead(struct GB* gb, uint8_t address) {
 	if (address >= 0x30) {
 		if (apu->wave.on) {
 			// While it plays, a read gets the byte the channel is reading, if it reads it just then.
-			if (gb->model == GB_MODEL_CGB || gbSince(gb->now, apu->waveReadAt) >= 2 && gbSince(gb->now, apu->waveReadAt) < 4) {
+			if (gb->model == GB_MODEL_CGB || (gbSince(gb->now, apu->waveReadAt) >= 2 && gbSince(gb->now, apu->waveReadAt) < 4)) {
 				return gb->io[0x30 + (apu->wave.position >> 1)];
 			}
 			return 0xFF;

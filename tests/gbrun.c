@@ -68,12 +68,16 @@ int main(int argc, char** argv) {
 	// MARK=n: times frames n to the end, and runs them all (no stopping at a result).
 	int mark = getenv("MARK") ? atoi(getenv("MARK")) : -1;
 	double marked = 0;
+	uint64_t audioHash = 1469598103934665603ULL;
 	int frame;
 	for (frame = 0; frame < frames; ++frame) {
 		if (frame == mark) {
 			marked = now();
 		}
 		gbRunFrame(&gb);
+		for (uint32_t i = 0; i < gb.audioCount; ++i) {
+			audioHash = (audioHash ^ (uint16_t) gb.audio[i]) * 1099511628211ULL;
+		}
 		if (mark >= 0) {
 			continue;
 		}
@@ -138,7 +142,7 @@ int main(int argc, char** argv) {
 		serialText[i] = '.';
 	}
 	serialText[serialLength] = 0;
-	printf("%s frames=%d hash=%016llx pc=%04x\n%s%s", result, frame, (unsigned long long) hash, gb.cpu.pc, serialText,
+	printf("%s frames=%d hash=%016llx audio=%016llx pc=%04x\n%s%s", result, frame, (unsigned long long) hash, (unsigned long long) audioHash, gb.cpu.pc, serialText,
 	       serialLength && serialText[serialLength - 1] != '\n' ? "\n" : "");
 	return 0;
 }

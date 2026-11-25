@@ -117,12 +117,6 @@ static unsigned drawLength(const struct GB* gb) {
 	return length;
 }
 
-// The colour index of a pixel of a tile row: bit 0 from the first byte, bit 1 from the second.
-static inline int tilePixel(uint8_t lo, uint8_t hi, int x) {
-	int shift = 7 - x;
-	return (lo >> shift & 1) | (hi >> shift & 1) << 1;
-}
-
 static uint16_t tileAddress(const struct GBPpu* ppu, uint8_t tile) {
 	if (ppu->lcdc & LCDC_TILES) {
 		return tile * 16;
@@ -130,40 +124,71 @@ static uint16_t tileAddress(const struct GBPpu* ppu, uint8_t tile) {
 	return 0x1000 + (int8_t) tile * 16;
 }
 
+// A tile row's two bytes to eight colour indices, a byte each, leftmost first.
+static uint64_t spread[256];
+
+static void initSpread(void) {
+	if (spread[1]) {
+		return;
+	}
+	for (int b = 0; b < 256; ++b) {
+		uint64_t v = 0;
+		for (int i = 0; i < 8; ++i) {
+			v |= (uint64_t) (b >> (7 - i) & 1) << (i * 8);
+		}
+		spread[b] = v;
+	}
+}
+
+static inline uint64_t tileRow(const struct GB* gb, uint16_t address) {
+	return spread[gb->vram[address]] | spread[gb->vram[address + 1]] << 1;
+}
+
+// Draws the line whole: background and window a tile at a time, then the objects.
 static void drawLine(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
 	int y = ppu->line;
 	if (y >= GB_HEIGHT) {
 		return;
 	}
-	uint8_t index[GB_WIDTH];
+	initSpread();
+	uint8_t index[GB_WIDTH + 16];
 	uint16_t* out = gb->frame[y];
 	if (ppu->lcdc & LCDC_BG) {
-		uint16_t map = ppu->lcdc & LCDC_BG_MAP ? 0x1C00 : 0x1800;
-		int bgY = (ppu->scy + y) & 0xFF;
-		for (int x = 0; x < GB_WIDTH; ++x) {
-			int bgX = (ppu->scx + x) & 0xFF;
-			uint8_t tile = gb->vram[map + (bgY >> 3) * 32 + (bgX >> 3)];
-			uint16_t row = tileAddress(ppu, tile) + (bgY & 7) * 2;
-			index[x] = tilePixel(gb->vram[row], gb->vram[row + 1], bgX & 7);
+		uint8_t row[21 * 8];
+		uint16_t map = (ppu->lcdc & LCDC_BG_MAP ? 0x1C00 : 0x1800) + ((ppu->scy + y) & 0xFF) / 8 * 32;
+		unsigned fineY = (ppu->scy + y) & 7;
+		unsigned column = ppu->scx >> 3;
+		for (int t = 0; t < 21; ++t) {
+			uint8_t tile = gb->vram[map + ((column + t) & 31)];
+			uint64_t pixels = tileRow(gb, tileAddress(ppu, tile) + fineY * 2);
+			memcpy(&row[t * 8], &pixels, 8);
 		}
+		memcpy(index, &row[ppu->scx & 7], GB_WIDTH);
 		if (windowOnLine(gb)) {
-			uint16_t wmap = ppu->lcdc & LCDC_WINDOW_MAP ? 0x1C00 : 0x1800;
-			int wy = ppu->windowLine;
+			uint16_t wmap = (ppu->lcdc & LCDC_WINDOW_MAP ? 0x1C00 : 0x1800) + ppu->windowLine / 8 * 32;
+			unsigned wfine = ppu->windowLine & 7;
 			int start = ppu->wx - 7;
-			for (int x = start < 0 ? 0 : start; x < GB_WIDTH; ++x) {
-				int wxp = x - start;
-				uint8_t tile = gb->vram[wmap + (wy >> 3) * 32 + (wxp >> 3)];
-				uint16_t row = tileAddress(ppu, tile) + (wy & 7) * 2;
-				index[x] = tilePixel(gb->vram[row], gb->vram[row + 1], wxp & 7);
+			int first = start < 0 ? 0 : start;
+			for (int t = (first - start) / 8; t * 8 + start < GB_WIDTH; ++t) {
+				uint64_t pixels = tileRow(gb, tileAddress(ppu, gb->vram[wmap + t]) + wfine * 2);
+				uint8_t tilePixels[8];
+				memcpy(tilePixels, &pixels, 8);
+				for (int i = 0; i < 8; ++i) {
+					int x = t * 8 + i + start;
+					if (x >= first && x < GB_WIDTH) {
+						index[x] = tilePixels[i];
+					}
+				}
 			}
 			++ppu->windowLine;
 		}
 	} else {
-		memset(index, 0, sizeof(index));
+		memset(index, 0, GB_WIDTH);
 	}
+	uint16_t lut[4] = { ppu->bgp & 3, ppu->bgp >> 2 & 3, ppu->bgp >> 4 & 3, ppu->bgp >> 6 & 3 };
 	for (int x = 0; x < GB_WIDTH; ++x) {
-		out[x] = ppu->bgp >> (index[x] * 2) & 3;
+		out[x] = lut[index[x]];
 	}
 	if (!(ppu->lcdc & LCDC_OBJ)) {
 		return;
@@ -177,22 +202,25 @@ static void drawLine(struct GB* gb) {
 	for (int i = 0; i < objects.count; ++i) {
 		const uint8_t* object = &gb->oam[objects.index[i] * 4];
 		int left = object[1] - 8;
+		if (left <= -8 || left >= GB_WIDTH) {
+			continue;
+		}
 		uint8_t flags = object[3];
-		int row = y - (object[0] - 16);
+		int line = y - (object[0] - 16);
 		if (flags & 0x40) {
-			row = height - 1 - row;
+			line = height - 1 - line;
 		}
 		uint8_t tile = height == 16 ? object[2] & 0xFE : object[2];
-		uint16_t address = tile * 16 + row * 2;
-		uint8_t lo = gb->vram[address];
-		uint8_t hi = gb->vram[address + 1];
+		uint64_t pixels = tileRow(gb, tile * 16 + line * 2);
+		uint8_t colors[8];
+		memcpy(colors, &pixels, 8);
 		uint8_t palette = flags & 0x10 ? ppu->obp1 : ppu->obp0;
 		for (int px = 0; px < 8; ++px) {
 			int x = left + px;
 			if (x < 0 || x >= GB_WIDTH || ownerX[x] <= object[1]) {
 				continue;
 			}
-			int color = tilePixel(lo, hi, flags & 0x20 ? 7 - px : px);
+			int color = colors[flags & 0x20 ? 7 - px : px];
 			if (!color) {
 				continue;
 			}
