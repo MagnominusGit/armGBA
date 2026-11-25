@@ -21,6 +21,10 @@ static void updateNext(struct GB* gb) {
 void gbSchedule(struct GB* gb, int event, uint32_t at) {
 	gb->events[event] = at;
 	gb->eventsOn |= 1u << event;
+	// Sooner than the CPU expected: it stops to look.
+	if (gbSince(at, gb->nextEvent) < 0) {
+		gb->attention = true;
+	}
 	updateNext(gb);
 }
 

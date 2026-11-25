@@ -610,7 +610,9 @@ static void CPU(run)(struct GB* gb, uint32_t until) {
 		// The halt bug: the first fetch doesn't move PC.
 		bool haltBug = cpu->haltBug;
 		cpu->haltBug = false;
-		// Then on without the checks above while nothing needs them and no event is due.
+		// Then on without the checks above while nothing needs them and no event is due (an event put
+		// sooner raises attention).
+		uint32_t limit = gbSince(gb->nextEvent, until) < 0 ? gb->nextEvent : until;
 		do {
 			uint8_t op = CPU(fetch)(gb);
 			if (__builtin_expect(haltBug, 0)) {
@@ -618,7 +620,8 @@ static void CPU(run)(struct GB* gb, uint32_t until) {
 				haltBug = false;
 			}
 			CPU(step)(gb, op);
-			gb->eiJustTaken = false;
-		} while (!gb->attention && gbSince(until, gb->now) > 0 && gbSince(gb->nextEvent, gb->now) > 0);
+		} while (!gb->attention && gbSince(limit, gb->now) > 0);
+		// Set only with attention raised, so for one instruction.
+		gb->eiJustTaken = false;
 	}
 }
