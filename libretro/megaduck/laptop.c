@@ -7,7 +7,7 @@
 // The Mega Duck laptops (CEFA Toys Super QuiQue, Hartung Super Junior): their keyboard, clock,
 // printer and speech sit behind a controller on the serial port. Super Junior SameDuck's emulation
 // of that controller (megaduck_laptop*.c here, Expat-licensed, see LICENSE) runs as it does there;
-// this file wires it to Gambatte's serial port and to the rest of armGBA.
+// this file wires it to armGB's serial port and to the rest of armGBA.
 //
 // The console clocks a byte out: each bit goes to the controller as it would on the wire, and the
 // bits it answers make the byte the console reads. The controller clocks bytes in on its own, a bit

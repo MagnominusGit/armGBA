@@ -4,7 +4,8 @@ A Game Boy Advance, Game Boy, Game Boy Color and Mega Duck libretro core for low
 
 armGBA builds on other projects. Parts of its Game Boy Advance side come from mGBA (Jeffrey Pfau and
 contributors), notably the renderer, cheat engine, sound channels and save chips, and mGBA is the
-reference it's tested against. Game Boy and Game Boy Color games run on Gambatte-Speedrun's core.
+reference it's tested against. Game Boy and Game Boy Color games run on armGB, armGBA's own Game Boy
+core.
 See Credits for the full list.
 
 armGBA adds a recompiler for the Game Boy Advance's CPU, so games run with headroom on slow handheld
@@ -77,7 +78,6 @@ standalone frontend shows as one page with headers.
 | | CPU Emulation | Game Boy Advance | Recompiler, Interpreter |
 | | Low Memory (applies when a game is opened) | Game Boy Advance | Off, On |
 | | Game Boy Model (applies on restart) | Game Boy | Auto, Game Boy, Game Boy Pocket / Light, Game Boy Color, Game Boy Advance |
-| | Game Boy Core (applies on restart) | Game Boy | armGB (default; Game Boy and Game Boy Color games on the cartridges it knows, at 100% CPU Clock, one console; the rest stay on Gambatte), Gambatte |
 | | Game Boy Boot ROM (applies on restart) | Game Boy | Nintendo's (System Folder), armGBA's (Built In), Off |
 | | Mega Duck Laptop (applies on restart) | Mega Duck | Auto (for `.md0`), On, Off |
 | | Mega Duck Laptop Printer (applies on restart) | Mega Duck | Two Pass, One Pass, None |
@@ -822,7 +822,8 @@ The GameShark MX (USA) for the Game Boy Color is no cheat cartridge but InterAct
 
 ### Game Boy and Game Boy Color
 
-These run on Gambatte-Speedrun's core (`gambatte/`), plus mappers for unlicensed cartridges: Sachen,
+These run on armGB (`src/gb/`), armGBA's own Game Boy core, with SameBoy as its timing reference. It
+has mappers for unlicensed cartridges too: Sachen,
 TAMA5, MBC6, MBC7, Vast Fame, and the BBD, Hitek, Sintax, Li Cheng, NT and Makon families.
 
 - The Game Boy and Game Boy Pocket screens are BGB's measurements of real ones
@@ -842,7 +843,7 @@ it, since the real printer's speed isn't documented.
 ### Mega Duck
 
 The Mega Duck (and Cougar Boy) is an original Game Boy with its I/O registers moved, some of their
-bits rearranged, its own cartridges and no boot ROM. armGBA runs it on the same Gambatte core, as
+bits rearranged, its own cartridges and no boot ROM. armGBA runs it on armGB, as
 bbbbbr's megaduck-info documents the hardware:
 
 - A `.bin` without a Game Boy or Game Boy Advance header is a Mega Duck game. `.duck`, `.md0`,
@@ -1113,10 +1114,9 @@ Code taken from other projects, each under its own license (see License):
   and engine, the unlicensed Game Boy mapper tables, and its MBC3 `.rtc` layout, which armGBA's
   clock files carry too. It is also the yardstick the GBA side is compared with, through
   `tests/mgba-oracle.patch`.
-- **Gambatte** (sinamas) as extended by **Gambatte-Speedrun** (pokemon-speedrunning/gambatte-core,
-  GPL-2.0): the whole Game Boy core in `gambatte/`, with **snes_spc** (Shay Green, LGPL) inside it.
-- **SameBoy** (Lior Halphon, MIT): the Game Boy screen palettes other than Grayscale, and the Game
-  Boy Color and Game Boy Advance color correction curves. A SameBoy-based build is also the
+- **SameBoy** (Lior Halphon, MIT): armGB's CPU access and HALT timing and its PPU's STAT logic and
+  line timing, its MBC7, HuC3 and Pocket Camera, the Game Boy screen palettes other than Grayscale,
+  and the Game Boy Color and Game Boy Advance color correction curves. A SameBoy-based build is also the
   reference the Game Boy side is tested against.
 - **Super Junior SameDuck** (bbbbbr, SameBoy's Expat license): the Mega Duck laptops' controller in
   `libretro/megaduck/megaduck_laptop*.c`, and its keyboard map.
@@ -1152,17 +1152,16 @@ word.
 
 ## License
 
-Distributed under the GNU General Public License, version 2 (`LICENSE`), because the core links
-Gambatte. Each part keeps its own notice:
+Distributed under the GNU General Public License, version 2 or later (`LICENSE`), because armGB
+(`src/gb/`) and Armulators are. Each part keeps its own notice:
 
 | Part | License |
 | --- | --- |
-| `src/`, `tests/`, the `libretro/` glue | Mozilla Public License 2.0 (`LICENSES/MPL-2.0.txt`); files that follow mGBA's code carry its copyright notice too |
-| `gambatte/` | GPL, version 2 (`gambatte/COPYING`) |
-| `gambatte/libgambatte/src/mem/snes_spc/` | GNU LGPL |
+| `src/` other than `src/gb/`, `tests/`, the `libretro/` glue | Mozilla Public License 2.0 (`LICENSES/MPL-2.0.txt`); files that follow mGBA's code carry its copyright notice too |
+| `src/gb/` (armGB) | GNU GPL, version 2 or later; the parts that follow SameBoy say so, under its Expat license (`LICENSES/SameBoy.txt`) |
 | `libretro/libretro.h` | MIT |
 | `libretro/deps/` | MIT and public domain, as each file states |
 | `app/`, `app.cmake`, `shaders/`, `bios/`, `gbboot/` | Mozilla Public License 2.0 |
 | `armulators/` | its own notices: GNU GPL, version 2 or later, with the fonts under the SIL Open Font License 1.1 and its `deps/` MIT and public domain |
-| The Game Boy palettes (other than Grayscale) and color curves in `libretro/gb-gambatte.cpp` | MIT, from SameBoy (Lior Halphon) |
+| The Game Boy palettes (other than Grayscale) and color curves in `libretro/gb-armgb.cpp` | MIT, from SameBoy (Lior Halphon) |
 | `libretro/megaduck/megaduck_laptop*` | Expat, from Super Junior SameDuck (`libretro/megaduck/LICENSE`) |

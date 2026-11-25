@@ -464,6 +464,9 @@ struct GB {
 	uint32_t cpuCarry;
 	uint32_t cpuPaced;
 	uint32_t now;
+	// Dots run since power on, as of now = elapsedAt (gbTime adds the rest).
+	uint64_t elapsed;
+	uint32_t elapsedAt;
 	uint32_t events[GB_EVENTS];
 	uint32_t eventsOn;
 	uint32_t nextEvent;
@@ -573,6 +576,10 @@ void gbSpeedEvent(struct GB*);
 // ROM runs.
 void gbStall(struct GB*, uint32_t dots);
 void gbBlankFrame(struct GB*);
+// Dots run since power on.
+static inline uint64_t gbTime(const struct GB* gb) {
+	return gb->elapsed + (uint32_t) (gb->now - gb->elapsedAt);
+}
 size_t gbStateSize(void);
 void gbSaveState(const struct GB*, void* data);
 bool gbLoadState(struct GB*, const void* data, size_t size);

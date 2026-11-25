@@ -416,6 +416,8 @@ bool gbRunFor(struct GB* gb, uint32_t* dots) {
 		}
 	}
 	gbApuSync(gb);
+	gb->elapsed = gbTime(gb);
+	gb->elapsedAt = gb->now;
 	*dots = gb->now - start;
 	return gb->frameEnded;
 }

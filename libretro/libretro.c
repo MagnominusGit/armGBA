@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // The libretro core. Game Boy Advance games run on armGBA; Game Boy and Game Boy Color games run on
-// the Gambatte core in gambatte/.
+// armGB (src/gb).
 
 #include "libretro.h"
 #include "core.h"
@@ -1109,7 +1109,6 @@ static void readOptions(void) {
 	lowPass = filter ? atoi(filter) * 0x10000 / 100 : 0;
 	gbModel = optionChoice("armgba_gb_model", modelChoices, COUNT(modelChoices), LIBRETRO_GB_AUTO);
 	libretroGbSetBootRom(optionChoice("armgba_gb_boot_rom", bootChoices, COUNT(bootChoices), LIBRETRO_GB_BOOT_NINTENDO));
-	libretroGbSetArmgb(!optionIs("armgba_gb_core", "gambatte"));
 	libretroGbSetAudioFilter(optionChoice("armgba_gb_audio_filter", audioFilterChoices, COUNT(audioFilterChoices), LIBRETRO_GB_FILTER_ACCURATE));
 	int const shades = optionChoice("armgba_gb_screen", shadeChoices, COUNT(shadeChoices), 0);
 	gbShades = shades;
@@ -4093,7 +4092,7 @@ static void readSensors(uint16_t keys) {
 }
 
 // Returns whether a held turbo button presses its button this frame: pressed for the first frames
-// of every turbo period, as in gambatte's core.
+// of every turbo period, as in gambatte-libretro.
 static bool turbo(unsigned port, unsigned button, uint8_t* counter) {
 	if (!inputState(port, RETRO_DEVICE_JOYPAD, 0, button)) {
 		*counter = 0;
@@ -5411,7 +5410,7 @@ void retro_run(void) {
 // States.
 
 // Save states: the size, then saving and loading. A Game Boy Advance state is the machine's whole
-// state; a Game Boy state is Gambatte's.
+// state; a Game Boy state is armGB's.
 static size_t consolesStateSize(void) {
 	if (gameBoy) {
 		return libretroGbStateSize();

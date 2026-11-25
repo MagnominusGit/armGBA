@@ -6,7 +6,7 @@
 #ifndef ARMGBA_LIBRETRO_GB_H
 #define ARMGBA_LIBRETRO_GB_H
 
-// The libretro core's Game Boy and Game Boy Color side (gb-gambatte.cpp).
+// The libretro core's Game Boy and Game Boy Color side (gb-armgb.cpp).
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -40,9 +40,6 @@ enum LibretroGbBoot {
 bool libretroGbLoad(const void* rom, size_t size, const char* systemDirectory, enum LibretroGbModel, bool colorCorrection,
                     unsigned audioRate, char* error, size_t errorSize);
 void libretroGbUnload(void);
-// Game Boy Core: armGB for the original Game Boy games it can run (Gambatte stays loaded beside it).
-// Applies when a game starts.
-void libretroGbSetArmgb(bool on);
 // Takes effect when a game is loaded or reset.
 void libretroGbSetBootRom(enum LibretroGbBoot);
 // The Game Boy's output capacitor, which keeps DC out of its sound: as each model has it, the
@@ -195,7 +192,7 @@ void libretroGbSetCpuClock(unsigned quarters, bool loaded);
 // Whether a console is still running its boot ROM.
 bool libretroGbBooting(void);
 size_t libretroGbStateSize(void);
-// States for rollback and run-ahead save the whole machine exactly; others, in gambatte's format.
+// States for rollback and run-ahead save the whole machine exactly, as every state does.
 void libretroGbExactStates(bool exact);
 // States for netplay leave out what each device sets for itself, such as the output capacitor's
 // charge, which the Game Boy Audio Filter and GBA Audio Output shape, so every player's match.

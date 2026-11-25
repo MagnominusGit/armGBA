@@ -4,8 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// The libretro core's Game Boy and Game Boy Color side, running on Gambatte-Speedrun's core
-// (gambatte/, GPL-2.0).
+// The libretro core's Game Boy and Game Boy Color side, running on armGB (src/gb).
 
 extern "C" {
 #include "gb.h"
@@ -18,50 +17,28 @@ extern "C" {
 #include "megaduck/laptop.h"
 #include "armgba-boot.h"
 
-#include "gambatte.h"
-
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <chrono>
 #include <ctime>
 #include <string>
 #include <vector>
 
-namespace gambatte {
-// MBC7's tilt sensor, as an offset from lying flat, and its flick (defined in mbc7.cpp).
-extern int mbc7TiltX;
-extern int mbc7TiltY;
-extern bool mbc7Flick;
-gb_ulong crc32(gb_ulong crc, void const* buf, std::size_t size);
-}
-
 namespace {
 
 enum {
-	// Gambatte produces sound at 2^21 Hz, 35112 samples per frame, and may overrun by up to 2064.
+	// Times here are in Game Boy sound samples, 2^21 a second, two dots each, as the link's, the
+	// adapter's and the printer's are: a frame is 35112.
 	NATIVE_RATE = 2097152,
 	FRAME_SAMPLES = 35112,
-	OVERRUN = 2064,
-	// Extra room in the state size reported to the frontend: for the state to grow, and for the
-	// extra work RAM a Game Boy Color has if the game restarts as one.
-	STATE_SLACK = 4096 + 6 * 4096,
 	MAX_PLAYERS = 4,
 	// With exact link timing, the most samples run between looks at the network.
 	EXACT_PART = 2048,
-};
-
-// Gambatte's linkStatus calls; a value below 256 shifts that byte in.
-enum {
-	LINK_CLOCKED = 256, // whether this Game Boy's own clock finished a transfer
-	LINK_ACK = 257,     // clears that
-	LINK_OUT = 258,     // the byte being sent (SB)
-	LINK_ON = 264,
-	LINK_OFF = 265,
-	LINK_STOP = 266,    // ends the transfer under way, stopping the console's own clock
-	LINK_CONTROL = 267, // SC
-	LINK_LEFT = 268,    // cycles until the transfer under way ends, or -1
+	// The Game Boy Advance's own start before the Color's boot ROM inside it runs, in dots.
+	ADVANCE_STALL = 971616,
 };
 
 void linkClocked();
@@ -70,7 +47,7 @@ void laptopIn(uint8_t byte);
 bool laptopSlot();
 // How many native samples make one frontend sample.
 unsigned ratio;
-unsigned cgbColors[32768];
+uint32_t cgbColors[32768];
 // The boot ROM folder, kept so a game can be restarted as another model.
 std::string systemPath;
 bool hasSystemPath;
@@ -82,17 +59,17 @@ int megaDuckKind = -1;
 bool laptopWanted = false;
 int laptopPrinter = 2;
 DuckLaptopLanguage laptopLanguage = DUCK_LAPTOP_SPANISH;
-// The cartridge in the laptop's slot, if any, and its kind
+// The cartridge in the laptop's slot, if any, padded to a power of two, and its kind
 std::vector<unsigned char> laptopCartridge;
 int laptopCartridgeKind = 0;
 // Whether the cartridge in the laptop's slot has taken the system ROM's place, as states keep it
 bool laptopSlotIn;
 // The codes the Game Genie fills its empty slots with (libretroGbSetGameGenieCodes)
-static unsigned char genieDigits[27] = { 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10,
-                                         0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10 };
-static unsigned char genieCounts[3];
-// Datel's Action Replay in front of the game (libretroGbSetActionReplay): its program, whether a game
-// is on top, and what it keeps with the power off as it was last read out of the console
+unsigned char genieDigits[27] = { 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10,
+                                  0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10 };
+unsigned char genieCounts[3];
+// A cheat cartridge in front of the game (libretroGbSetActionReplay): its program, whether a game is on
+// top, and what it keeps with the power off as it was last read out of the console
 std::vector<unsigned char> replayProgram;
 bool replayGame;
 std::vector<unsigned char> replayKept;
@@ -120,7 +97,7 @@ enum {
 	RTC_SHORT = 72,
 	RTC_SIZE = 80,
 	OLD_OFFSET = RTC_REGS + 14,
-	HUC3_STATE = 0x104,
+	HUC3_STATE = GB_HUC3_STATE,
 	HUC3_SIZE = RTC_REGS + HUC3_STATE,
 	// In the HuC3 state: the cycles into the current minute, then I/O with the minutes and days as
 	// 4-bit fields.
@@ -129,10 +106,9 @@ enum {
 	// A host clock before 2024 was never set, so it says nothing about the time the game was off.
 	SANE_TIME = 1704067200,
 };
-// The registers in the order Gambatte keeps them (mem/rtc.h), and the length of a second in rtc_c's
-// cycles.
+// The clock's registers as armGB gives them (gbRtcGet), and the length of a second in its ticks.
 enum { RTC_DH, RTC_DL, RTC_H, RTC_M, RTC_S, RTC_C, RTC_LATCHED };
-unsigned long const RTC_SECOND = 0x400000;
+unsigned long const RTC_SECOND = GB_RTC_SECOND;
 
 // How the output capacitor is wired: a Game Boy's, connected while a DAC is on; a Game Boy Advance's,
 // after its amp, always connected, per side with the speaker; or its headphones', one charge their
@@ -142,24 +118,29 @@ enum class Wiring { GAME_BOY, ADVANCE, SHARED_RETURN };
 // One Game Boy. There are two to four when the consoles of a link run here; s is the one being worked
 // on.
 struct Console {
-	gambatte::GB* gb;
+	// The machine, kept for as long as the game is loaded: the frontend may hold a pointer to its
+	// cartridge RAM.
+	struct GB* gb;
+	// The ROM it runs, padded to a power of two, and its boot ROM.
+	std::vector<unsigned char> rom;
+	std::vector<unsigned char> boot;
+	// The cheat cartridge in front of the game, when there is one.
+	struct GBCheatCart cheat;
+	bool cheatOn;
 	// The CRC of the boot ROM from the system folder it started with, 0 for armGBA's or none.
 	uint32_t bootCrc;
-	// Whether Gambatte's serial port goes to another Game Boy.
+	// Whether its serial port goes to another Game Boy, the printer or the laptop.
 	bool linked;
-	unsigned loadFlags;
+	// The model it runs as, and whether it started without a boot ROM.
+	LibretroGbModel model;
+	bool noBoot;
 	unsigned pressed;
-	gambatte::uint_least32_t pixels[LIBRETRO_GB_WIDTH * LIBRETRO_GB_HEIGHT];
-	// The last whole picture, when both consoles run here and a frame can end mid-picture.
-	gambatte::uint_least32_t shown[LIBRETRO_GB_WIDTH * LIBRETRO_GB_HEIGHT];
-	gambatte::uint_least32_t native[FRAME_SAMPLES + OVERRUN];
-	// A frame's sound for the frontend: at most two frames' worth of native samples, two channels
-	// each, and the running sums towards the next sample.
-	int16_t samples[(FRAME_SAMPLES + OVERRUN) * 2 / 16 * 2 + 8];
+	uint32_t pixels[LIBRETRO_GB_WIDTH * LIBRETRO_GB_HEIGHT];
+	// The last whole picture, when a frame can end mid-picture.
+	uint32_t shown[LIBRETRO_GB_WIDTH * LIBRETRO_GB_HEIGHT];
+	// A frame's sound for the frontend: up to four frames' worth, two channels each.
+	int16_t samples[(4 * FRAME_SAMPLES / 64 + 64) * 2];
 	size_t sampleCount;
-	long sumLeft;
-	long sumRight;
-	unsigned summed;
 	// The output capacitor's charge per side, in samples x 256, and how much of it it keeps each
 	// frontend sample, out of 0x10000 (0: none, the Game Boy Audio Filter off). Saved with states.
 	// With headphones on a Game Boy Advance, the one charge both sides share is capacitor[0].
@@ -175,10 +156,8 @@ struct Console {
 	LibretroGbModel wanted;
 	// The boot ROM this game actually started with.
 	LibretroGbBoot bootUsed;
-	// The cheat codes in force, in Gambatte's format. Loading the game again clears them, so
-	// they're reapplied.
-	std::string gameGenie;
-	std::string gameShark;
+	// The cheat codes in force. Loading the game again clears them, so they're reapplied.
+	std::vector<std::string> codes;
 	unsigned char rtcFile[HUC3_SIZE];
 	// The Clock Offset the MBC3 clock was moved by, and how much of a move back the clock couldn't
 	// make, at day 0; a move forwards makes that up first.
@@ -189,41 +168,37 @@ struct Console {
 	bool rtcPending;
 	// Native samples run past the end of the last frame, when the consoles of a link run here.
 	long ahead;
-	// Channel Selection: the same sums and charges for what's heard, with channels left out, apart
-	// from the console's from when the first is (heardApart; before, they are the console's). Not
-	// saved: states keep the console's.
-	long heardLeft;
-	long heardRight;
+	// A dot run past the last whole sample.
+	uint32_t overDot;
+	// Channel Selection: the charge for what's heard, with channels left out, apart from the
+	// console's from when the first is (heardApart; before, it is the console's). Not saved: states
+	// keep the console's.
 	int32_t heardCapacitor[2];
 	bool heardApart;
-	// armGB running the game instead of Gambatte, whose machine stays loaded beside it for what armGB
-	// doesn't do yet; its ROM padded to a power of two, and its boot ROM.
-	struct GB* armgb;
-	std::vector<unsigned char> armgbRom;
-	std::vector<unsigned char> armgbBoot;
 };
 Console consoles[MAX_PLAYERS];
+Console* s = &consoles[0];
 
 // Layer Selection's layers shown (1 background, 2 sprites, 4 window) and Channel Selection's channels
 // left out (bits 0-3: channels 1-4), for every console: only what's drawn and heard changes.
-static unsigned layersShown = 7;
-static unsigned channelsMuted;
+unsigned layersShown = 7;
+unsigned channelsMuted;
 
-static void applyShownAndHeard(gambatte::GB* gb) {
-	gb->setShownLayers(layersShown);
-	gb->setMutedChannels(channelsMuted);
+void applyShownAndHeard(struct GB* gb) {
+	gb->layersHidden = ~layersShown & 7;
+	gb->channelsMuted = channelsMuted;
 }
-Console* s = &consoles[0];
 
-// Game Boy Core: armGB for the games it can run.
-static bool armgbWanted = true;
+bool color(const Console& c) {
+	return c.model == LIBRETRO_GB_CGB || c.model == LIBRETRO_GB_AGB;
+}
 
 // The Game Boy Audio Filter, and the output capacitor's charge factor a 4 MiHz cycle (Pan Docs, Audio
 // Details): the original Game Boy's 0.999958 (about 28 Hz), the Pocket's and the Color's 0.998943
 // (about 700 Hz). A Game Boy Advance has its own output's (GBA Audio Output), always connected, or
 // with that off the original's. A Mega Duck is taken as an original Game Boy.
-enum LibretroGbFilter audioFilter = LIBRETRO_GB_FILTER_ACCURATE;
-enum LibretroAdvanceOutput advanceOutput = LIBRETRO_ADVANCE_SPEAKER;
+LibretroGbFilter audioFilter = LIBRETRO_GB_FILTER_ACCURATE;
+LibretroAdvanceOutput advanceOutput = LIBRETRO_ADVANCE_SPEAKER;
 
 void setCapacitor(Console& c) {
 	c.wiring = Wiring::GAME_BOY;
@@ -231,7 +206,7 @@ void setCapacitor(Console& c) {
 		c.charge = 0;
 		return;
 	}
-	bool const advance = c.loadFlags & gambatte::GB::GBA_FLAG;
+	bool const advance = c.model == LIBRETRO_GB_AGB;
 	if (audioFilter == LIBRETRO_GB_FILTER_ACCURATE && advance && advanceOutput != LIBRETRO_ADVANCE_OFF) {
 		c.wiring = advanceOutput == LIBRETRO_ADVANCE_HEADPHONES ? Wiring::SHARED_RETURN : Wiring::ADVANCE;
 		// Per frontend sample: 2097152 / ratio a second
@@ -239,20 +214,20 @@ void setCapacitor(Console& c) {
 		c.charge = static_cast<int32_t>(std::lround(std::exp(-seconds / (ADVANCE_OUTPUT_OHMS(advanceOutput) * ADVANCE_OUTPUT_FARADS)) * 0x10000));
 		return;
 	}
-	bool const pocketOrLater = !advance && c.loadFlags & (gambatte::GB::MGB_FLAG | gambatte::GB::CGB_MODE);
+	bool const pocketOrLater = !advance && (c.model == LIBRETRO_GB_MGB || color(c));
 	double const perCycle = audioFilter == LIBRETRO_GB_FILTER_ACCURATE && pocketOrLater ? 0.998943 : 0.999958;
 	// Per frontend sample: 4194304 / (2097152 / ratio) cycles
 	c.charge = static_cast<int32_t>(std::lround(std::pow(perCycle, 2.0 * ratio) * 0x10000));
 }
 // The CPU Clock, in quarters of the console's own clock.
-static unsigned cpuQuarters = 4;
+unsigned cpuQuarters = 4;
 // The Clock options: Game Time, the speed in percent and the offset in seconds.
-static bool gameTime;
-static unsigned clockPercent = 100;
-static long long clockOffset;
+bool gameTime;
+unsigned clockPercent = 100;
+long long clockOffset;
 // Real Time outside netplay: the clock runs on the device's time, so fast-forward and pauses don't
 // move it, and loaded states leave it as it is.
-static bool deviceClock;
+bool deviceClock;
 // How many consoles of a link run here (1 without one), and whether the Four Player Adapter joins
 // them; two without it share the cable.
 int players = 1;
@@ -270,13 +245,24 @@ void adapterTransfer() {
 	uint8_t in[DMG07_PORTS];
 	for (int i = 0; i < DMG07_PORTS; ++i) {
 		in[i] = 0xFF;
-		gambatte::GB* const gb = i < players ? consoles[i].gb : 0;
-		if (gb && (gb->linkStatus(LINK_CONTROL) & 0x81) == 0x80) {
-			in[i] = gb->linkStatus(LINK_OUT);
-			gb->linkStatus(dmg07Out(&adapter, i));
+		struct GB* const gb = i < players ? consoles[i].gb : 0;
+		if (gb && (gbLinkStatus(gb, GB_LINK_CONTROL) & 0x81) == 0x80) {
+			in[i] = gbLinkStatus(gb, GB_LINK_OUT);
+			gbLinkStatus(gb, dmg07Out(&adapter, i));
 		}
 	}
 	dmg07Transfer(&adapter, in);
+}
+
+uint32_t crc32(const unsigned char* bytes, size_t size) {
+	uint32_t crc = 0xFFFFFFFF;
+	for (size_t i = 0; i < size; ++i) {
+		crc ^= bytes[i];
+		for (int bit = 0; bit < 8; ++bit) {
+			crc = crc >> 1 ^ (0xEDB88320 & (0 - (crc & 1)));
+		}
+	}
+	return ~crc;
 }
 
 void put64(unsigned char* to, unsigned long long value) {
@@ -296,7 +282,7 @@ unsigned long long get64(const unsigned char* from) {
 // Advances a clock by some seconds the way the chip counts: a field past its range counts up to its
 // last value and wraps to 0 without a carry; past 511 days, the day counter wraps and sets its
 // carry bit.
-void runClock(gb_ulong r[11], unsigned long long seconds) {
+void runClock(uint32_t r[11], unsigned long long seconds) {
 	if (r[RTC_DH] & 0x40) {
 		return;
 	}
@@ -305,7 +291,7 @@ void runClock(gb_ulong r[11], unsigned long long seconds) {
 	static const int fields[3] = { RTC_S, RTC_M, RTC_H };
 	unsigned long long carry = seconds;
 	for (int i = 0; i < 3 && carry; ++i) {
-		gb_ulong& value = r[fields[i]];
+		uint32_t& value = r[fields[i]];
 		if (value >= limits[i]) {
 			if (carry < ends[i] - value) {
 				value += carry;
@@ -328,7 +314,7 @@ void runClock(gb_ulong r[11], unsigned long long seconds) {
 
 // Moves a running clock by some seconds, forwards or back, though not before day 0. Returns how much
 // of a move back it couldn't make.
-long long moveClock(gb_ulong r[11], long long seconds) {
+long long moveClock(uint32_t r[11], long long seconds) {
 	if (r[RTC_DH] & 0x40 || r[RTC_H] >= 24 || r[RTC_M] >= 60 || r[RTC_S] >= 60) {
 		return 0;
 	}
@@ -350,7 +336,7 @@ long long moveClock(gb_ulong r[11], long long seconds) {
 
 // Moves the selected console's clock from one Clock Offset to another, making up first what an
 // earlier move back couldn't make.
-void moveBy(Console& c, gb_ulong r[11], long long offset) {
+void moveBy(Console& c, uint32_t r[11], long long offset) {
 	long long seconds = offset - c.clockMoved;
 	if (seconds > 0) {
 		long long const owed = seconds < c.clockShort ? seconds : c.clockShort;
@@ -361,9 +347,17 @@ void moveBy(Console& c, gb_ulong r[11], long long offset) {
 	c.clockMoved = offset;
 }
 
+bool hasMbc3Clock(const Console& c) {
+	return c.gb && c.gb->cart.mapper == GB_MBC3 && c.gb->cart.hasRtc;
+}
+
+bool hasHuC3(const Console& c) {
+	return c.gb && c.gb->cart.mapper == GB_HUC3;
+}
+
 // How much of rtcFile the cartridge's clock uses, or 0 if it has none.
 size_t rtcSize() {
-	return !s->gb ? 0 : s->gb->hasMbc3Rtc() ? RTC_SIZE : s->gb->hasHuC3() ? HUC3_SIZE : 0;
+	return hasMbc3Clock(*s) ? RTC_SIZE : hasHuC3(*s) ? HUC3_SIZE : 0;
 }
 
 // Reads a 12-bit count stored as three 4-bit fields, lowest first.
@@ -415,64 +409,7 @@ bool mgbaFile(const unsigned char* file, unsigned long long now) {
 	return saved >= SANE_TIME / 2 && saved <= now + 366 * 86400ull;
 }
 
-// The clock of a console's cartridge, as Gambatte keeps its registers: armGB's when armGB runs the
-// game (Gambatte's machine beside it keeps the same), else Gambatte's.
-void getClock(Console& c, gb_ulong r[11]) {
-	if (c.armgb) {
-		uint32_t v[11];
-		gbRtcGet(c.armgb, v);
-		for (int i = 0; i < 11; ++i) {
-			r[i] = v[i];
-		}
-		return;
-	}
-	c.gb->getRtcRegs(r);
-}
-
-void setClock(Console& c, gb_ulong r[11]) {
-	if (c.armgb) {
-		uint32_t v[11];
-		for (int i = 0; i < 11; ++i) {
-			v[i] = r[i];
-		}
-		gbRtcSet(c.armgb, v);
-	}
-	c.gb->setRtcRegs(r);
-}
-
-// A HuC3's clock, as Gambatte keeps its state: armGB's when armGB runs the game.
-void getHuC3(Console& c, unsigned char* state) {
-	if (c.armgb) {
-		gbHuc3Get(c.armgb, state);
-		return;
-	}
-	c.gb->getHuC3Regs(state);
-}
-
-void setHuC3(Console& c, unsigned char* state) {
-	if (c.armgb) {
-		gbHuc3Set(c.armgb, state);
-	}
-	c.gb->setHuC3Regs(state);
-}
-
-void setClockSpeed(Console& c, unsigned percent) {
-	if (c.armgb) {
-		gbRtcSetSpeed(c.armgb, percent);
-	}
-	c.gb->setRtcSpeed(percent);
-}
-
-void setClockSource(Console& c, bool device) {
-	if (c.armgb) {
-		gbRtcSetRealTime(c.armgb, device);
-	}
-	if (c.gb->deviceTime() != device) {
-		c.gb->setDeviceTime(device);
-	}
-}
-
-// The device's time for armGB's clock, in microseconds.
+// The device's time for the clock, in microseconds.
 int64_t deviceMicros() {
 	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
@@ -484,7 +421,7 @@ void readRtcFile() {
 	unsigned long long const now = std::time(0);
 	const unsigned char* const file = s->rtcFile;
 	unsigned long long saved = get64(file + RTC_SAVED);
-	if (s->gb->hasHuC3()) {
+	if (hasHuC3(*s)) {
 		unsigned char state[HUC3_STATE];
 		if (!std::memcmp(file + RTC_MAGIC, "aGBh", 4)) {
 			std::memcpy(state, file + RTC_REGS, sizeof(state));
@@ -494,7 +431,7 @@ void readRtcFile() {
 			if (!base || base < SANE_TIME / 2 || now < SANE_TIME || base > now) {
 				return;
 			}
-			getHuC3(*s, state);
+			gbHuc3Get(s->gb, state);
 			std::memset(state, 0, 4);
 			putNibbles(state + HUC3_MINUTES, 0);
 			putNibbles(state + HUC3_DAYS, 0);
@@ -503,10 +440,10 @@ void readRtcFile() {
 		if (!gameTime && saved >= SANE_TIME / 2 && now >= SANE_TIME && now >= saved) {
 			runHuC3(state, now - saved);
 		}
-		setHuC3(*s, state);
+		gbHuc3Set(s->gb, state);
 		return;
 	}
-	gb_ulong r[11] = { 0 };
+	uint32_t r[11] = { 0 };
 	bool const ours = !std::memcmp(file + RTC_MAGIC, "aGBm", 4), older = !std::memcmp(file + RTC_MAGIC, "aGBc", 4);
 	s->clockMoved = s->clockShort = 0;
 	if (older) {
@@ -552,24 +489,24 @@ void readRtcFile() {
 		runClock(r, now - saved);
 	}
 	moveBy(*s, r, clockOffset);
-	setClock(*s, r);
+	gbRtcSet(s->gb, r);
 }
 
 void writeRtcFile() {
 	unsigned char* const file = s->rtcFile;
 	unsigned long long const now = std::time(0);
 	put64(file + RTC_SAVED, now);
-	if (s->gb->hasHuC3()) {
+	if (hasHuC3(*s)) {
 		std::memcpy(file + RTC_MAGIC, "aGBh", 4);
 		unsigned char* const state = file + RTC_REGS;
-		getHuC3(*s, state);
+		gbHuc3Get(s->gb, state);
 		unsigned long long const cycles = (unsigned long long) state[0] << 24 | state[1] << 16 | state[2] << 8 | state[3];
 		unsigned long long const shown = getNibbles(state + HUC3_DAYS) * 86400ull + getNibbles(state + HUC3_MINUTES) * 60 + cycles / RTC_SECOND;
 		put64(file + RTC_BASE, now - shown);
 		return;
 	}
-	gb_ulong r[11];
-	getClock(*s, r);
+	uint32_t r[11];
+	gbRtcGet(s->gb, r);
 	unsigned long long const shown = (((((r[RTC_DH] & 1) << 8 | r[RTC_DL]) * 24 + r[RTC_H]) * 60
 	                                  + r[RTC_M]) * 60 + r[RTC_S]);
 	put64(file + RTC_BASE, now - shown);
@@ -583,10 +520,6 @@ void writeRtcFile() {
 	put32(file + RTC_CYCLES, r[RTC_C]);
 	put64(file + RTC_MOVED, s->clockMoved);
 	put64(file + RTC_SHORT, s->clockShort);
-}
-
-unsigned input(void* console) {
-	return static_cast<Console*>(console)->pressed;
 }
 
 // Reads the first 2304 bytes of a boot ROM file (the size of the largest boot ROM), or nothing if
@@ -614,36 +547,29 @@ bool nintendoBoot(std::vector<unsigned char> const& bytes) {
 }
 
 // Finds the boot ROM for the model in the system directory, or returns none. It looks for
-// Nintendo's boot ROM under every name that ROCKNIX's BIOS check, Gambatte, gbdev's archive,
-// SameBoy and Gearboy use for it, then for a SameBoy boot ROM under the same names.
-//
-// For a Game Boy Advance, the Advance's own comes first; a Game Boy Color boot ROM is used only if
-// it is Nintendo's: Gambatte can convert that one, but not SameBoy's, and the conversion's timing
-// is not quite the Advance's.
+// Nintendo's boot ROM under every name that ROCKNIX's BIOS check, gbdev's archive, SameBoy and Gearboy
+// use for it, then for a SameBoy boot ROM under the same names. A Game Boy Advance takes only its own.
 std::string bootRom(const char* systemDirectory, LibretroGbModel model) {
-	static const char* const names[4][5] = {
+	static const char* const names[4][3] = {
 		{ "gb_bios.bin", "dmg_boot.bin" },
 		{ "gbc_bios.bin", "cgb_boot.bin" },
-		// The later Game Boy Advances', the first ones', the name SameBoy also uses, then the Game Boy
-		// Color's.
-		{ "cgb_agb_boot.bin", "cgb_agb0_boot.bin", "agb_boot.bin", "gbc_bios.bin", "cgb_boot.bin" },
+		// The later Game Boy Advances', the first ones', and the name SameBoy also uses.
+		{ "cgb_agb_boot.bin", "cgb_agb0_boot.bin", "agb_boot.bin" },
 		// The Game Boy's boot ROM would leave the wrong value in A for a Pocket, so without the
 		// Pocket's there is none.
 		{ "mgb_boot.bin" },
 	};
 	std::string other;
-	for (int i = 0; systemDirectory && i < 5 && names[model - 1][i]; ++i) {
+	for (int i = 0; systemDirectory && i < 3 && names[model - 1][i]; ++i) {
 		std::string const path = std::string(systemDirectory) + "/" + names[model - 1][i];
 		std::vector<unsigned char> const bytes = readBoot(path);
 		if (bytes.empty()) {
 			continue;
 		}
-		bool const converted = model == LIBRETRO_GB_AGB && (i == 3 || i == 4);
-		if (converted ? bytes.size() == 2304 && gambatte::crc32(0, &bytes[0], bytes.size()) == 0x41884E46
-		              : nintendoBoot(bytes)) {
+		if (nintendoBoot(bytes)) {
 			return path;
 		}
-		if (!converted && other.empty()) {
+		if (other.empty()) {
 			other = path;
 		}
 	}
@@ -662,11 +588,6 @@ std::vector<unsigned char> armgbaBoot(LibretroGbModel model) {
 	default:
 		return std::vector<unsigned char>(armgba_dmg_boot, armgba_dmg_boot + sizeof(armgba_dmg_boot));
 	}
-}
-
-// How long the Game Boy Advance takes before handing over to the Game Boy Color hardware inside it.
-size_t stall() {
-	return (s->loadFlags & gambatte::GB::GBA_FLAG) && !(s->loadFlags & gambatte::GB::NO_BIOS) ? 485808 : 0;
 }
 
 // The original Game Boy screen chosen: 0 plain grays, 1 the first model's, 2 the Pocket's, 3 the
@@ -706,8 +627,6 @@ void correctedColors(bool advance) {
 	}
 }
 
-// Installs the colors: the chosen screen's four shades for original Game Boy games, and the table
-// that turns Game Boy Color 15-bit colors into the frontend's, corrected or not.
 // Each screen: its color while the game has it off, its four shades, and the color its pixels go
 // toward driven harder than the darkest shade. The plain grays are gambatte-libretro's. The first
 // model's and the Pocket's are BGB's (bgb.bircd.org/reality): real ones photographed under
@@ -733,7 +652,6 @@ const Screen screens[4] = {
 
 void setColors() {
 	Screen const& now = screens[screen];
-	s->gb->setDmgPaletteColor(0, 4, now.off);
 	// The wheel sets the drive voltages of the whole STN screen together (DMG-LCD-06: its 30k pot sets
 	// the IR3E02's bias levels), from about -11 V to -14 V end to end, so 12% either side of the
 	// middle, each step a tenth of the turn. An STN pixel's darkness is an S-curve of its voltage, as
@@ -798,19 +716,12 @@ void setColors() {
 		unsigned long const gray = (unsigned long) std::lround(std::min(std::max(c, 0.0), 1.0) * 255);
 		return gray << 16 | gray << 8 | gray;
 	};
-	// A Game Boy game started through a Game Boy Color's boot ROM keeps the colors the boot ROM
-	// gave it (a state stores them too), so they aren't replaced here.
-	if (!s->gb->isCgb() || (s->loadFlags & gambatte::GB::NO_BIOS)) {
-		for (int i = 0; i < 4; ++i) {
-			shown[i] = !contrast ? now.shades[i] : screen == 0 ? followed(i) : contrasted(now, i);
-		}
-		for (int i = 0; i < 12; ++i) {
-			s->gb->setDmgPaletteColor(i / 4, i % 4, shown[i % 4]);
-		}
+	for (int i = 0; i < 4; ++i) {
+		shown[i] = !contrast ? now.shades[i] : screen == 0 ? followed(i) : contrasted(now, i);
 	}
 	// Game Boy screen shades are shown as they are; color correction is only for a Game Boy Color's
 	// screen.
-	int const table = correction && s->gb->isCgb() ? (s->loadFlags & gambatte::GB::GBA_FLAG && !colorPanel ? 2 : 1) : 0;
+	int const table = correction && color(*s) ? (s->model == LIBRETRO_GB_AGB && !colorPanel ? 2 : 1) : 0;
 	if (table != built) {
 		built = table;
 		if (table) {
@@ -824,16 +735,29 @@ void setColors() {
 			}
 		}
 	}
-	s->gb->setCgbPalette(cgbColors);
+	// The shades go through the same table, as a color would.
+	auto const asShown = [](unsigned long rgb) {
+		return cgbColors[(rgb >> 19 & 0x1F) | (rgb >> 11 & 0x1F) << 5 | (rgb >> 3 & 0x1F) << 10];
+	};
+	for (int c = 0; c < MAX_PLAYERS; ++c) {
+		struct GB* const gb = consoles[c].gb;
+		if (!gb) {
+			continue;
+		}
+		gb->videoTable = cgbColors;
+		for (int i = 0; i < 4; ++i) {
+			gb->videoColors[i] = asShown(shown[i]);
+		}
+		gb->videoColors[4] = asShown(now.off);
+	}
 }
 
 void restartAs(LibretroGbModel model);
 
-// Reads what the Action Replay keeps out of the console, if one is in, so a new cartridge starts
-// with it.
+// Reads what the cheat cartridge keeps out of the console, if one is in, so a new game starts with it.
 void keepReplayFlash() {
-	std::size_t size = 0;
-	const unsigned char* const kept = s->gb ? s->gb->actionReplayFlash(&size) : 0;
+	size_t size = 0;
+	const unsigned char* const kept = s->cheatOn ? gbCheatCartKept(&s->cheat, &size) : 0;
 	if (kept) {
 		replayKept.assign(kept, kept + size);
 	}
@@ -861,67 +785,42 @@ LibretroGbModel headerModel(const unsigned char* header, size_t size, bool sache
 	return flag == 0xC0 || (flag == 0x80 && !title) ? LIBRETRO_GB_CGB : LIBRETRO_GB_DMG;
 }
 
-// A color as the screen shows it: through the 15-bit color table, as Gambatte's colors are.
-uint32_t asShown(unsigned long rgb) {
-	return cgbColors[(rgb >> 19 & 0x1F) | (rgb >> 11 & 0x1F) << 5 | (rgb >> 3 & 0x1F) << 10];
-}
-
-void dropArmgb() {
-	std::free(s->armgb);
-	s->armgb = 0;
-}
-
-// The cartridges armGB knows: none, MBC1, MBC2, MBC3 with or without its clock, MBC5, MBC7, HuC3, the Pocket Camera, and HuC1 (a
-// header with Nintendo's logo: a ROM that only reads $FF there isn't one).
-bool armgbCartridge(const unsigned char* bytes, size_t size) {
-	if (size < 0x150) {
-		return false;
+// A ROM padded with zeros to a power of two, at least 32 KiB, as armGB banks it.
+std::vector<unsigned char> padded(const unsigned char* bytes, size_t size) {
+	size_t room = 0x8000;
+	while (room < size) {
+		room <<= 1;
 	}
-	switch (bytes[0x147]) {
-	case 0x00: case 0x01: case 0x02: case 0x03: case 0x05: case 0x06: case 0x08: case 0x09: case 0x0F: case 0x10:
-	case 0x11: case 0x12: case 0x13: case 0x19: case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1E: case 0x22: case 0xFC: case 0xFE:
-		return true;
-	case 0xFF:
-		return bytes[0x104] == 0xCE && bytes[0x105] == 0xED;
+	std::vector<unsigned char> rom(room, 0);
+	std::memcpy(&rom[0], bytes, size);
+	return rom;
+}
+
+GBModel armgbModel(LibretroGbModel model) {
+	switch (model) {
+	case LIBRETRO_GB_CGB:
+		return GB_MODEL_CGB;
+	case LIBRETRO_GB_AGB:
+		return GB_MODEL_AGB;
+	case LIBRETRO_GB_MGB:
+		return GB_MODEL_MGB;
 	default:
-		return false;
+		return GB_MODEL_DMG;
 	}
 }
 
-void startArmgb(std::vector<unsigned char> const& boot, bool color) {
-	size_t padded = 0x8000;
-	while (padded < s->game.size()) {
-		padded <<= 1;
-	}
-	s->armgbRom.assign(padded, 0);
-	std::memcpy(&s->armgbRom[0], &s->game[0], s->game.size());
-	// The Color's boot ROM is $0000-$00FF and $0200-$08FF; the original's $0000-$00FF.
-	size_t const bootSize = color ? 0x900 : 0x100;
-	s->armgbBoot.assign(boot.begin(), boot.begin() + std::min<size_t>(boot.size(), bootSize));
-	s->armgb = static_cast<struct GB*>(std::calloc(1, sizeof(struct GB)));
-	if (!s->armgb) {
-		return;
-	}
-	if (s->armgbBoot.size() == bootSize) {
-		s->armgb->boot = &s->armgbBoot[0];
-		s->armgb->bootSize = bootSize;
-	}
-	s->armgb->video = reinterpret_cast<uint32_t*>(s->pixels);
-	s->armgb->videoTable = cgbColors;
-	s->armgb->hostMicros = deviceMicros();
-	s->armgb->rtcRealTime = deviceClock;
-	s->armgb->rtcPercent = clockPercent;
-	for (int i = 0; i < 4; ++i) {
-		s->armgb->videoColors[i] = asShown(shown[i]);
-	}
-	s->armgb->videoColors[4] = asShown(screens[screen].off);
-	if (!gbLoad(s->armgb, &s->armgbRom[0], padded, color ? GB_MODEL_CGB : GB_MODEL_DMG)) {
-		dropArmgb();
+void linkClockedBy(void*) {
+	linkClocked();
+}
+
+void applyCodes(Console& c) {
+	gbClearCheats(c.gb);
+	for (std::string const& code : c.codes) {
+		gbAddCheat(c.gb, code.c_str());
 	}
 }
 
-// Starts the game as the chosen model, or as its header asks for, reusing the existing machine if
-// there is one.
+// Starts the game as the chosen model, or as its header asks for, in the console's machine.
 bool start(LibretroGbModel model, char* error, size_t errorSize) {
 	s->chosen = model;
 	const unsigned char* const bytes = &s->game[0];
@@ -935,121 +834,109 @@ bool start(LibretroGbModel model, char* error, size_t errorSize) {
 		model = headerModel(bytes, size, sachen);
 	}
 	// Starts through Nintendo's boot ROM when the system directory has it, else armGBA's; with Boot
-	// ROM off, in the state a boot ROM would have left the machine. A Mega Duck has none.
-	// An Action Replay with nothing on top shows the boot ROM no logo, so it starts without one
+	// ROM off, in the state a boot ROM would have left the machine. A Mega Duck has none. A cheat
+	// cartridge with nothing on top shows the boot ROM no logo, so it starts without one.
 	bool const bootable = !sachen && !megaDuck && (replayProgram.empty() || replayGame);
-	std::string const boot = bootable && bootWanted == LIBRETRO_GB_BOOT_NINTENDO ? bootRom(systemDirectory, model) : std::string();
-	std::vector<unsigned char> const builtIn = bootable && bootWanted != LIBRETRO_GB_BOOT_OFF && boot.empty() ? armgbaBoot(model)
-	                                                                                                       : std::vector<unsigned char>();
+	std::string const path = bootable && bootWanted == LIBRETRO_GB_BOOT_NINTENDO ? bootRom(systemDirectory, model) : std::string();
+	std::vector<unsigned char> const fromFile = path.empty() ? std::vector<unsigned char>() : readBoot(path);
+	s->boot = !fromFile.empty() ? fromFile : bootable && bootWanted != LIBRETRO_GB_BOOT_OFF ? armgbaBoot(model) : std::vector<unsigned char>();
 	s->bootUsed = bootWanted;
-	std::vector<unsigned char> const bootBytes = boot.empty() ? std::vector<unsigned char>() : readBoot(boot);
-	s->bootCrc = bootBytes.empty() ? 0 : gambatte::crc32(0, &bootBytes[0], bootBytes.size());
-	s->loadFlags = gambatte::GB::READONLY_SAV;
-	if (model == LIBRETRO_GB_MGB) {
-		s->loadFlags |= gambatte::GB::MGB_FLAG;
-	} else if (model != LIBRETRO_GB_DMG) {
-		s->loadFlags |= gambatte::GB::CGB_MODE;
+	s->bootCrc = fromFile.empty() ? 0 : crc32(&fromFile[0], fromFile.size());
+	s->model = model;
+	// The Color's boot ROM is 0000-00FF and 0200-08FF; the original's 0000-00FF.
+	size_t const bootSize = color(*s) ? 0x900 : 0x100;
+	if (s->boot.size() < bootSize) {
+		s->boot.clear();
 	}
-	if (model == LIBRETRO_GB_AGB) {
-		s->loadFlags |= gambatte::GB::GBA_FLAG;
-	}
+	s->noBoot = s->boot.empty();
 	bool const laptop = megaDuck && laptopWanted && players == 1;
-	if (megaDuck) {
-		s->loadFlags |= gambatte::GB::MEGA_DUCK | megaDuckKind * gambatte::GB::MEGA_DUCK_MAPPER;
-		if (laptop) {
-			s->loadFlags |= gambatte::GB::MEGA_DUCK_LAPTOP;
-		}
-	} else if (boot.empty() && builtIn.empty()) {
-		s->loadFlags |= gambatte::GB::NO_BIOS;
-	}
-	// What the Action Replay keeps goes into the new cartridge as the last one left it
+	// What the cheat cartridge keeps goes into the new game as the last one left it.
 	keepReplayFlash();
-	if (!s->gb) {
-		s->gb = new gambatte::GB;
-		s->gb->setCpuQuarters(cpuQuarters);
-		s->gb->setRtcSpeed(clockPercent);
+	if (s->cheatOn) {
+		gbCheatCartFree(&s->cheat);
+		s->cheatOn = false;
 	}
-	s->gb->setLinkCallback(players > 1 ? 0 : linkClocked);
-	duckLaptopConnect(laptop, laptopPrinter, laptopLanguage, laptopControl, laptopIn, laptopSlot);
-	s->linked = players == 1 && (printerOn || laptop);
-	if (s->gb->load(reinterpret_cast<const char*>(bytes), size, s->loadFlags) != gambatte::LOADRES_OK) {
+	if (!s->gb) {
+		s->gb = static_cast<struct GB*>(std::calloc(1, sizeof(struct GB)));
+		if (!s->gb) {
+			std::snprintf(error, errorSize, "armGBA has no memory for the Game Boy");
+			return false;
+		}
+	}
+	struct GB* const gb = s->gb;
+	s->rom = padded(bytes, size);
+	gb->boot = s->noBoot ? 0 : &s->boot[0];
+	gb->bootSize = s->noBoot ? 0 : bootSize;
+	gb->video = s->pixels;
+	gb->videoTable = cgbColors;
+	gb->cpuQuarters = cpuQuarters;
+	gb->rtcRealTime = deviceClock;
+	gb->rtcPercent = clockPercent;
+	gb->hostMicros = deviceMicros();
+	gb->megaDuck = megaDuck ? megaDuckKind + 1 : 0;
+	gb->duckLaptop = laptop;
+	applyShownAndHeard(gb);
+	if (!gbLoad(gb, &s->rom[0], s->rom.size(), armgbModel(model))) {
 		std::snprintf(error, errorSize, "armGBA can't run this Game Boy game");
 		return false;
 	}
-	applyShownAndHeard(s->gb);
+	gb->user = s;
+	gb->linkClocked = players > 1 ? 0 : linkClockedBy;
+	duckLaptopConnect(laptop, laptopPrinter, laptopLanguage, laptopControl, laptopIn, laptopSlot);
+	s->linked = players == 1 && (printerOn || laptop);
 	laptopSlotIn = false;
 	if (!replayProgram.empty()) {
-		if (!s->gb->attachCheatCart(reinterpret_cast<const char*>(&replayProgram[0]), replayProgram.size(), replayGame)) {
+		if (!gbCheatCartInit(&s->cheat, &replayProgram[0], replayProgram.size(), replayGame)) {
 			std::snprintf(error, errorSize, "armGBA can't run this cheat cartridge");
 			return false;
 		}
-		std::size_t size = 0;
-		unsigned char* const kept = s->gb->actionReplayFlash(&size);
-		if (kept && size == replayKept.size()) {
-			std::memcpy(kept, &replayKept[0], size);
+		s->cheatOn = true;
+		size_t keptSize = 0;
+		unsigned char* const kept = gbCheatCartKept(&s->cheat, &keptSize);
+		if (kept && keptSize == replayKept.size()) {
+			std::memcpy(kept, &replayKept[0], keptSize);
 		}
-		s->gb->setGameGenieCodes(genieDigits, genieCounts);
+		std::memcpy(s->cheat.s.fill, genieDigits, sizeof(genieDigits));
+		std::memcpy(s->cheat.s.fillCount, genieCounts, sizeof(genieCounts));
+		gb->cheatCart = &s->cheat;
+		gbReset(gb);
 	}
-	s->gb->linkStatus(players > 1 || s->linked ? LINK_ON : LINK_OFF);
-	if (!boot.empty()) {
-		if (s->gb->loadBios(boot) < 0) {
-			std::snprintf(error, errorSize, "armGBA can't read %s", boot.c_str());
-			return false;
-		}
-		s->gb->reset(stall());
-	} else if (!builtIn.empty()) {
-		s->gb->loadBios(reinterpret_cast<const char*>(&builtIn[0]), builtIn.size());
-		s->gb->reset(stall());
+	if (model == LIBRETRO_GB_AGB && !s->noBoot) {
+		gbStall(gb, ADVANCE_STALL);
 	}
-	s->gb->setInputGetter(input, s);
-	s->gb->setGameGenie(s->gameGenie);
-	s->gb->setGameShark(s->gameShark);
+	gbLinkStatus(gb, players > 1 || s->linked ? GB_LINK_ON : GB_LINK_OFF);
+	applyCodes(*s);
 	setColors();
-	s->sumLeft = s->sumRight = 0;
-	s->summed = 0;
+	s->overDot = 0;
 	s->capacitor[0] = s->capacitor[1] = 0;
 	s->heardApart = false;
 	setCapacitor(*s);
 	s->pressed = 0;
 	std::memset(s->pixels, 0, sizeof(s->pixels));
-	size_t const needed = std::max(s->gb->saveState(0, 0, static_cast<char*>(0)), s->gb->exactStateSize()) + sizeof(gambatte::uint_least32_t);
-	if (!s->stateSize) {
-		s->stateSize = needed + STATE_SLACK;
-	} else if (needed > s->stateSize) {
-		s->stateSize = needed;
-	}
-	// armGB runs the game instead when chosen and it can: as an original Game Boy, Pocket or Game Boy
-	// Color, on a cartridge it knows, one console, at the console's own clock. An original Game Boy
-	// game on the Color without a boot ROM stays on Gambatte, which gives it the screen's shades.
-	dropArmgb();
-	bool const color = model == LIBRETRO_GB_CGB;
-	bool const armgbModel = model == LIBRETRO_GB_DMG || model == LIBRETRO_GB_MGB
-	                        || (color && ((size > 0x143 && (bytes[0x143] & 0x80)) || !(s->loadFlags & gambatte::GB::NO_BIOS)));
-	if (armgbWanted && armgbModel && !megaDuck && !sachen && replayProgram.empty() && players == 1 && !s->linked && cpuQuarters == 4
-	    && armgbCartridge(bytes, size)) {
-		startArmgb(!bootBytes.empty() ? bootBytes : builtIn, color);
-	}
+	std::memset(s->shown, 0, sizeof(s->shown));
+	gbBlankFrame(gb);
 	return true;
 }
 
-// The eight bits of a transfer this Game Boy clocked are out: the other one's byte, or the
-// printer's, comes back.
+// The eight bits of a transfer this Game Boy clocked are out: the other one's byte, the printer's or
+// the laptop's comes back.
 void linkClocked() {
-	s->gb->linkStatus(LINK_ACK);
-	int const out = s->gb->linkStatus(LINK_OUT);
+	struct GB* const gb = s->gb;
+	gbLinkStatus(gb, GB_LINK_ACK);
+	int const out = gbLinkStatus(gb, GB_LINK_OUT);
 	if (duckLaptopConnected()) {
-		s->gb->linkStatus(duckLaptopClockedByConsole(static_cast<uint8_t>(out)));
+		gbLinkStatus(gb, duckLaptopClockedByConsole(static_cast<uint8_t>(out)));
 		return;
 	}
 	bool const toPrinter = printerOn && !linkGbConnected();
-	s->gb->linkStatus(toPrinter ? printerTransfer(&printer, out, s->gb->timeNow(), printed) : linkGbTransfer(out));
+	gbLinkStatus(gb, toPrinter ? printerTransfer(&printer, out, gbTime(gb) / 2, printed) : linkGbTransfer(out));
 }
 
 void updateLink() {
 	bool const linked = linkGbConnected() || printerOn || duckLaptopConnected();
 	if (s->linked != linked) {
 		s->linked = linked;
-		s->gb->linkStatus(s->linked ? LINK_ON : LINK_OFF);
+		gbLinkStatus(s->gb, s->linked ? GB_LINK_ON : GB_LINK_OFF);
 	}
 }
 
@@ -1077,24 +964,27 @@ bool libretroGbLoad(const void* rom, size_t size, const char* systemDirectory, e
 	return true;
 }
 
-void libretroGbSetArmgb(bool on) {
-	armgbWanted = on;
-}
-
 void libretroGbUnload(void) {
-	dropArmgb();
-	delete s->gb;
+	if (s->cheatOn) {
+		gbCheatCartFree(&s->cheat);
+		s->cheatOn = false;
+	}
+	std::free(s->gb);
 	s->gb = 0;
-	s->gameGenie.clear();
-	s->gameShark.clear();
+	s->codes.clear();
 }
 
 void libretroGbReset(enum LibretroGbModel model) {
 	s->wanted = model;
 	if (model == s->chosen && s->bootUsed == bootWanted) {
-		s->gb->reset(stall());
-		if (s->armgb) {
-			gbReset(s->armgb);
+		// The laptop powers on into its system ROM.
+		if (laptopSlotIn) {
+			gbSwapMegaDuckRom(s->gb, &s->rom[0], s->rom.size(), static_cast<GBDuckKind>(megaDuckKind));
+			laptopSlotIn = false;
+		}
+		gbReset(s->gb);
+		if (s->model == LIBRETRO_GB_AGB && !s->noBoot) {
+			gbStall(s->gb, ADVANCE_STALL);
 		}
 		return;
 	}
@@ -1105,8 +995,8 @@ void libretroGbReset(enum LibretroGbModel model) {
 void libretroGbRestart(void) {
 	libretroGbReset(s->wanted);
 	if (players > 1) {
-		s->gb->setLinkCallback(0);
-		s->gb->linkStatus(LINK_ON);
+		s->gb->linkClocked = 0;
+		gbLinkStatus(s->gb, GB_LINK_ON);
 	}
 	s->linked = false;
 }
@@ -1122,12 +1012,12 @@ void restartAs(LibretroGbModel model) {
 	size_t size;
 	const unsigned char* const ram = static_cast<const unsigned char*>(libretroGbSaveRam(&size));
 	std::vector<unsigned char> const kept(ram, ram + size);
-	gb_ulong clock[11];
+	uint32_t clock[11];
 	unsigned char huc3[HUC3_STATE];
-	if (s->gb->hasMbc3Rtc()) {
-		getClock(*s, clock);
-	} else if (s->gb->hasHuC3()) {
-		getHuC3(*s, huc3);
+	if (hasMbc3Clock(*s)) {
+		gbRtcGet(s->gb, clock);
+	} else if (hasHuC3(*s)) {
+		gbHuc3Get(s->gb, huc3);
 	}
 	LibretroGbModel const before = s->chosen;
 	char error[64];
@@ -1138,10 +1028,10 @@ void restartAs(LibretroGbModel model) {
 	if (now && size == kept.size() && size) {
 		std::memcpy(now, &kept[0], size);
 	}
-	if (s->gb->hasMbc3Rtc() && !s->rtcPending) {
-		setClock(*s, clock);
-	} else if (s->gb->hasHuC3() && !s->rtcPending) {
-		setHuC3(*s, huc3);
+	if (hasMbc3Clock(*s) && !s->rtcPending) {
+		gbRtcSet(s->gb, clock);
+	} else if (hasHuC3(*s) && !s->rtcPending) {
+		gbHuc3Set(s->gb, huc3);
 	}
 }
 
@@ -1154,11 +1044,9 @@ void libretroGbSetColorCorrection(bool on) {
 	setColors();
 }
 
-void libretroGbSetColorPanel(bool color) {
-	colorPanel = color;
-	if (s->gb) {
-		setColors();
-	}
+void libretroGbSetColorPanel(bool panel) {
+	colorPanel = panel;
+	setColors();
 }
 
 void libretroGbSetBootRom(enum LibretroGbBoot boot) {
@@ -1183,17 +1071,18 @@ void libretroGbSetMegaDuck(int kind) {
 	megaDuckKind = kind;
 }
 
-void libretroGbSetMegaDuckLaptop(bool on, int printer, int language) {
+void libretroGbSetMegaDuckLaptop(bool on, int printerKind, int language) {
 	laptopWanted = on;
-	laptopPrinter = printer;
+	laptopPrinter = printerKind;
 	laptopLanguage = language ? DUCK_LAPTOP_GERMAN : DUCK_LAPTOP_SPANISH;
 }
 
 void libretroGbSetGameGenieCodes(const uint8_t digits[27], const uint8_t counts[3]) {
 	std::memcpy(genieDigits, digits, sizeof(genieDigits));
 	std::memcpy(genieCounts, counts, sizeof(genieCounts));
-	if (s->gb) {
-		s->gb->setGameGenieCodes(genieDigits, genieCounts);
+	if (s->cheatOn) {
+		std::memcpy(s->cheat.s.fill, genieDigits, sizeof(genieDigits));
+		std::memcpy(s->cheat.s.fillCount, genieCounts, sizeof(genieCounts));
 	}
 }
 
@@ -1204,15 +1093,11 @@ bool libretroGbSwapGame(const void* rom, size_t size, bool game, char* error, si
 	keepReplayFlash();
 	std::vector<unsigned char> const before(s->game);
 	bool const hadGame = replayGame;
-	delete s->gb;
-	s->gb = 0;
 	s->game.assign(static_cast<const unsigned char*>(rom), static_cast<const unsigned char*>(rom) + size);
 	replayGame = game;
-	bool ok = start(s->wanted, error, errorSize);
+	bool const ok = start(s->wanted, error, errorSize);
 	if (!ok) {
-		// The game before goes back in
-		delete s->gb;
-		s->gb = 0;
+		// The game before goes back in.
 		s->game = before;
 		replayGame = hadGame;
 		char ignored[256];
@@ -1231,25 +1116,27 @@ void libretroGbSetActionReplay(const void* program, size_t size, bool game) {
 }
 
 void libretroGbActionReplayControls(bool button, bool switchOn) {
-	if (s->gb) {
-		s->gb->setActionReplayControls(button, switchOn);
+	if (s->cheatOn) {
+		s->cheat.button = button;
+		s->cheat.switchOn = switchOn;
 	}
 }
 
 uint8_t* libretroGbActionReplayFlash(size_t* size) {
-	std::size_t kept = 0;
-	unsigned char* const bytes = s->gb ? s->gb->actionReplayFlash(&kept) : 0;
-	*size = kept;
-	return bytes;
+	*size = 0;
+	return s->cheatOn ? gbCheatCartKept(&s->cheat, size) : 0;
 }
 
 bool libretroGbActionReplayFlashChanged(void) {
-	return s->gb && s->gb->actionReplayFlashChanged();
+	bool const changed = s->cheatOn && s->cheat.flashChanged;
+	if (s->cheatOn) {
+		s->cheat.flashChanged = false;
+	}
+	return changed;
 }
 
 void libretroGbSetMegaDuckSlot(const void* rom, size_t size, int kind) {
-	const unsigned char* const bytes = static_cast<const unsigned char*>(rom);
-	laptopCartridge.assign(bytes, bytes + (rom ? size : 0));
+	laptopCartridge = rom ? padded(static_cast<const unsigned char*>(rom), size) : std::vector<unsigned char>();
 	laptopCartridgeKind = kind;
 }
 
@@ -1263,9 +1150,7 @@ const int16_t* libretroGbMixSpeech(const int16_t* samples, size_t frames) {
 
 void libretroGbSetScreen(int which) {
 	screen = which;
-	if (s->gb) {
-		setColors();
-	}
+	setColors();
 }
 
 void libretroGbSetLayersShown(unsigned mask) {
@@ -1288,9 +1173,7 @@ void libretroGbSetMutedChannels(unsigned mask) {
 
 void libretroGbSetContrast(int steps) {
 	contrast = steps;
-	if (s->gb) {
-		setColors();
-	}
+	setColors();
 }
 
 uint32_t libretroGbShade(int shade) {
@@ -1306,7 +1189,7 @@ uint32_t libretroGbOffColor(void) {
 }
 
 bool libretroGbOnAdvance(void) {
-	return s->loadFlags & gambatte::GB::GBA_FLAG;
+	return s->model == LIBRETRO_GB_AGB;
 }
 
 uint32_t libretroGbBootCrc(void) {
@@ -1322,19 +1205,18 @@ uint32_t libretroGbBootCrc(void) {
 namespace {
 
 // The console's sound leaves through a capacitor that keeps DC out of it, connected only while a
-// channel's DAC is on (Pan Docs, Audio Details). Where the DACs go from all off to any on, or back,
-// comes from Gambatte, sample by sample.
-inline int16_t throughCapacitor(int32_t* capacitor, int side, long in, bool connected) {
+// channel's DAC is on (Pan Docs, Audio Details); armGB says for each sample whether one is.
+inline int16_t throughCapacitor(int32_t* capacitor, int side, int32_t in, bool connected) {
 	if (!s->charge) {
 		return static_cast<int16_t>(in);
 	}
-	return connected ? outputCapacitor(&capacitor[side], static_cast<int32_t>(in), s->charge) : 0;
+	return connected ? outputCapacitor(&capacitor[side], in, s->charge) : 0;
 }
 
 // A frontend sample out through the capacitor: the console's, or what's heard
-inline void throughOutput(int32_t* capacitor, long left, long right, bool dacs, int16_t* out) {
+inline void throughOutput(int32_t* capacitor, int32_t left, int32_t right, bool dacs, int16_t* out) {
 	if (s->wiring == Wiring::SHARED_RETURN) {
-		outputSharedReturn(&capacitor[0], static_cast<int32_t>(left), static_cast<int32_t>(right), s->charge, out);
+		outputSharedReturn(&capacitor[0], left, right, s->charge, out);
 	} else {
 		// A Game Boy Advance's capacitor is after its amp: connected whatever the DACs do
 		bool const connected = dacs || s->wiring == Wiring::ADVANCE;
@@ -1343,125 +1225,54 @@ inline void throughOutput(int32_t* capacitor, long left, long right, bool dacs, 
 	}
 }
 
-// mixDown with channels left out: what's heard is summed and sent beside the console's sound, which
-// the sums and the charges states keep follow
-void mixDownHeard(std::size_t count, gambatte::uint_least32_t const* const heard) {
-	std::size_t const* edgeAt;
-	bool const* edgeOn;
-	std::size_t const edges = s->gb->soundDacEdges(&edgeAt, &edgeOn);
-	bool dacs = s->gb->soundDacsAtStart();
-	std::size_t edge = 0;
-	if (!s->heardApart) {
-		s->heardLeft = s->sumLeft;
-		s->heardRight = s->sumRight;
+// The sound armGB made, out through the capacitor. With channels left out, what's heard goes through
+// its own charge beside the console's, which states keep.
+void takeSound() {
+	struct GB* const gb = s->gb;
+	bool const heard = gb->channelsMuted;
+	if (!heard) {
+		s->heardApart = false;
+	} else if (!s->heardApart) {
 		s->heardCapacitor[0] = s->capacitor[0];
 		s->heardCapacitor[1] = s->capacitor[1];
 		s->heardApart = true;
 	}
-	for (std::size_t i = 0; i < count;) {
-		std::size_t const run = ratio - s->summed < count - i ? ratio - s->summed : count - i;
-		int left = 0;
-		int right = 0;
-		for (std::size_t k = 0; k < run; ++k) {
-			left += static_cast<int16_t>(s->native[i + k] & 0xFFFF);
-			right += static_cast<int16_t>(s->native[i + k] >> 16);
+	for (uint32_t i = 0; i + 1 < gb->audioCount; i += 2) {
+		if (s->sampleCount + 2 > sizeof(s->samples) / sizeof(s->samples[0])) {
+			break;
 		}
-		s->sumLeft += left;
-		s->sumRight += right;
-		{
-			int heardLeft = 0;
-			int heardRight = 0;
-			for (std::size_t k = 0; k < run; ++k) {
-				heardLeft += static_cast<int16_t>(heard[i + k] & 0xFFFF);
-				heardRight += static_cast<int16_t>(heard[i + k] >> 16);
-			}
-			s->heardLeft += heardLeft;
-			s->heardRight += heardRight;
+		int16_t* const out = &s->samples[s->sampleCount];
+		bool const dacs = gb->audioDacs[i / 2];
+		throughOutput(s->capacitor, gb->audio[i], gb->audio[i + 1], dacs, out);
+		if (heard) {
+			throughOutput(s->heardCapacitor, gb->heard[i], gb->heard[i + 1], dacs, out);
 		}
-		s->summed += run;
-		i += run;
-		// The DACs as the frontend sample ends
-		while (edge < edges && edgeAt[edge] < i) {
-			dacs = edgeOn[edge++];
-		}
-		if (s->summed == ratio) {
-			if (s->sampleCount + 2 <= sizeof(s->samples) / sizeof(s->samples[0])) {
-				int16_t* const out = &s->samples[s->sampleCount];
-				throughOutput(s->capacitor, s->sumLeft / static_cast<long>(ratio), s->sumRight / static_cast<long>(ratio), dacs, out);
-				throughOutput(s->heardCapacitor, s->heardLeft / static_cast<long>(ratio), s->heardRight / static_cast<long>(ratio), dacs, out);
-				s->sampleCount += 2;
-			}
-			s->sumLeft = s->sumRight = 0;
-			s->heardLeft = s->heardRight = 0;
-			s->summed = 0;
-		}
-	}
-}
-
-// Averages a run's 2 MHz stereo samples down to the frontend's rate: each frontend sample is the
-// mean of the native samples it covers, then goes through the capacitor.
-void mixDown(std::size_t count) {
-	// Channel Selection
-	gambatte::uint_least32_t const* const heard = s->gb->heardSamples();
-	if (heard) {
-		mixDownHeard(count, heard);
-		return;
-	}
-	s->heardApart = false;
-	std::size_t const* edgeAt;
-	bool const* edgeOn;
-	std::size_t const edges = s->gb->soundDacEdges(&edgeAt, &edgeOn);
-	bool dacs = s->gb->soundDacsAtStart();
-	std::size_t edge = 0;
-	for (std::size_t i = 0; i < count;) {
-		std::size_t const run = ratio - s->summed < count - i ? ratio - s->summed : count - i;
-		int left = 0;
-		int right = 0;
-		for (std::size_t k = 0; k < run; ++k) {
-			left += static_cast<int16_t>(s->native[i + k] & 0xFFFF);
-			right += static_cast<int16_t>(s->native[i + k] >> 16);
-		}
-		s->sumLeft += left;
-		s->sumRight += right;
-		s->summed += run;
-		i += run;
-		// The DACs as the frontend sample ends
-		while (edge < edges && edgeAt[edge] < i) {
-			dacs = edgeOn[edge++];
-		}
-		if (s->summed == ratio) {
-			if (s->sampleCount + 2 <= sizeof(s->samples) / sizeof(s->samples[0])) {
-				throughOutput(s->capacitor, s->sumLeft / static_cast<long>(ratio), s->sumRight / static_cast<long>(ratio), dacs, &s->samples[s->sampleCount]);
-				s->sampleCount += 2;
-			}
-			s->sumLeft = s->sumRight = 0;
-			s->summed = 0;
-		}
-	}
-}
-
-// A frame of armGB: the shades in the screen's colors, the sound through the output capacitor.
-void runArmgb() {
-	struct GB* gb = s->armgb;
-	// armGB draws in the screen's colors straight into the picture.
-	static_assert(static_cast<int>(LIBRETRO_GB_WIDTH) == static_cast<int>(GB_WIDTH), "a frame's rows are back to back in both");
-	gb->video = reinterpret_cast<uint32_t*>(s->pixels);
-	for (int i = 0; i < 4; ++i) {
-		gb->videoColors[i] = asShown(shown[i]);
-	}
-	gb->videoColors[4] = asShown(screens[screen].off);
-	gb->keys = s->pressed;
-	gb->hostMicros = deviceMicros();
-	gbRunFrame(gb);
-	for (uint32_t i = 0; i + 1 < gb->audioCount && s->sampleCount + 2 <= sizeof(s->samples) / sizeof(s->samples[0]); i += 2) {
-		throughOutput(s->capacitor, gb->audio[i], gb->audio[i + 1], gb->audioDacs[i / 2], &s->samples[s->sampleCount]);
 		s->sampleCount += 2;
 	}
+	gb->audioCount = 0;
 }
 
-// Starts a frame on the selected console: its buttons, and its clock file once loaded.
+// Runs the selected console for some samples, or to the end of a frame; count becomes the samples run.
+// Returns whether a frame ended, its picture then in shown too.
+bool runFor(std::size_t& count) {
+	uint32_t dots = static_cast<uint32_t>(count * 2) - s->overDot;
+	bool const ended = gbRunFor(s->gb, &dots);
+	uint32_t const total = dots + s->overDot;
+	count = total / 2;
+	s->overDot = total % 2;
+	takeSound();
+	if (ended) {
+		std::memcpy(s->shown, s->pixels, sizeof(s->shown));
+	}
+	return ended;
+}
+
+// Starts a frame on the selected console: its buttons, the device's time, and its clock file once
+// loaded.
 void beginFrame(uint16_t keys) {
 	s->pressed = keys & 0xFF;
+	s->gb->keys = s->pressed;
+	s->gb->hostMicros = deviceMicros();
 	s->sampleCount = 0;
 	if (s->rtcPending) {
 		readRtcFile();
@@ -1478,27 +1289,27 @@ void endFrame() {
 // other's byte. The other takes this one's only if its serial port is waiting for a clock or
 // clocking too. Both then stop their own clocks, since the transfer is done.
 void exchange(Console& clocked, Console& other) {
-	clocked.gb->linkStatus(LINK_ACK);
-	int const out = clocked.gb->linkStatus(LINK_OUT);
-	clocked.gb->linkStatus(other.gb->linkStatus(LINK_OUT));
-	clocked.gb->linkStatus(LINK_STOP);
-	other.gb->linkStatus(out);
-	other.gb->linkStatus(LINK_STOP);
+	gbLinkStatus(clocked.gb, GB_LINK_ACK);
+	int const out = gbLinkStatus(clocked.gb, GB_LINK_OUT);
+	gbLinkStatus(clocked.gb, gbLinkStatus(other.gb, GB_LINK_OUT));
+	gbLinkStatus(clocked.gb, GB_LINK_STOP);
+	gbLinkStatus(other.gb, out);
+	gbLinkStatus(other.gb, GB_LINK_STOP);
 }
 
 // Sound samples until a Game Boy's transfer on its own clock ends: -1 for none, 0 when due.
 long serialLeft(Console& c) {
-	if (c.gb->linkStatus(LINK_CLOCKED)) {
+	if (gbLinkStatus(c.gb, GB_LINK_CLOCKED)) {
 		return 0;
 	}
-	int const cycles = c.gb->linkStatus(LINK_LEFT);
-	return cycles < 0 ? -1 : cycles / 2;
+	int const dots = gbLinkStatus(c.gb, GB_LINK_LEFT);
+	return dots < 0 ? -1 : dots / 2;
 }
 
 // The fewest samples a transfer a Game Boy could start now takes: eight bits at 8192 Hz, or on a
 // Game Boy Color with SC's fast bit, at 262144 Hz.
 long shortestTransfer(Console& c) {
-	return c.gb->isCgb() && c.gb->linkStatus(LINK_CONTROL) & 0x02 ? 64 : 2048;
+	return c.gb->cgbMode && gbLinkStatus(c.gb, GB_LINK_CONTROL) & 0x02 ? 64 : 2048;
 }
 
 // Where the consoles next meet: at the frame's end, at the next transfer's end on the cable or the
@@ -1530,9 +1341,9 @@ void meet(long now) {
 		// On the adapter, a Game Boy's own clock reaches nothing.
 		for (int i = 0; i < players; ++i) {
 			if (serialLeft(consoles[i]) == 0) {
-				consoles[i].gb->linkStatus(LINK_ACK);
-				consoles[i].gb->linkStatus(0xFF);
-				consoles[i].gb->linkStatus(LINK_STOP);
+				gbLinkStatus(consoles[i].gb, GB_LINK_ACK);
+				gbLinkStatus(consoles[i].gb, 0xFF);
+				gbLinkStatus(consoles[i].gb, GB_LINK_STOP);
 			}
 		}
 		while (adapter.at <= now) {
@@ -1549,10 +1360,10 @@ void meet(long now) {
 
 // With exact link timing: this Game Boy's transfer ends, and the other's byte comes back.
 void clockedExactly() {
-	s->gb->linkStatus(LINK_ACK);
-	int const in = linkGbTransfer(s->gb->linkStatus(LINK_OUT));
-	s->gb->linkStatus(in & 0xFF);
-	s->gb->linkStatus(LINK_STOP);
+	gbLinkStatus(s->gb, GB_LINK_ACK);
+	int const in = linkGbTransfer(gbLinkStatus(s->gb, GB_LINK_OUT));
+	gbLinkStatus(s->gb, in & 0xFF);
+	gbLinkStatus(s->gb, GB_LINK_STOP);
 }
 
 // With exact link timing, a frame runs in parts. Each part ends at this Game Boy's own transfer
@@ -1563,7 +1374,7 @@ void runExactlyParts() {
 	while (done < FRAME_SAMPLES) {
 		long const own = serialLeft(*s);
 		if (own > 0) {
-			linkGbClocking(s->gb->linkStatus(LINK_OUT), own, shortestTransfer(*s));
+			linkGbClocking(gbLinkStatus(s->gb, GB_LINK_OUT), own, shortestTransfer(*s));
 		}
 		linkGbPoll();
 		if (own == 0) {
@@ -1581,10 +1392,7 @@ void runExactlyParts() {
 		count = std::min(count, allowed);
 		count = own > 0 ? std::min(count, own) : count;
 		std::size_t samples = count;
-		if (s->gb->runFor(s->pixels, LIBRETRO_GB_WIDTH, s->native, samples) >= 0) {
-			std::memcpy(s->shown, s->pixels, sizeof(s->shown));
-		}
-		mixDown(samples);
+		runFor(samples);
 		done += samples;
 		linkGbRan(samples);
 	}
@@ -1592,31 +1400,20 @@ void runExactlyParts() {
 
 // The laptop's controller: the console's SC, and a byte it clocks in
 unsigned laptopControl() {
-	return static_cast<unsigned>(s->gb->linkStatus(LINK_CONTROL));
+	return static_cast<unsigned>(gbLinkStatus(s->gb, GB_LINK_CONTROL));
 }
 
 void laptopIn(uint8_t byte) {
-	s->gb->linkStatus(byte);
+	gbLinkStatus(s->gb, byte);
 }
 
 bool laptopSlot() {
-	bool const swapped = !laptopCartridge.empty()
-	    && s->gb->swapMegaDuckCartridge(reinterpret_cast<const char*>(&laptopCartridge[0]), laptopCartridge.size(), laptopCartridgeKind);
-	laptopSlotIn |= swapped;
-	return swapped;
-}
-
-// Puts the slot's cartridge or the system ROM (the game loaded, padded to fit either) in place.
-bool laptopSlotAs(bool in) {
-	if (in == laptopSlotIn || laptopCartridge.empty()) {
-		return in == laptopSlotIn;
+	if (laptopCartridge.empty()) {
+		return false;
 	}
-	if (in) {
-		return laptopSlot();
-	}
-	bool const swapped = s->gb->swapMegaDuckCartridge(reinterpret_cast<const char*>(&s->game[0]), s->game.size(), megaDuckKind);
-	laptopSlotIn = !swapped;
-	return swapped;
+	gbSwapMegaDuckRom(s->gb, &laptopCartridge[0], laptopCartridge.size(), static_cast<GBDuckKind>(laptopCartridgeKind));
+	laptopSlotIn = true;
+	return true;
 }
 
 // With a Mega Duck laptop, runs until a picture is drawn in parts that end where its controller does
@@ -1625,8 +1422,7 @@ void runWithLaptop() {
 	bool drawn = false;
 	for (long done = 0; !drawn && done < 4L * FRAME_SAMPLES;) {
 		std::size_t count = std::max<long>(1, std::min<long>((duckLaptopCyclesToNext() + 1) / 2, FRAME_SAMPLES));
-		drawn = s->gb->runFor(s->pixels, LIBRETRO_GB_WIDTH, s->native, count) >= 0;
-		mixDown(count);
+		drawn = runFor(count);
 		done += count;
 		duckLaptopRan(2 * static_cast<long>(count));
 	}
@@ -1641,36 +1437,22 @@ void runUntilDrawn() {
 			linkGbPoll();
 		}
 		std::size_t count = FRAME_SAMPLES / parts;
-		drawn = s->gb->runFor(s->pixels, LIBRETRO_GB_WIDTH, s->native, count) >= 0;
-		mixDown(count);
+		drawn = runFor(count);
 	}
 }
 
 void runExactly() {
-	s->gb->setLinkCallback(0);
+	s->gb->linkClocked = 0;
 	runExactlyParts();
-	s->gb->setLinkCallback(linkClocked);
+	s->gb->linkClocked = linkClockedBy;
 }
 
 }
 
 extern "C" {
 
-// Runs one frame. Gambatte runs by audio samples, so it is asked for a frame's worth at a time
-// until it has drawn a frame.
-//
-// Turning the screen off can delay a frame by up to three frames' worth. A game that turns the
-// screen off and on faster than a frame never finishes one, so after four frames' worth the
-// frontend gets the last picture again.
+// Runs one frame: to the start of V-blank, or with the screen off, a frame's time.
 const uint32_t* libretroGbRunFrame(uint16_t keys, const int16_t** out, size_t* frames) {
-	if (s->armgb) {
-		beginFrame(keys);
-		runArmgb();
-		endFrame();
-		*out = s->samples;
-		*frames = s->sampleCount / 2;
-		return reinterpret_cast<const uint32_t*>(s->pixels);
-	}
 	beginFrame(keys);
 	updateLink();
 	bool const exactly = s->linked && linkExactOn() && !duckLaptopConnected();
@@ -1684,7 +1466,7 @@ const uint32_t* libretroGbRunFrame(uint16_t keys, const int16_t** out, size_t* f
 	endFrame();
 	*out = s->samples;
 	*frames = s->sampleCount / 2;
-	return reinterpret_cast<const uint32_t*>(exactly ? s->shown : s->pixels);
+	return exactly ? s->shown : s->pixels;
 }
 
 void libretroGbRunPlayers(const uint16_t keys[], const uint32_t* pictures[], const int16_t* out[], size_t frames[]) {
@@ -1712,18 +1494,14 @@ void libretroGbRunPlayers(const uint16_t keys[], const uint32_t* pictures[], con
 				// Nothing ended after all, as a game stopped its transfer: run on a little.
 				s = &consoles[i];
 				std::size_t count = 1;
-				s->gb->runFor(s->pixels, LIBRETRO_GB_WIDTH, s->native, count);
-				mixDown(count);
+				runFor(count);
 				done[i] += count;
 			}
 			continue;
 		}
 		s = &consoles[i];
 		std::size_t count = meeting - done[i];
-		if (s->gb->runFor(s->pixels, LIBRETRO_GB_WIDTH, s->native, count) >= 0) {
-			std::memcpy(s->shown, s->pixels, sizeof(s->shown));
-		}
-		mixDown(count);
+		runFor(count);
 		done[i] += count;
 	}
 	dmg07EndFrame(&adapter, FRAME_SAMPLES);
@@ -1731,7 +1509,7 @@ void libretroGbRunPlayers(const uint16_t keys[], const uint32_t* pictures[], con
 		s = &consoles[i];
 		endFrame();
 		s->ahead = done[i] - FRAME_SAMPLES;
-		pictures[i] = reinterpret_cast<const uint32_t*>(s->shown);
+		pictures[i] = s->shown;
 		out[i] = s->samples;
 		frames[i] = s->sampleCount / 2;
 	}
@@ -1740,18 +1518,8 @@ void libretroGbRunPlayers(const uint16_t keys[], const uint32_t* pictures[], con
 
 // The cartridge's battery RAM, which the frontend loads and saves as the save file.
 void* libretroGbSaveRam(size_t* size) {
-	unsigned char* data = 0;
-	int length = 0;
-	*size = 0;
-	if (s->armgb) {
-		*size = s->armgb->cart.ramSize;
-		return *size ? s->armgb->sram : 0;
-	}
-	if (!s->gb || !s->gb->getMemoryArea(3, &data, &length)) {
-		return 0;
-	}
-	*size = length;
-	return data;
+	*size = s->gb ? s->gb->cart.ramSize : 0;
+	return *size ? s->gb->sram : 0;
 }
 
 // The cartridge's clock, MBC3 or HuC3, which the frontend keeps as the .rtc file.
@@ -1761,7 +1529,7 @@ void* libretroGbRtc(size_t* size) {
 }
 
 LibretroGbClock libretroGbClock(void) {
-	return !s->gb ? LIBRETRO_GB_NO_CLOCK : s->gb->hasMbc3Rtc() ? LIBRETRO_GB_MBC3_CLOCK : s->gb->hasHuC3() ? LIBRETRO_GB_HUC3_CLOCK : LIBRETRO_GB_NO_CLOCK;
+	return hasMbc3Clock(*s) ? LIBRETRO_GB_MBC3_CLOCK : hasHuC3(*s) ? LIBRETRO_GB_HUC3_CLOCK : LIBRETRO_GB_NO_CLOCK;
 }
 
 void libretroGbSetClock(bool timeOfGame, unsigned percent, long long offset) {
@@ -1773,12 +1541,12 @@ void libretroGbSetClock(bool timeOfGame, unsigned percent, long long offset) {
 		if (!c.gb) {
 			continue;
 		}
-		setClockSpeed(c, clockPercent);
-		if (c.gb->hasMbc3Rtc() && !c.rtcPending && c.clockMoved != offset) {
-			gb_ulong r[11];
-			getClock(c, r);
+		gbRtcSetSpeed(c.gb, clockPercent);
+		if (hasMbc3Clock(c) && !c.rtcPending && c.clockMoved != offset) {
+			uint32_t r[11];
+			gbRtcGet(c.gb, r);
 			moveBy(c, r, offset);
-			setClock(c, r);
+			gbRtcSet(c.gb, r);
 		}
 	}
 }
@@ -1787,7 +1555,7 @@ void libretroGbDeviceTime(bool on) {
 	deviceClock = on;
 	for (int i = 0; i < MAX_PLAYERS; ++i) {
 		if (consoles[i].gb) {
-			setClockSource(consoles[i], on);
+			gbRtcSetRealTime(consoles[i].gb, on);
 		}
 	}
 }
@@ -1796,10 +1564,10 @@ bool libretroGbResetClock(void) {
 	bool reset = false;
 	for (int i = 0; i < MAX_PLAYERS; ++i) {
 		Console& c = consoles[i];
-		if (c.gb && c.gb->hasMbc3Rtc()) {
-			gb_ulong r[11] = { 0 };
+		if (hasMbc3Clock(c)) {
+			uint32_t r[11] = { 0 };
 			r[RTC_DH] = r[RTC_DH + RTC_LATCHED] = 0x40;
-			setClock(c, r);
+			gbRtcSet(c.gb, r);
 			c.rtcPending = false;
 			c.clockMoved = clockOffset;
 			c.clockShort = 0;
@@ -1809,121 +1577,67 @@ bool libretroGbResetClock(void) {
 	return reset;
 }
 
-// Converts a stick position into the tilt sensor's reading.
+// Converts a stick position into the tilt sensor's reading: lower to the right and towards the
+// player; 0x70 is the cartridge tipped onto its side.
 void libretroGbSetTilt(int x, int y) {
-	// The sensor reads lower to the right and towards the player; 0x70 is the cartridge tipped onto
-	// its side.
-	gambatte::mbc7TiltX = -x * 0x70 / 32768;
-	gambatte::mbc7TiltY = -y * 0x70 / 32768;
-	if (s->armgb) {
-		s->armgb->tiltX = gambatte::mbc7TiltX;
-		s->armgb->tiltY = gambatte::mbc7TiltY;
+	if (s->gb) {
+		s->gb->tiltX = -x * 0x70 / 32768;
+		s->gb->tiltY = -y * 0x70 / 32768;
 	}
 }
 
 // Flicks the console, for the one sensor reading the flick lasts.
 void libretroGbFlick(void) {
-	gambatte::mbc7Flick = true;
-	if (s->armgb) {
-		s->armgb->flick = true;
+	if (s->gb) {
+		s->gb->flick = true;
 	}
 }
 
 // Work RAM, for achievements and cheats.
 void* libretroGbSystemRam(size_t* size) {
-	unsigned char* data = 0;
-	int length = 0;
-	*size = 0;
-	if (s->armgb) {
-		*size = s->armgb->model == GB_MODEL_CGB ? 0x8000 : 0x2000;
-		return s->armgb->wram;
-	}
-	if (!s->gb || !s->gb->getMemoryArea(2, &data, &length)) {
-		return 0;
-	}
-	*size = length;
-	return data;
+	*size = !s->gb ? 0 : gbColor(s->gb) ? 0x8000 : 0x2000;
+	return *size ? s->gb->wram : 0;
 }
 
 size_t libretroGbMemoryMap(struct retro_memory_descriptor* out) {
-	if (s->armgb) {
-		struct GB* gb = s->armgb;
-		unsigned char* rom = &s->armgbRom[0];
-		struct retro_memory_descriptor const areas[] = {
-			{ RETRO_MEMDESC_SYSTEM_RAM, gb->wram, 0, 0xC000, 0, 0, 0x1000, 0 },
-			{ RETRO_MEMDESC_SYSTEM_RAM, gb->wram, 0x1000, 0xD000, 0, 0, 0x1000, 0 },
-			{ RETRO_MEMDESC_SYSTEM_RAM, gb->hram, 0, 0xFF80, 0, 0, GB_SIZE_HRAM, 0 },
-			{ 0, gb->vram, 0, 0x8000, 0, 0, 0x2000, 0 },
-			{ 0, gb->oam, 0, 0xFE00, 0xFFFFFFE0, 0, GB_SIZE_OAM, 0 },
-			{ RETRO_MEMDESC_CONST, rom, 0, 0x0000, 0, 0, 0x4000, 0 },
-			{ RETRO_MEMDESC_CONST, rom, 0x4000, 0x4000, 0, 0, 0x4000, 0 },
-			{ 0, gb->io, 0, 0xFF00, 0, 0, 0x80, 0 },
-		};
-		size_t count = 0;
-		for (std::size_t i = 0; i < sizeof(areas) / sizeof(areas[0]); ++i) {
-			out[count++] = areas[i];
-		}
-		if (gb->cart.ramSize) {
-			struct retro_memory_descriptor const area = { 0, gb->sram, 0, 0xA000, ~(std::size_t) 0x1FFF, 0, gb->cart.ramSize, 0 };
-			out[count++] = area;
-		}
-		if (gb->model == GB_MODEL_CGB) {
-			struct retro_memory_descriptor const area = { RETRO_MEMDESC_SYSTEM_RAM, gb->wram, 0x2000, 0x10000, 0xFFFFA000, 0, 0x6000, 0 };
-			out[count++] = area;
-		}
-		return count;
-	}
-	unsigned char* vram;
-	unsigned char* rom;
-	unsigned char* wram;
-	unsigned char* cartRam;
-	unsigned char* oam;
-	int vramLength, romLength, wramLength, cartRamLength, oamLength;
-	if (!s->gb || !s->gb->getMemoryArea(0, &vram, &vramLength) || !s->gb->getMemoryArea(1, &rom, &romLength)
-	    || !s->gb->getMemoryArea(2, &wram, &wramLength) || !s->gb->getMemoryArea(3, &cartRam, &cartRamLength)
-	    || !s->gb->getMemoryArea(4, &oam, &oamLength)) {
+	struct GB* const gb = s->gb;
+	if (!gb) {
 		return 0;
 	}
-	size_t count = 0;
-	// OAM, then the I/O registers and high RAM, are one block.
+	unsigned char* const rom = &s->rom[0];
 	struct retro_memory_descriptor const areas[] = {
-		{ RETRO_MEMDESC_SYSTEM_RAM, wram, 0, 0xC000, 0, 0, 0x1000, 0 },
-		{ RETRO_MEMDESC_SYSTEM_RAM, wram, 0x1000, 0xD000, 0, 0, 0x1000, 0 },
-		{ RETRO_MEMDESC_SYSTEM_RAM, oam, 0x180, 0xFF80, 0, 0, 0x80, 0 },
-		{ 0, vram, 0, 0x8000, 0, 0, 0x2000, 0 },
-		{ 0, oam, 0, 0xFE00, 0xFFFFFFE0, 0, 0xA0, 0 },
+		{ RETRO_MEMDESC_SYSTEM_RAM, gb->wram, 0, 0xC000, 0, 0, 0x1000, 0 },
+		{ RETRO_MEMDESC_SYSTEM_RAM, gb->wram, 0x1000, 0xD000, 0, 0, 0x1000, 0 },
+		{ RETRO_MEMDESC_SYSTEM_RAM, gb->hram, 0, 0xFF80, 0, 0, GB_SIZE_HRAM, 0 },
+		{ 0, gb->vram, 0, 0x8000, 0, 0, 0x2000, 0 },
+		{ 0, gb->oam, 0, 0xFE00, 0xFFFFFFE0, 0, GB_SIZE_OAM, 0 },
 		{ RETRO_MEMDESC_CONST, rom, 0, 0x0000, 0, 0, 0x4000, 0 },
 		{ RETRO_MEMDESC_CONST, rom, 0x4000, 0x4000, 0, 0, 0x4000, 0 },
-		{ 0, oam, 0x100, 0xFF00, 0, 0, 0x80, 0 },
+		{ 0, gb->io, 0, 0xFF00, 0, 0, 0x80, 0 },
 	};
+	size_t count = 0;
 	for (std::size_t i = 0; i < sizeof(areas) / sizeof(areas[0]); ++i) {
 		out[count++] = areas[i];
 	}
-	if (cartRamLength) {
-		struct retro_memory_descriptor const area = { 0, cartRam, 0, 0xA000, ~(std::size_t) 0x1FFF, 0, (std::size_t) cartRamLength, 0 };
+	if (gb->cart.ramSize) {
+		struct retro_memory_descriptor const area = { 0, gb->sram, 0, 0xA000, ~(std::size_t) 0x1FFF, 0, gb->cart.ramSize, 0 };
 		out[count++] = area;
 	}
 	// A Game Boy Color's work RAM banks 2 to 7, at the addresses achievements expect.
-	if (s->gb->isCgb()) {
-		struct retro_memory_descriptor const area = { RETRO_MEMDESC_SYSTEM_RAM, wram, 0x2000, 0x10000, 0xFFFFA000, 0, 0x6000, 0 };
+	if (gbColor(gb)) {
+		struct retro_memory_descriptor const area = { RETRO_MEMDESC_SYSTEM_RAM, gb->wram, 0x2000, 0x10000, 0xFFFFA000, 0, 0x6000, 0 };
 		out[count++] = area;
 	}
 	return count;
 }
 
 bool libretroGbIsColor(void) {
-	if (s->armgb) {
-		return s->armgb->model == GB_MODEL_CGB;
-	}
-	return s->gb && s->gb->isCgb();
+	return s->gb && gbColor(s->gb);
 }
 
 bool libretroGbBooting(void) {
-	if (s->armgb) {
-		return s->armgb->bootMapped;
-	}
 	for (int i = 0; i < MAX_PLAYERS; ++i) {
-		if (consoles[i].gb && consoles[i].gb->inBootRom()) {
+		if (consoles[i].gb && (consoles[i].gb->bootMapped || consoles[i].gb->cpu.stalled)) {
 			return true;
 		}
 	}
@@ -1934,15 +1648,14 @@ void libretroGbSetCpuClock(unsigned quarters, bool loaded) {
 	cpuQuarters = quarters;
 	for (int i = 0; i < MAX_PLAYERS; ++i) {
 		if (consoles[i].gb) {
-			consoles[i].gb->setCpuQuarters(quarters, loaded);
+			gbSetCpuQuarters(consoles[i].gb, quarters, loaded);
 		}
 	}
 }
 
 bool libretroGbSetCheats(const char* const* codes, size_t count) {
 	bool understood = true;
-	s->gameGenie.clear();
-	s->gameShark.clear();
+	s->codes.clear();
 	for (size_t i = 0; i < count; ++i) {
 		std::string const all = codes[i] ? codes[i] : "";
 		std::size_t pos = 0;
@@ -1950,25 +1663,16 @@ bool libretroGbSetCheats(const char* const* codes, size_t count) {
 			std::size_t const end = all.find_first_of("+ \t\r\n;", pos);
 			std::string const code = all.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
 			pos = end == std::string::npos ? all.size() : end + 1;
-			if (code.empty()) {
-				continue;
+			if (!code.empty()) {
+				s->codes.push_back(code);
 			}
-			bool const genie = (code.size() == 7 && code[3] == '-') || (code.size() == 11 && code[3] == '-' && code[7] == '-');
-			bool const shark = code.size() == 8 && code.find_first_not_of("0123456789ABCDEFabcdef") == std::string::npos;
-			std::string& list = genie ? s->gameGenie : s->gameShark;
-			if (!genie && !shark) {
-				understood = false;
-				continue;
-			}
-			if (!list.empty()) {
-				list += ';';
-			}
-			list += code;
 		}
 	}
 	if (s->gb) {
-		s->gb->setGameGenie(s->gameGenie);
-		s->gb->setGameShark(s->gameShark);
+		gbClearCheats(s->gb);
+		for (std::string const& code : s->codes) {
+			understood &= gbAddCheat(s->gb, code.c_str());
+		}
 	}
 	return understood;
 }
@@ -1977,357 +1681,115 @@ bool libretroGbSetCheats(const char* const* codes, size_t count) {
 
 namespace {
 
-// Save states: the size reported to the frontend leaves room for a state to grow.
-// armGB's state: a mark, the machine, and the output capacitor's charge.
-uint32_t const ARMGB_STATE = 0x42476D61u;
+// A console's state: a mark, the machine, the output capacitor's charge, then whether the laptop's
+// slot cartridge had taken the system ROM's place and the laptop's controller, the printer (player
+// 1's), and the cheat cartridge, each with room whether or not it's there, so states keep one size.
+// Netplay's states hold no capacitor charge, and loading one keeps this device's.
+uint32_t const STATE_MARK = 0x53424761u;
+bool netplayStates;
 
-size_t armgbStateSize() {
-	return sizeof(ARMGB_STATE) + gbStateSize() + sizeof(s->capacitor);
+size_t partsSize(const Console& c) {
+	return sizeof(STATE_MARK) + gbStateSize() + sizeof(c.capacitor) + 1 + duckLaptopStateSize() + sizeof(printer)
+	       + (c.cheatOn ? gbCheatCartStateSize(&c.cheat) : 0);
 }
 
 size_t stateSizeOne() {
-	if (s->armgb) {
-		return armgbStateSize();
+	if (!s->gb) {
+		return 0;
 	}
-	return s->gb ? s->stateSize : 0;
+	s->stateSize = std::max(s->stateSize, partsSize(*s));
+	return s->stateSize;
 }
 
-// Rollback and run-ahead take states of the whole machine exactly (exactStates), which mark their
-// length's top bit; a state to keep is gambatte's own, which a Game Boy of another model can load.
-// An exact state is saved with the shades blank, as each device shows the screen its own way.
-bool exactStates;
-gambatte::uint_least32_t const EXACT = 0x80000000u;
-// Netplay's states hold no capacitor charge, and loading one keeps this device's.
-bool netplayStates;
-
-// Player 1's printer is kept at the end of its console's part, in the room left for the state to
-// grow; zeros there, as in a state from before the printer, are a printer just switched on.
-size_t printerAt() {
-	return s->stateSize - sizeof(printer);
-}
-
-// The sums towards the next frontend sample, just before the printer's state, so sound carries on
-// from a loaded state as it would have. Older states have zeros there.
-size_t mixAt() {
-	return printerAt() - 3 * sizeof(int32_t);
-}
-
-void saveMix(void* data, size_t length) {
-	if (sizeof(gambatte::uint_least32_t) + length <= mixAt()) {
-		int32_t const mix[3] = { static_cast<int32_t>(s->sumLeft), static_cast<int32_t>(s->sumRight), static_cast<int32_t>(s->summed) };
-		std::memcpy(static_cast<char*>(data) + mixAt(), mix, sizeof(mix));
-	}
-}
-
-void loadMix(const void* data, size_t size) {
-	gambatte::uint_least32_t length;
-	std::memcpy(&length, data, sizeof(length));
-	length &= ~0x80000000u;
-	int32_t mix[3] = { 0, 0, 0 };
-	if (size >= s->stateSize && sizeof(length) + length <= mixAt()) {
-		std::memcpy(mix, static_cast<const char*>(data) + mixAt(), sizeof(mix));
-	}
-	s->sumLeft = mix[0];
-	s->sumRight = mix[1];
-	s->summed = mix[2] >= 0 && static_cast<unsigned>(mix[2]) < ratio ? mix[2] : 0;
-}
-
-// The Mega Duck laptop's controller, just before the sums: where a transfer is, so that rollback,
-// run-ahead and a loaded state carry on with the laptop as they would have. A state without it
-// leaves the controller as it is.
-// After it, whether the slot's cartridge had taken the system ROM's place.
-size_t laptopAt() {
-	return mixAt() - duckLaptopStateSize() - 1;
-}
-
-void saveLaptop(void* data, size_t length) {
-	if (duckLaptopConnected() && sizeof(gambatte::uint_least32_t) + length <= laptopAt()) {
-		duckLaptopSaveState(static_cast<uint8_t*>(data) + laptopAt());
-		static_cast<uint8_t*>(data)[laptopAt() + duckLaptopStateSize()] = laptopSlotIn;
-	}
-}
-
-// Whether a state has the laptop's part.
-bool hasLaptop(const void* data, size_t size) {
-	if (!duckLaptopConnected() || size < s->stateSize || size < sizeof(gambatte::uint_least32_t)) {
-		return false;
-	}
-	gambatte::uint_least32_t length;
-	std::memcpy(&length, data, sizeof(length));
-	length &= ~0x80000000u;
-	return sizeof(length) + length <= laptopAt();
-}
-
-void loadLaptop(const void* data, size_t size) {
-	if (hasLaptop(data, size)) {
-		duckLaptopLoadState(static_cast<const uint8_t*>(data) + laptopAt());
-	}
-}
-
-// The output capacitor's charge, just before the laptop's controller, as 64-bit samples x 0x10000, as
-// it was first kept. Older states have zeros there: an uncharged capacitor. Netplay's have zeros too,
-// as the charge depends on each player's audio settings, and loading one keeps the charge as it is.
-size_t capacitorAt() {
-	return laptopAt() - 2 * sizeof(int64_t);
-}
-
-// Channel Selection: what's heard isn't in states, so where one is made, it's noted by the state's
-// bytes, for a load of the same point (run-ahead loads the state it just made, netplay those of
-// the last frames); another load picks up from the console's sound.
-enum { HEARD_SAVED = 32 };
-struct HeardSaved {
-	const Console* console;
-	uint64_t key;
-	long left;
-	long right;
-	int32_t capacitor[2];
-	gambatte::uint_least32_t sum;
-};
-HeardSaved heardSaved[HEARD_SAVED];
-unsigned heardSavedNext;
-
-uint64_t stateKey(const void* data) {
-	gambatte::uint_least32_t length;
-	std::memcpy(&length, data, sizeof(length));
-	length &= ~0x80000000u;
-	const unsigned char* bytes = static_cast<const unsigned char*>(data) + sizeof(length);
-	uint64_t key = 1469598103934665603ull;
-	for (gambatte::uint_least32_t i = 0; i < length; ++i) {
-		key = (key ^ bytes[i]) * 1099511628211ull;
-	}
-	return key;
-}
-
-void saveHeard(const void* data) {
-	if (!channelsMuted) {
-		return;
-	}
-	HeardSaved& saved = heardSaved[heardSavedNext++ % HEARD_SAVED];
-	saved.console = s;
-	saved.key = stateKey(data);
-	bool const apart = s->heardApart;
-	saved.left = apart ? s->heardLeft : s->sumLeft;
-	saved.right = apart ? s->heardRight : s->sumRight;
-	saved.capacitor[0] = apart ? s->heardCapacitor[0] : s->capacitor[0];
-	saved.capacitor[1] = apart ? s->heardCapacitor[1] : s->capacitor[1];
-	saved.sum = s->gb->heardSum();
-}
-
-void loadHeard(const void* data) {
-	s->heardLeft = s->sumLeft;
-	s->heardRight = s->sumRight;
-	s->heardCapacitor[0] = s->capacitor[0];
-	s->heardCapacitor[1] = s->capacitor[1];
-	s->heardApart = true;
-	if (!channelsMuted) {
-		return;
-	}
-	uint64_t const key = stateKey(data);
-	for (int i = 0; i < HEARD_SAVED; ++i) {
-		if (heardSaved[i].console == s && heardSaved[i].key == key) {
-			s->heardLeft = heardSaved[i].left;
-			s->heardRight = heardSaved[i].right;
-			s->heardCapacitor[0] = heardSaved[i].capacitor[0];
-			s->heardCapacitor[1] = heardSaved[i].capacitor[1];
-			s->gb->setHeardSum(heardSaved[i].sum);
-			return;
-		}
-	}
-}
-
-void saveCapacitor(void* data, size_t length) {
-	if (sizeof(gambatte::uint_least32_t) + length <= capacitorAt()) {
-		int64_t const saved[2] = { netplayStates ? 0 : static_cast<int64_t>(s->capacitor[0]) * 256, netplayStates ? 0 : static_cast<int64_t>(s->capacitor[1]) * 256 };
-		std::memcpy(static_cast<char*>(data) + capacitorAt(), saved, sizeof(saved));
-	}
-}
-
-void loadCapacitor(const void* data, size_t size) {
-	if (netplayStates) {
-		return;
-	}
-	gambatte::uint_least32_t length;
-	std::memcpy(&length, data, sizeof(length));
-	length &= ~0x80000000u;
-	if (size >= s->stateSize && sizeof(length) + length <= capacitorAt()) {
-		int64_t saved[2];
-		std::memcpy(saved, static_cast<const char*>(data) + capacitorAt(), sizeof(saved));
-		s->capacitor[0] = static_cast<int32_t>(saved[0] / 256);
-		s->capacitor[1] = static_cast<int32_t>(saved[1] / 256);
-	} else {
-		s->capacitor[0] = s->capacitor[1] = 0;
-	}
-}
-
-void savePrinter(void* data, size_t length) {
-	if (s == &consoles[0] && sizeof(gambatte::uint_least32_t) + length <= printerAt()) {
-		std::memcpy(static_cast<char*>(data) + printerAt(), &printer, sizeof(printer));
-	}
-}
-
-void loadPrinter(const void* data, size_t size) {
-	if (s != &consoles[0]) {
-		return;
-	}
-	gambatte::uint_least32_t length;
-	std::memcpy(&length, data, sizeof(length));
-	length &= ~0x80000000u;
-	if (size >= s->stateSize && sizeof(length) + length <= printerAt()) {
-		std::memcpy(&printer, static_cast<const char*>(data) + printerAt(), sizeof(printer));
-	} else {
-		printerReset(&printer);
-	}
-}
-
-bool saveExact(void* data) {
-	bool const shades = !s->gb->isCgb() || (s->loadFlags & gambatte::GB::NO_BIOS);
-	for (int i = 0; shades && i < 12; ++i) {
-		s->gb->setDmgPaletteColor(i / 4, i % 4, 0);
-	}
-	gambatte::uint_least32_t const length = static_cast<gambatte::uint_least32_t>(s->gb->exactStateSize());
-	bool const fits = length + sizeof(length) <= s->stateSize;
-	if (fits) {
-		gambatte::uint_least32_t const marked = length | EXACT;
-		std::memcpy(data, &marked, sizeof(marked));
-		s->gb->saveExactState(static_cast<char*>(data) + sizeof(length));
-		std::memset(static_cast<char*>(data) + sizeof(length) + length, 0, s->stateSize - sizeof(length) - length);
-		saveMix(data, length);
-		saveCapacitor(data, length);
-		saveLaptop(data, length);
-		savePrinter(data, length);
-		saveHeard(data);
-	}
-	setColors();
-	return fits;
-}
-
-// Saves the state's length, then the state.
 bool saveOne(void* data, size_t size) {
-	if (s->armgb) {
-		if (size < armgbStateSize()) {
-			return false;
-		}
-		char* at = static_cast<char*>(data);
-		std::memcpy(at, &ARMGB_STATE, sizeof(ARMGB_STATE));
-		gbSaveState(s->armgb, at + sizeof(ARMGB_STATE));
-		std::memcpy(at + sizeof(ARMGB_STATE) + gbStateSize(), s->capacitor, sizeof(s->capacitor));
-		return true;
-	}
-	if (!s->gb || size < s->stateSize) {
+	if (!s->gb || size < stateSizeOne()) {
 		return false;
 	}
-	if (exactStates) {
-		return saveExact(data);
+	unsigned char* at = static_cast<unsigned char*>(data);
+	std::memset(at, 0, s->stateSize);
+	std::memcpy(at, &STATE_MARK, sizeof(STATE_MARK));
+	at += sizeof(STATE_MARK);
+	gbSaveState(s->gb, at);
+	at += gbStateSize();
+	if (!netplayStates) {
+		std::memcpy(at, s->capacitor, sizeof(s->capacitor));
 	}
-	gambatte::uint_least32_t const length = s->gb->saveState(0, 0, static_cast<char*>(0));
-	if (length + sizeof(length) > size) {
-		return false;
+	at += sizeof(s->capacitor);
+	*at++ = laptopSlotIn;
+	if (duckLaptopConnected()) {
+		duckLaptopSaveState(at);
 	}
-	std::memcpy(data, &length, sizeof(length));
-	s->gb->saveState(0, 0, static_cast<char*>(data) + sizeof(length));
-	// The room left for the state to grow is zero, so the same machine always makes the same state.
-	std::memset(static_cast<char*>(data) + sizeof(length) + length, 0, s->stateSize - sizeof(length) - length);
-	saveMix(data, length);
-	saveCapacitor(data, length);
-	saveLaptop(data, length);
-	savePrinter(data, length);
-	saveHeard(data);
-	return true;
-}
-
-bool readState(const void* data, size_t size) {
-	gambatte::uint_least32_t length;
-	if (size < sizeof(length)) {
-		return false;
+	at += duckLaptopStateSize();
+	if (s == &consoles[0]) {
+		std::memcpy(at, &printer, sizeof(printer));
 	}
-	std::memcpy(&length, data, sizeof(length));
-	const char* const state = static_cast<const char*>(data) + sizeof(length);
-	// An exact state is read straight into the machine, its pointers as offsets, so one of another
-	// size, from another build, is refused before any of it is.
-	if (length & EXACT) {
-		length &= ~EXACT;
-		if (length > size - sizeof(length) || length != s->gb->exactStateSize() || !s->gb->loadExactState(state, length)) {
-			return false;
-		}
-		setColors();
-		return true;
+	at += sizeof(printer);
+	if (s->cheatOn) {
+		gbCheatCartSaveState(&s->cheat, at);
 	}
-	if (length > size - sizeof(length)) {
-		return false;
-	}
-	// A state from another model switches the machine to that model until the next restart. The
-	// state's third byte says whether it ran as a Game Boy Color, and in states that record it
-	// (0x80), whether it ran as a Game Boy Advance. An older Color state counts as Game Boy Advance
-	// when the option asks for one.
-	//
-	// A second instance that a frontend runs ahead with is given each state the first one makes, so
-	// it follows along.
-	bool const header = length >= 3 && static_cast<unsigned char>(state[0]) == 0xFF;
-	unsigned const flags = header ? static_cast<unsigned char>(state[2]) : 0;
-	bool const color = flags & gambatte::GB::CGB_MODE;
-	bool const recorded = flags & 0x80;
-	bool const advance = recorded ? (flags & gambatte::GB::GBA_FLAG) != 0 : s->wanted == LIBRETRO_GB_AGB;
-	bool const machineAdvance = s->loadFlags & gambatte::GB::GBA_FLAG;
-	if (header && (color != s->gb->isCgb() || (color && recorded && advance != machineAdvance))) {
-		LibretroGbModel const was = s->chosen;
-		restartAs(color ? (advance ? LIBRETRO_GB_AGB : LIBRETRO_GB_CGB) : LIBRETRO_GB_DMG);
-		if (!s->gb->loadState(state, length)) {
-			restartAs(was);
-			return false;
-		}
-	} else if (!s->gb->loadState(state, length)) {
-		return false;
-	}
-	// A state holds the shades it was saved with, but the screen should be the one chosen now. It
-	// also holds the clock, so a state loaded before the first frame wins over the .rtc file.
-	setColors();
-	s->rtcPending = false;
 	return true;
 }
 
 // On the device's time, a loaded state leaves the clock as it was, as the Advance's does, except
 // before the first frame, where the state's clock wins over the .rtc file.
 bool loadOne(const void* data, size_t size) {
-	if (s->armgb) {
-		uint32_t mark;
-		const char* at = static_cast<const char*>(data);
-		if (size < armgbStateSize()) {
-			return false;
-		}
-		std::memcpy(&mark, at, sizeof(mark));
-		if (mark != ARMGB_STATE || !gbLoadState(s->armgb, at + sizeof(ARMGB_STATE), gbStateSize())) {
-			return false;
-		}
-		std::memcpy(s->capacitor, at + sizeof(ARMGB_STATE) + gbStateSize(), sizeof(s->capacitor));
-		return true;
-	}
-	if (!s->gb) {
+	if (!s->gb || size < partsSize(*s)) {
 		return false;
 	}
-	gb_ulong clock[11];
-	bool const keepClock = deviceClock && s->gb->hasMbc3Rtc() && !s->rtcPending;
-	if (keepClock) {
-		getClock(*s, clock);
-	}
-	// The ROM the state ran (the system's or the slot cartridge's) goes in first, for its mapper to
-	// take the state's banks.
-	bool const slotWas = laptopSlotIn;
-	if (hasLaptop(data, size)) {
-		laptopSlotAs(static_cast<const uint8_t*>(data)[laptopAt() + duckLaptopStateSize()] & 1);
-	}
-	if (!readState(data, size)) {
-		laptopSlotAs(slotWas);
+	const unsigned char* at = static_cast<const unsigned char*>(data);
+	uint32_t mark;
+	std::memcpy(&mark, at, sizeof(mark));
+	if (mark != STATE_MARK) {
 		return false;
 	}
-	loadMix(data, size);
-	loadCapacitor(data, size);
-	loadHeard(data);
-	loadLaptop(data, size);
-	loadPrinter(data, size);
+	at += sizeof(mark);
+	uint32_t clock[11];
+	bool const keepClock = deviceClock && hasMbc3Clock(*s) && !s->rtcPending;
 	if (keepClock) {
-		setClock(*s, clock);
+		gbRtcGet(s->gb, clock);
 	}
-	setClockSource(*s, deviceClock);
+	// The ROM the state ran (the system's or the slot cartridge's) goes in first, for the state's banks.
+	bool const slot = at[gbStateSize() + sizeof(s->capacitor)] & 1;
+	if (duckLaptopConnected() && !laptopCartridge.empty()) {
+		s->gb->rom = slot ? &laptopCartridge[0] : &s->rom[0];
+		s->gb->romSize = slot ? laptopCartridge.size() : s->rom.size();
+		laptopSlotIn = slot;
+	}
+	GBModel const was = static_cast<GBModel>(s->gb->model);
+	if (!gbLoadState(s->gb, at, gbStateSize())) {
+		return false;
+	}
+	at += gbStateSize();
+	if (!netplayStates) {
+		std::memcpy(s->capacitor, at, sizeof(s->capacitor));
+	}
+	at += sizeof(s->capacitor) + 1;
+	if (duckLaptopConnected()) {
+		duckLaptopLoadState(at);
+	}
+	at += duckLaptopStateSize();
+	if (s == &consoles[0]) {
+		std::memcpy(&printer, at, sizeof(printer));
+	}
+	at += sizeof(printer);
+	if (s->cheatOn) {
+		gbCheatCartLoadState(&s->cheat, at);
+	}
+	s->heardApart = false;
+	s->overDot = 0;
+	// A state from another model runs as that model until the next restart.
+	if (s->gb->model != was) {
+		static const LibretroGbModel models[4] = { LIBRETRO_GB_DMG, LIBRETRO_GB_MGB, LIBRETRO_GB_CGB, LIBRETRO_GB_AGB };
+		s->model = models[s->gb->model & 3];
+		setCapacitor(*s);
+	}
+	setColors();
+	// A state holds the clock, so one loaded before the first frame wins over the .rtc file.
+	s->rtcPending = false;
+	if (keepClock) {
+		gbRtcSet(s->gb, clock);
+	}
+	gbRtcSetRealTime(s->gb, deviceClock);
 	return true;
 }
 
@@ -2335,8 +1797,8 @@ bool loadOne(const void* data, size_t size) {
 
 extern "C" {
 
-void libretroGbExactStates(bool exact) {
-	exactStates = exact;
+// armGB's states are always the whole machine, exactly.
+void libretroGbExactStates(bool) {
 }
 
 void libretroGbNetplayStates(bool netplay) {
@@ -2345,26 +1807,23 @@ void libretroGbNetplayStates(bool netplay) {
 
 // Link cable: the byte this Game Boy shifts out, and one shifted in from the other's transfer.
 int libretroGbLinkOut(void) {
-	return s->gb ? s->gb->linkStatus(LINK_OUT) : 0xFF;
+	return s->gb ? gbLinkStatus(s->gb, GB_LINK_OUT) : 0xFF;
 }
 
 void libretroGbLinkIn(int byte) {
 	if (s->gb) {
-		s->gb->linkStatus(byte & 0xFF);
+		gbLinkStatus(s->gb, byte & 0xFF);
 	}
 }
 
 int libretroGbLinkControl(void) {
-	return s->gb ? s->gb->linkStatus(LINK_CONTROL) : 0;
+	return s->gb ? gbLinkStatus(s->gb, GB_LINK_CONTROL) : 0;
 }
 
 void libretroGbSelect(int which) {
 	s = &consoles[which];
 }
 
-// Real consoles are never in step, and games rely on it: when two try to lead the link at the same
-// moment, Pokemon's handshake never settles. So each console runs a part of a frame behind the one
-// before.
 void libretroGbSetPrinter(bool on, PrinterOutput output) {
 	if (on && !printerOn) {
 		printerReset(&printer);
@@ -2373,6 +1832,9 @@ void libretroGbSetPrinter(bool on, PrinterOutput output) {
 	printed = output;
 }
 
+// Real consoles are never in step, and games rely on it: when two try to lead the link at the same
+// moment, Pokemon's handshake never settles. So each console runs a part of a frame behind the one
+// before.
 void libretroGbSetPlayers(int count, bool withAdapter) {
 	players = count;
 	adapterOn = count > 1 && withAdapter;
@@ -2381,8 +1843,8 @@ void libretroGbSetPlayers(int count, bool withAdapter) {
 		static long const behind[MAX_PLAYERS] = { 0, FRAME_SAMPLES / 2, FRAME_SAMPLES / 4, FRAME_SAMPLES * 3 / 4 };
 		consoles[i].ahead = behind[i];
 		if (consoles[i].gb) {
-			consoles[i].gb->setLinkCallback(count > 1 ? 0 : linkClocked);
-			consoles[i].gb->linkStatus(count > 1 ? LINK_ON : LINK_OFF);
+			consoles[i].gb->linkClocked = count > 1 ? 0 : linkClockedBy;
+			gbLinkStatus(consoles[i].gb, count > 1 ? GB_LINK_ON : GB_LINK_OFF);
 			consoles[i].linked = false;
 		}
 	}
@@ -2399,9 +1861,12 @@ size_t libretroGbStateSize(void) {
 		return stateSizeOne();
 	}
 	size_t size = players * sizeof(int32_t) + sizeof(adapter);
+	Console* const selected = s;
 	for (int i = 0; i < players; ++i) {
-		size += consoles[i].stateSize + sizeof(consoles[i].pixels) + sizeof(consoles[i].shown);
+		s = &consoles[i];
+		size += stateSizeOne() + sizeof(s->pixels) + sizeof(s->shown);
 	}
+	s = selected;
 	return size;
 }
 

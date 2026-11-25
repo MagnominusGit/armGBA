@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  * Licensed under the GNU General Public License, version 2 or (at your option) any later version: see LICENSE. */
 // gbcmp core.so rom frames "frame:button[:hold],...": runs an original Game Boy game on armGB and, as a
-// black box through libretro, on another core (armGBA's own, with its Gambatte core), from power-on
+// black box through libretro, on another core (an armGBA build), from power-on
 // with armGBA's boot ROM and the same buttons, and compares their pictures frame by frame as the four
 // shades. A frame counts as matched if the other core shows the same picture within two frames of it.
 // Prints one line: the cartridge type, frames matched, the first frame matched by neither, and how
@@ -47,7 +47,6 @@ static const struct {
 } options[] = {
 	{ "armgba_gb_boot_rom", "open-source" },
 	{ "armgba_gb_model", "Game Boy" },
-	{ "armgba_gb_core", "gambatte" },
 	{ "armgba_gb_screen", "grayscale" },
 	{ "armgba_gb_contrast", "0" },
 	{ "armgba_gb_color_correction", "disabled" },

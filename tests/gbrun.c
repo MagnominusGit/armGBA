@@ -77,16 +77,21 @@ int main(int argc, char** argv) {
 	}
 	fclose(f);
 	int frames = argc > 2 ? atoi(argv[2]) : 600;
-	enum GBModel model = argc > 3 && !strcmp(argv[3], "cgb") ? GB_MODEL_CGB : GB_MODEL_DMG;
+	// dmg, cgb or agb (the Advance, with its start-up stall); POCKET=1 for the Pocket.
+	enum GBModel model = argc > 3 && !strcmp(argv[3], "cgb") ? GB_MODEL_CGB : argc > 3 && !strcmp(argv[3], "agb") ? GB_MODEL_AGB
+	                   : getenv("POCKET") ? GB_MODEL_MGB : GB_MODEL_DMG;
 	static struct GB gb;
 	// armGBA's own boot ROMs, unless NOBOOT is set.
 	if (!getenv("NOBOOT")) {
-		gb.boot = model == GB_MODEL_CGB ? armgba_cgb_boot : getenv("POCKET") ? armgba_mgb_boot : armgba_dmg_boot;
-		gb.bootSize = model == GB_MODEL_CGB ? sizeof(armgba_cgb_boot) : 256;
+		gb.boot = model == GB_MODEL_CGB ? armgba_cgb_boot : model == GB_MODEL_AGB ? armgba_agb_boot : model == GB_MODEL_MGB ? armgba_mgb_boot : armgba_dmg_boot;
+		gb.bootSize = model >= GB_MODEL_CGB ? 0x900 : 256;
 	}
 	if (!gbLoad(&gb, rom, padded, model)) {
 		fprintf(stderr, "can't load\n");
 		return 2;
+	}
+	if (model == GB_MODEL_AGB && gb.boot) {
+		gbStall(&gb, 971616);
 	}
 	gb.serialOut = serialOut;
 	// CHEAT=program: a cheat cartridge in front of the game (NOGAME=1: with nothing on top).

@@ -138,16 +138,6 @@ if(MGBA_DIR AND MGBA_LIB)
 	target_link_libraries(bench armgba game-mgba ${MGBA_LIB} m pthread z)
 endif()
 
-# Game Boy and Game Boy Color in the libretro core: Gambatte-Speedrun's core (gambatte/, GPL-2.0), which
-# makes the core as a whole GPL-2.0
-file(GLOB_RECURSE GAMBATTE_SOURCES gambatte/libgambatte/src/*.cpp)
-list(FILTER GAMBATTE_SOURCES EXCLUDE REGEX "/(file_zip|cinterface)\\.cpp$|/unzip/")
-add_library(gambatte STATIC ${GAMBATTE_SOURCES})
-target_include_directories(gambatte PUBLIC gambatte/libgambatte/include PRIVATE gambatte/libgambatte/src gambatte/common)
-target_compile_definitions(gambatte PUBLIC HAVE_STDINT_H)
-target_compile_options(gambatte PRIVATE -w -O2 -fno-exceptions -fno-rtti)
-set_target_properties(gambatte PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_STANDARD 11)
-
 # The libretro core
 # RetroArch's archive reading (libretro/deps), for player 2's game in a .zip or .7z.
 file(GLOB_RECURSE ARCHIVE_SOURCES libretro/deps/libretro-common/*.c libretro/deps/7zip/*.c)
@@ -157,7 +147,7 @@ target_compile_definitions(retro-archive PRIVATE HAVE_ZLIB HAVE_7ZIP)
 target_compile_options(retro-archive PRIVATE -w -O2)
 set_target_properties(retro-archive PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-set(LIBRETRO_SOURCES libretro/libretro.c libretro/clock.c libretro/lcd.c libretro/options.c libretro/saves.c libretro/dolphin.c libretro/link.c libretro/games.c libretro/cht.c libretro/gbacheats.c libretro/savefiles.c libretro/patch.c libretro/dmg07.c libretro/ereader.c libretro/printer.c libretro/printout.c libretro/workers.c libretro/gb-gambatte.cpp
+set(LIBRETRO_SOURCES libretro/libretro.c libretro/clock.c libretro/lcd.c libretro/options.c libretro/saves.c libretro/dolphin.c libretro/link.c libretro/games.c libretro/cht.c libretro/gbacheats.c libretro/savefiles.c libretro/patch.c libretro/dmg07.c libretro/ereader.c libretro/printer.c libretro/printout.c libretro/workers.c libretro/gb-armgb.cpp
 	libretro/megaduck/laptop.c libretro/megaduck/megaduck_laptop.c libretro/megaduck/megaduck_laptop_init.c libretro/megaduck/megaduck_laptop_keyboard.c
 	libretro/megaduck/megaduck_laptop_printer.c libretro/megaduck/megaduck_laptop_rtc.c libretro/megaduck/megaduck_laptop_speech.c
 	libretro/megaduck/megaduck_laptop_buffer_receive.c libretro/megaduck/megaduck_laptop_buffer_send.c)
@@ -166,7 +156,7 @@ add_library(armgba_libretro SHARED ${LIBRETRO_SOURCES})
 if(ANDROID)
 	set_target_properties(armgba_libretro PROPERTIES OUTPUT_NAME armgba_libretro_android)
 endif()
-target_link_libraries(armgba_libretro armgba armgb gambatte retro-archive m z)
+target_link_libraries(armgba_libretro armgba armgb retro-archive m z)
 # A toolchain file may leave C++ without an optimisation level
 target_compile_options(armgba_libretro PRIVATE -O2)
 set_target_properties(armgba_libretro PROPERTIES PREFIX "")
@@ -180,7 +170,7 @@ if(ARMGBA_SDL)
 	file(GLOB HOOK_SOURCES app/*.c)
 	armulators_app(armgba-sdl DESCRIPTOR ${CMAKE_CURRENT_SOURCE_DIR}/app.cmake
 		SOURCES ${LIBRETRO_SOURCES} ${HOOK_SOURCES} INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/libretro
-		LIBS armgba gambatte ARCHIVE retro-archive)
+		LIBS armgba armgb ARCHIVE retro-archive)
 endif()
 
 # gbsync: armGB against SameBoy, an instruction at a time: -DSAMEBOY_DIR=<SameBoy source tree>

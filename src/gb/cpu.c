@@ -803,7 +803,7 @@ void gbCpuRun(struct GB* gb, uint32_t until) {
 	}
 }
 
-// The CPU Clock above 100% (armGBA's, as its Gambatte-based core had it): an M-cycle takes 16 / quarters
+// The CPU Clock above 100% (armGBA's): an M-cycle takes 16 / quarters
 // of the console's T-cycles, the part left over carried to the next; in double speed the CPU moves a
 // whole dot at a time and goes no faster than 200%, as the picture can't take more than one of its
 // accesses in a dot. The rest of the console keeps its own pace. For two lines after a read of STAT or

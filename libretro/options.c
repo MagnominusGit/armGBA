@@ -154,11 +154,6 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "The console Game Boy games run on. On the Advance, L or R stretches the picture. Applies on Restart.",
 	  NULL, "system",
 	  { { "Auto", NULL }, { "Game Boy", NULL }, { "Game Boy Pocket", "Game Boy Pocket / Light" }, { "Game Boy Color", NULL }, { "Game Boy Advance", NULL }, { NULL, NULL } }, "Auto" },
-	{ "armgba_gb_core", "Game Boy Core", NULL,
-	  "Which emulator runs Game Boy and Game Boy Color games: armGBA's own armGB, which is faster, or Gambatte. "
-	  "The Game Boy Advance model, the Mega Duck, cheat cartridges, linked consoles, a CPU Clock other than 100% "
-	  "and a few cartridges stay on Gambatte. Applies on Restart.",
-	  NULL, "system", { { "armgb", "armGB" }, { "gambatte", "Gambatte" }, { NULL, NULL } }, "armgb" },
 	{ "armgba_gb_boot_rom", "Game Boy Boot ROM", NULL,
 	  "The start-up logo: Nintendo's boot ROM (else armGBA's), armGBA's, or none. Applies on Restart.",
 	  NULL, "system",
@@ -651,7 +646,6 @@ bool showOptions(void) {
 		{ "armgba_motion_rotation", ((!gameBoy && !advance) || devices & HW_TILT || (gameBoy && tiltCartridge)) && optionIs("armgba_gb_tilt", "device") },
 		{ "armgba_link_port", !gameBoy && linked },
 		{ "armgba_gb_model", !advance && !megaDuckGame },
-		{ "armgba_gb_core", !advance && !megaDuckGame },
 		{ "armgba_gb_boot_rom", !advance && !megaDuckGame },
 		{ "armgba_megaduck_laptop", megaDuckGame },
 		{ "armgba_megaduck_printer", megaDuckGame },
