@@ -19,6 +19,8 @@ void sbLoad(int cgb, const uint8_t* boot, size_t bootSize, const uint8_t* rom, s
 	GB_set_async_input_callback(&gb, NULL);
 	GB_set_log_callback(&gb, quietLog);
 	GB_set_turbo_mode(&gb, true, true);
+	// The clock counts the console's time, as armGB's Game Time.
+	GB_set_rtc_mode(&gb, GB_RTC_MODE_ACCURATE);
 	GB_load_boot_rom_from_buffer(&gb, boot, bootSize);
 	GB_load_rom_from_buffer(&gb, rom, romSize);
 	GB_reset(&gb);

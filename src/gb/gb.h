@@ -213,6 +213,21 @@ struct GBCgb {
 	bool hdmaHblank;
 };
 
+// MBC3's clock: seconds, minutes, hours, the day's low 8 bits and DH (day bit 8, halt, day carry), as
+// they count and as last latched; the time into the current second, GB_RTC_SECOND to a second; and how
+// far it has counted: in the console's time (Game Time), or the device's (Real Time).
+enum { GB_RTC_SECOND = 0x400000 };
+
+struct GBRtc {
+	uint8_t regs[5];
+	uint8_t latched[5];
+	uint32_t ticks;
+	uint32_t lastSync;
+	// Game Time at a Clock Speed: hundredths of a tick left over.
+	uint32_t fraction;
+	int64_t lastHost;
+};
+
 struct GBCart {
 	uint8_t mapper;
 	bool hasRam, hasBattery, hasRtc;
@@ -226,6 +241,7 @@ struct GBCart {
 	bool mbc1Multicart;
 	uint32_t romBanks;
 	uint32_t ramSize;
+	struct GBRtc rtc;
 };
 
 struct GB {
@@ -290,6 +306,11 @@ struct GB {
 	// Serial bytes shifted out with no partner, for the test runner.
 	void (*serialOut)(void* user, uint8_t byte);
 	void* user;
+	// The clock's source, set by the frontend: the device's time (in microseconds, given each frame)
+	// or the console's, at rtcPercent of its speed.
+	bool rtcRealTime;
+	uint16_t rtcPercent;
+	int64_t hostMicros;
 };
 
 // gb.c
@@ -357,6 +378,12 @@ bool gbCartInit(struct GB*);
 void gbCartWrite(struct GB*, uint16_t address, uint8_t value);
 uint8_t gbCartReadRam(struct GB*, uint16_t address);
 void gbCartWriteRam(struct GB*, uint16_t address, uint8_t value);
+void gbRtcSync(struct GB*);
+// The clock as 11 values: DH, DL, H, M, S, the ticks into the second, then the latched DH to S.
+void gbRtcGet(struct GB*, uint32_t r[11]);
+void gbRtcSet(struct GB*, const uint32_t r[11]);
+void gbRtcSetSpeed(struct GB*, unsigned percent);
+void gbRtcSetRealTime(struct GB*, bool on);
 
 static inline int32_t gbSince(uint32_t now, uint32_t then) {
 	return (int32_t) (now - then);

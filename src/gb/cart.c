@@ -14,6 +14,8 @@ bool gbCartInit(struct GB* gb) {
 	struct GBCart* cart = &gb->cart;
 	const uint8_t* rom = gb->rom;
 	memset(cart, 0, sizeof(*cart));
+	cart->rtc.lastSync = gb->now;
+	cart->rtc.lastHost = gb->hostMicros;
 	// Cartridge RAM with no save yet reads as all 1s, as other emulators start it.
 	memset(gb->sram, 0xFF, sizeof(gb->sram));
 	uint8_t type = rom[0x147];
@@ -125,6 +127,11 @@ void gbCartWrite(struct GB* gb, uint16_t address, uint8_t value) {
 			cart->ramBank = value;
 			break;
 		default:
+			// Any write latches the clock (SameBoy's MBC3).
+			if (cart->hasRtc) {
+				gbRtcSync(gb);
+				memcpy(cart->rtc.latched, cart->rtc.regs, sizeof(cart->rtc.latched));
+			}
 			break;
 		}
 		break;
@@ -171,7 +178,103 @@ static int32_t ramOffset(const struct GB* gb, uint16_t address) {
 	return (cart->ramBank * 0x2000 + (address & 0x1FFF)) & (cart->ramSize - 1);
 }
 
+// MBC3's clock (Pan Docs, "MBC3"; SameBoy): registers 6, 6, 5, 8 and 3 bits wide. A field past its
+// range counts up to its last value and wraps to 0 without a carry; past 511 days the day counter wraps
+// and sets the carry bit, which stays until written. Writing the seconds restarts the second.
+static const uint8_t rtcMasks[5] = { 0x3F, 0x3F, 0x1F, 0xFF, 0xC1 };
+
+static bool rtcSelected(const struct GB* gb) {
+	const struct GBCart* cart = &gb->cart;
+	return cart->mapper == GB_MBC3 && cart->hasRtc && cart->ramBank >= 0x08 && cart->ramBank <= 0x0C;
+}
+
+static void rtcAdvance(struct GBRtc* rtc, uint64_t seconds) {
+	static const uint8_t limits[3] = { 60, 60, 24 };
+	static const uint8_t ends[3] = { 64, 64, 32 };
+	uint64_t carry = seconds;
+	for (int i = 0; i < 3 && carry; ++i) {
+		uint8_t* value = &rtc->regs[i];
+		if (*value >= limits[i]) {
+			if (carry < (uint64_t) (ends[i] - *value)) {
+				*value += carry;
+				return;
+			}
+			carry -= ends[i] - *value;
+			*value = 0;
+		}
+		uint64_t total = *value + carry;
+		*value = total % limits[i];
+		carry = total / limits[i];
+	}
+	if (!carry) {
+		return;
+	}
+	uint64_t days = ((rtc->regs[4] & 1) << 8 | rtc->regs[3]) + carry;
+	if (days > 511) {
+		rtc->regs[4] |= 0x80;
+	}
+	rtc->regs[3] = days & 0xFF;
+	rtc->regs[4] = (rtc->regs[4] & 0xFE) | (days >> 8 & 1);
+}
+
+void gbRtcSync(struct GB* gb) {
+	struct GBRtc* rtc = &gb->cart.rtc;
+	uint64_t ticks;
+	if (gb->rtcRealTime) {
+		int64_t micros = gb->hostMicros - rtc->lastHost;
+		ticks = micros > 0 ? (uint64_t) micros * GB_RTC_SECOND / 1000000 : 0;
+	} else {
+		uint64_t parts = (uint64_t) (uint32_t) (gb->now - rtc->lastSync) * gb->rtcPercent + rtc->fraction;
+		ticks = parts / 100;
+		rtc->fraction = parts % 100;
+	}
+	rtc->lastSync = gb->now;
+	rtc->lastHost = gb->hostMicros;
+	if (rtc->regs[4] & 0x40) {
+		return;
+	}
+	ticks += rtc->ticks;
+	rtc->ticks = ticks % GB_RTC_SECOND;
+	rtcAdvance(rtc, ticks / GB_RTC_SECOND);
+}
+
+void gbRtcGet(struct GB* gb, uint32_t r[11]) {
+	struct GBRtc* rtc = &gb->cart.rtc;
+	gbRtcSync(gb);
+	for (int i = 0; i < 5; ++i) {
+		r[4 - i] = rtc->regs[i];
+		r[10 - i] = rtc->latched[i];
+	}
+	r[5] = rtc->ticks;
+}
+
+void gbRtcSet(struct GB* gb, const uint32_t r[11]) {
+	struct GBRtc* rtc = &gb->cart.rtc;
+	for (int i = 0; i < 5; ++i) {
+		rtc->regs[i] = r[4 - i] & rtcMasks[i];
+		rtc->latched[i] = r[10 - i] & rtcMasks[i];
+	}
+	rtc->ticks = r[5] % GB_RTC_SECOND;
+	rtc->fraction = 0;
+	rtc->lastSync = gb->now;
+	rtc->lastHost = gb->hostMicros;
+}
+
+void gbRtcSetSpeed(struct GB* gb, unsigned percent) {
+	gbRtcSync(gb);
+	gb->rtcPercent = percent;
+}
+
+void gbRtcSetRealTime(struct GB* gb, bool on) {
+	gbRtcSync(gb);
+	gb->rtcRealTime = on;
+	gb->cart.rtc.lastHost = gb->hostMicros;
+}
+
 uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
+	if (rtcSelected(gb)) {
+		return gb->cart.ramEnabled ? gb->cart.rtc.latched[gb->cart.ramBank - 0x08] : 0xFF;
+	}
 	int32_t offset = ramOffset(gb, address);
 	if (offset < 0) {
 		return 0xFF;
@@ -183,6 +286,19 @@ uint8_t gbCartReadRam(struct GB* gb, uint16_t address) {
 }
 
 void gbCartWriteRam(struct GB* gb, uint16_t address, uint8_t value) {
+	if (rtcSelected(gb)) {
+		if (gb->cart.ramEnabled) {
+			struct GBRtc* rtc = &gb->cart.rtc;
+			unsigned reg = gb->cart.ramBank - 0x08;
+			gbRtcSync(gb);
+			rtc->regs[reg] = value & rtcMasks[reg];
+			if (reg == 0) {
+				rtc->ticks = 0;
+				rtc->fraction = 0;
+			}
+		}
+		return;
+	}
 	int32_t offset = ramOffset(gb, address);
 	if (offset >= 0) {
 		gb->sram[offset] = gb->cart.mapper == GB_MBC2 ? value & 0xF : value;

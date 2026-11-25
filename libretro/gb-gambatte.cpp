@@ -24,6 +24,7 @@ extern "C" {
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <chrono>
 #include <ctime>
 #include <string>
 #include <vector>
@@ -414,6 +415,52 @@ bool mgbaFile(const unsigned char* file, unsigned long long now) {
 	return saved >= SANE_TIME / 2 && saved <= now + 366 * 86400ull;
 }
 
+// The clock of a console's cartridge, as Gambatte keeps its registers: armGB's when armGB runs the
+// game (Gambatte's machine beside it keeps the same), else Gambatte's.
+void getClock(Console& c, gb_ulong r[11]) {
+	if (c.armgb) {
+		uint32_t v[11];
+		gbRtcGet(c.armgb, v);
+		for (int i = 0; i < 11; ++i) {
+			r[i] = v[i];
+		}
+		return;
+	}
+	c.gb->getRtcRegs(r);
+}
+
+void setClock(Console& c, gb_ulong r[11]) {
+	if (c.armgb) {
+		uint32_t v[11];
+		for (int i = 0; i < 11; ++i) {
+			v[i] = r[i];
+		}
+		gbRtcSet(c.armgb, v);
+	}
+	c.gb->setRtcRegs(r);
+}
+
+void setClockSpeed(Console& c, unsigned percent) {
+	if (c.armgb) {
+		gbRtcSetSpeed(c.armgb, percent);
+	}
+	c.gb->setRtcSpeed(percent);
+}
+
+void setClockSource(Console& c, bool device) {
+	if (c.armgb) {
+		gbRtcSetRealTime(c.armgb, device);
+	}
+	if (c.gb->deviceTime() != device) {
+		c.gb->setDeviceTime(device);
+	}
+}
+
+// The device's time for armGB's clock, in microseconds.
+int64_t deviceMicros() {
+	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 // Loads the clock from the .rtc file, armGBA's, mGBA's or gambatte-libretro's, and advances it by the
 // time the game was off, when the host clock can tell, except in Game Time.
 void readRtcFile() {
@@ -489,7 +536,7 @@ void readRtcFile() {
 		runClock(r, now - saved);
 	}
 	moveBy(*s, r, clockOffset);
-	s->gb->setRtcRegs(r);
+	setClock(*s, r);
 }
 
 void writeRtcFile() {
@@ -506,7 +553,7 @@ void writeRtcFile() {
 		return;
 	}
 	gb_ulong r[11];
-	s->gb->getRtcRegs(r);
+	getClock(*s, r);
 	unsigned long long const shown = (((((r[RTC_DH] & 1) << 8 | r[RTC_DL]) * 24 + r[RTC_H]) * 60
 	                                  + r[RTC_M]) * 60 + r[RTC_S]);
 	put64(file + RTC_BASE, now - shown);
@@ -808,13 +855,13 @@ void dropArmgb() {
 	s->armgb = 0;
 }
 
-// The cartridges armGB knows: none, MBC1, MBC2, MBC3 without its clock, MBC5.
+// The cartridges armGB knows: none, MBC1, MBC2, MBC3 with or without its clock, MBC5.
 bool armgbCartridge(const unsigned char* bytes, size_t size) {
 	if (size < 0x150) {
 		return false;
 	}
 	switch (bytes[0x147]) {
-	case 0x00: case 0x01: case 0x02: case 0x03: case 0x05: case 0x06: case 0x08: case 0x09:
+	case 0x00: case 0x01: case 0x02: case 0x03: case 0x05: case 0x06: case 0x08: case 0x09: case 0x0F: case 0x10:
 	case 0x11: case 0x12: case 0x13: case 0x19: case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1E:
 		return true;
 	default:
@@ -842,6 +889,9 @@ void startArmgb(std::vector<unsigned char> const& boot, bool color) {
 	}
 	s->armgb->video = reinterpret_cast<uint32_t*>(s->pixels);
 	s->armgb->videoTable = cgbColors;
+	s->armgb->hostMicros = deviceMicros();
+	s->armgb->rtcRealTime = deviceClock;
+	s->armgb->rtcPercent = clockPercent;
 	for (int i = 0; i < 4; ++i) {
 		s->armgb->videoColors[i] = asShown(shown[i]);
 	}
@@ -1056,7 +1106,7 @@ void restartAs(LibretroGbModel model) {
 	gb_ulong clock[11];
 	unsigned char huc3[HUC3_STATE];
 	if (s->gb->hasMbc3Rtc()) {
-		s->gb->getRtcRegs(clock);
+		getClock(*s, clock);
 	} else if (s->gb->hasHuC3()) {
 		s->gb->getHuC3Regs(huc3);
 	}
@@ -1070,7 +1120,7 @@ void restartAs(LibretroGbModel model) {
 		std::memcpy(now, &kept[0], size);
 	}
 	if (s->gb->hasMbc3Rtc() && !s->rtcPending) {
-		s->gb->setRtcRegs(clock);
+		setClock(*s, clock);
 	} else if (s->gb->hasHuC3() && !s->rtcPending) {
 		s->gb->setHuC3Regs(huc3);
 	}
@@ -1382,6 +1432,7 @@ void runArmgb() {
 	}
 	gb->videoColors[4] = asShown(screens[screen].off);
 	gb->keys = s->pressed;
+	gb->hostMicros = deviceMicros();
 	gbRunFrame(gb);
 	for (uint32_t i = 0; i + 1 < gb->audioCount && s->sampleCount + 2 <= sizeof(s->samples) / sizeof(s->samples[0]); i += 2) {
 		throughOutput(s->capacitor, gb->audio[i], gb->audio[i + 1], gb->audioDacs[i / 2], &s->samples[s->sampleCount]);
@@ -1703,12 +1754,12 @@ void libretroGbSetClock(bool timeOfGame, unsigned percent, long long offset) {
 		if (!c.gb) {
 			continue;
 		}
-		c.gb->setRtcSpeed(clockPercent);
+		setClockSpeed(c, clockPercent);
 		if (c.gb->hasMbc3Rtc() && !c.rtcPending && c.clockMoved != offset) {
 			gb_ulong r[11];
-			c.gb->getRtcRegs(r);
+			getClock(c, r);
 			moveBy(c, r, offset);
-			c.gb->setRtcRegs(r);
+			setClock(c, r);
 		}
 	}
 }
@@ -1716,8 +1767,8 @@ void libretroGbSetClock(bool timeOfGame, unsigned percent, long long offset) {
 void libretroGbDeviceTime(bool on) {
 	deviceClock = on;
 	for (int i = 0; i < MAX_PLAYERS; ++i) {
-		if (consoles[i].gb && consoles[i].gb->deviceTime() != on) {
-			consoles[i].gb->setDeviceTime(on);
+		if (consoles[i].gb) {
+			setClockSource(consoles[i], on);
 		}
 	}
 }
@@ -1729,7 +1780,7 @@ bool libretroGbResetClock(void) {
 		if (c.gb && c.gb->hasMbc3Rtc()) {
 			gb_ulong r[11] = { 0 };
 			r[RTC_DH] = r[RTC_DH + RTC_LATCHED] = 0x40;
-			c.gb->setRtcRegs(r);
+			setClock(c, r);
 			c.rtcPending = false;
 			c.clockMoved = clockOffset;
 			c.clockShort = 0;
@@ -2230,7 +2281,7 @@ bool loadOne(const void* data, size_t size) {
 	gb_ulong clock[11];
 	bool const keepClock = deviceClock && s->gb->hasMbc3Rtc() && !s->rtcPending;
 	if (keepClock) {
-		s->gb->getRtcRegs(clock);
+		getClock(*s, clock);
 	}
 	// The ROM the state ran (the system's or the slot cartridge's) goes in first, for its mapper to
 	// take the state's banks.
@@ -2248,9 +2299,9 @@ bool loadOne(const void* data, size_t size) {
 	loadLaptop(data, size);
 	loadPrinter(data, size);
 	if (keepClock) {
-		s->gb->setRtcRegs(clock);
+		setClock(*s, clock);
 	}
-	s->gb->setDeviceTime(deviceClock);
+	setClockSource(*s, deviceClock);
 	return true;
 }
 

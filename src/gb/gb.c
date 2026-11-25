@@ -249,6 +249,8 @@ bool gbLoadState(struct GB* gb, const void* data, size_t size) {
 	}
 	memcpy(gb, data, gbStateSize());
 	gbMapRom(gb);
+	// The device's time goes on from now, not from when the state was saved.
+	gb->cart.rtc.lastHost = gb->hostMicros;
 	// A frontend's picture isn't in a state: blank while the screen shows nothing, else redrawn by
 	// the next frame.
 	if (gb->video && (!(gb->ppu.lcdc & 0x80) || gb->ppu.hiddenFrame)) {
@@ -265,6 +267,9 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	size_t bootSize = gb->bootSize;
 	uint32_t* video = gb->video;
 	const uint32_t* videoTable = gb->videoTable;
+	bool rtcRealTime = gb->rtcRealTime;
+	unsigned rtcPercent = gb->rtcPercent ? gb->rtcPercent : 100;
+	int64_t hostMicros = gb->hostMicros;
 	uint32_t videoColors[5];
 	memcpy(videoColors, gb->videoColors, sizeof(videoColors));
 	memset(gb, 0, sizeof(*gb));
@@ -272,6 +277,9 @@ bool gbLoad(struct GB* gb, const uint8_t* rom, size_t size, enum GBModel model) 
 	gb->bootSize = bootSize;
 	gb->video = video;
 	gb->videoTable = videoTable;
+	gb->rtcRealTime = rtcRealTime;
+	gb->rtcPercent = rtcPercent;
+	gb->hostMicros = hostMicros;
 	memcpy(gb->videoColors, videoColors, sizeof(videoColors));
 	gb->rom = rom;
 	gb->romSize = size;
@@ -296,4 +304,8 @@ void gbRunFrame(struct GB* gb) {
 		}
 	}
 	gbApuSync(gb);
+	// The clock counts in a time that wraps after some minutes: up to date every frame.
+	if (gb->cart.hasRtc) {
+		gbRtcSync(gb);
+	}
 }
