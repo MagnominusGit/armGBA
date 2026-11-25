@@ -35,13 +35,7 @@ static inline void CPU(write8)(struct GB* gb, uint16_t address, uint8_t value) {
 
 static inline uint8_t CPU(fetch)(struct GB* gb) {
 	struct GBCpu* cpu = &gb->cpu;
-	uint8_t value = CPU(read8)(gb, cpu->pc);
-	if (cpu->haltBug) {
-		cpu->haltBug = false;
-	} else {
-		++cpu->pc;
-	}
-	return value;
+	return CPU(read8)(gb, cpu->pc++);
 }
 
 static inline uint16_t CPU(fetch16)(struct GB* gb) {
@@ -196,9 +190,8 @@ static void CPU(dispatch)(struct GB* gb) {
 	CPU(tick)(gb);
 }
 
-static void CPU(step)(struct GB* gb) {
+static inline __attribute__((always_inline)) void CPU(step)(struct GB* gb, uint8_t op) {
 	struct GBCpu* cpu = &gb->cpu;
-	uint8_t op = CPU(fetch)(gb);
 	switch (op) {
 	case 0x00: // NOP
 		break;
@@ -614,11 +607,18 @@ static void CPU(run)(struct GB* gb, uint32_t until) {
 			cpu->ime = true;
 			gb->attention = true;
 		}
-		CPU(step)(gb);
-		gb->eiJustTaken = false;
+		// The halt bug: the first fetch doesn't move PC.
+		bool haltBug = cpu->haltBug;
+		cpu->haltBug = false;
 		// Then on without the checks above while nothing needs them and no event is due.
-		while (!gb->attention && gbSince(until, gb->now) > 0 && gbSince(gb->nextEvent, gb->now) > 0) {
-			CPU(step)(gb);
-		}
+		do {
+			uint8_t op = CPU(fetch)(gb);
+			if (__builtin_expect(haltBug, 0)) {
+				--cpu->pc;
+				haltBug = false;
+			}
+			CPU(step)(gb, op);
+			gb->eiJustTaken = false;
+		} while (!gb->attention && gbSince(until, gb->now) > 0 && gbSince(gb->nextEvent, gb->now) > 0);
 	}
 }

@@ -49,13 +49,26 @@ static void stopChannel(struct GBChannel* ch) {
 	ch->level = 0;
 }
 
-// Where a channel's output goes: the sums of the samples (bucket 0 is the sample being built), the
-// bucket the time has reached, and when that bucket ends.
+// Where a channel's output goes: each sample's mixed sums (left, right, and with channels left out
+// those heard: sample 0 is the one being built), the channel's weight in each, the sample the time
+// has reached, and when that sample ends.
 struct Spans {
-	int32_t* sums;
+	int32_t (*sums)[4];
+	int32_t weight[4];
+	int outputs;
 	uint32_t bucket;
 	uint32_t boundary;
 };
+
+static inline void addWeighted(struct Spans* spans, int32_t amount) {
+	int32_t* sums = spans->sums[spans->bucket];
+	sums[0] += amount * spans->weight[0];
+	sums[1] += amount * spans->weight[1];
+	if (spans->outputs > 2) {
+		sums[2] += amount * spans->weight[2];
+		sums[3] += amount * spans->weight[3];
+	}
+}
 
 // Adds v over the dots from t to end.
 static inline void addSpan(struct Spans* spans, uint32_t t, uint32_t end, int32_t v) {
@@ -63,12 +76,12 @@ static inline void addSpan(struct Spans* spans, uint32_t t, uint32_t end, int32_
 		return;
 	}
 	while (gbSince(end, spans->boundary) > 0) {
-		spans->sums[spans->bucket] += v * (int32_t) (spans->boundary - t);
+		addWeighted(spans, v * (int32_t) (spans->boundary - t));
 		t = spans->boundary;
 		++spans->bucket;
 		spans->boundary += SAMPLE_DOTS;
 	}
-	spans->sums[spans->bucket] += v * (int32_t) (end - t);
+	addWeighted(spans, v * (int32_t) (end - t));
 }
 
 // A channel's DAC output, -15 to 15.
@@ -287,8 +300,8 @@ static void runSweep(struct GB* gb, uint32_t cycles, uint32_t end) {
 	apu->restartHold = apu->restartHold > cycles ? apu->restartHold - cycles : 0;
 }
 
-// The sound from the last sync to end: each channel on its own over the whole stretch, then the
-// samples mixed from their sums. A stretch is at most a frame or a frame sequencer step long.
+// The sound from the last sync to end: each channel on its own over the whole stretch, mixed into the
+// samples as it goes. A stretch is at most a frame or a frame sequencer step long.
 static void render(struct GB* gb, uint32_t end) {
 	struct GBApu* apu = &gb->apu;
 	enum { MAX_SAMPLES = 1024 };
@@ -311,81 +324,55 @@ static void render(struct GB* gb, uint32_t end) {
 		if (apu->power) {
 			runSweep(gb, cycles, stop);
 		}
-		static int32_t sums[4][MAX_SAMPLES];
-		struct Spans spans[4];
-		struct GBChannel* chs[4] = { &apu->square[0], &apu->square[1], &apu->wave, &apu->noise };
-		for (int i = 0; i < 4; ++i) {
-			memset(sums[i], 0, (complete + 1) * sizeof(int32_t));
-			spans[i].sums = sums[i];
-			spans[i].bucket = (t - apu->sampleStart) / SAMPLE_DOTS;
-			spans[i].boundary = apu->sampleStart + (spans[i].bucket + 1) * SAMPLE_DOTS;
-		}
-		runSquare(gb, 0, t, cycles, chs[0]->dac ? &spans[0] : NULL);
-		runSquare(gb, 1, t, cycles, chs[1]->dac ? &spans[1] : NULL);
-		runWave(gb, t, cycles, chs[2]->dac ? &spans[2] : NULL);
-		runNoise(gb, t, cycles, chs[3]->dac ? &spans[3] : NULL);
+		// Each channel added straight into the mix: by NR51 to each side, at NR50's volumes; with channels
+		// left out, also into what's heard.
 		uint8_t nr51 = *reg(gb, 0x25);
 		uint8_t nr50 = *reg(gb, 0x24);
 		int32_t leftVolume = (nr50 >> 4 & 7) + 1;
 		int32_t rightVolume = (nr50 & 7) + 1;
-		// Mixed as they stand now; the sample being built carries over what it has, mixed as it was. A
-		// sample is the mean over its 128 dots, times 64: all four channels at full volume reach 30720.
 		uint8_t muted = gb->channelsMuted;
+		static int32_t mix[MAX_SAMPLES][4];
+		memset(mix, 0, (complete + 1) * sizeof(mix[0]));
+		struct Spans spans[4];
+		struct Spans* out[4];
+		struct GBChannel* chs[4] = { &apu->square[0], &apu->square[1], &apu->wave, &apu->noise };
+		for (int i = 0; i < 4; ++i) {
+			struct Spans* sp = &spans[i];
+			sp->sums = mix;
+			sp->outputs = muted ? 4 : 2;
+			sp->weight[0] = nr51 >> (4 + i) & 1 ? leftVolume : 0;
+			sp->weight[1] = nr51 >> i & 1 ? rightVolume : 0;
+			sp->weight[2] = muted >> i & 1 ? 0 : sp->weight[0];
+			sp->weight[3] = muted >> i & 1 ? 0 : sp->weight[1];
+			sp->bucket = (t - apu->sampleStart) / SAMPLE_DOTS;
+			sp->boundary = apu->sampleStart + (sp->bucket + 1) * SAMPLE_DOTS;
+			out[i] = chs[i]->dac && (sp->weight[0] || sp->weight[1]) ? sp : NULL;
+		}
+		runSquare(gb, 0, t, cycles, out[0]);
+		runSquare(gb, 1, t, cycles, out[1]);
+		runWave(gb, t, cycles, out[2]);
+		runNoise(gb, t, cycles, out[3]);
+		// A sample is the mean over its 128 dots, times 64: all four channels at full volume reach 30720.
+		// The sample being built carries over what it has, mixed as it was.
 		bool dacs = apu->square[0].dac || apu->square[1].dac || apu->wave.dac || apu->noise.dac;
-		// Without channels left out, only the console's sound.
-		for (uint32_t k = 0; !muted && k <= complete; ++k) {
-			int32_t left = 0, right = 0;
-			for (int i = 0; i < 4; ++i) {
-				left += nr51 >> (4 + i) & 1 ? sums[i][k] : 0;
-				right += nr51 >> i & 1 ? sums[i][k] : 0;
-			}
-			left = left * leftVolume + (k ? 0 : apu->partialLeft);
-			right = right * rightVolume + (k ? 0 : apu->partialRight);
-			if (k == complete) {
-				apu->partialLeft = apu->partialHeardLeft = left;
-				apu->partialRight = apu->partialHeardRight = right;
-			} else if (gb->audioCount + 2 <= sizeof(gb->audio) / sizeof(gb->audio[0])) {
-				gb->audioDacs[gb->audioCount / 2] = dacs;
-				gb->audio[gb->audioCount++] = left / 2;
-				gb->audio[gb->audioCount++] = right / 2;
-			}
-		}
-		for (uint32_t k = 0; muted && k <= complete; ++k) {
-			int32_t left = 0, right = 0, heardLeft = 0, heardRight = 0;
-			for (int i = 0; i < 4; ++i) {
-				if (nr51 >> (4 + i) & 1) {
-					left += sums[i][k];
-					heardLeft += muted >> i & 1 ? 0 : sums[i][k];
-				}
-				if (nr51 >> i & 1) {
-					right += sums[i][k];
-					heardRight += muted >> i & 1 ? 0 : sums[i][k];
-				}
-			}
-			left *= leftVolume;
-			right *= rightVolume;
-			heardLeft *= leftVolume;
-			heardRight *= rightVolume;
-			if (!k) {
-				left += apu->partialLeft;
-				right += apu->partialRight;
-				heardLeft += apu->partialHeardLeft;
-				heardRight += apu->partialHeardRight;
-			}
-			if (k == complete) {
-				apu->partialLeft = left;
-				apu->partialRight = right;
-				apu->partialHeardLeft = heardLeft;
-				apu->partialHeardRight = heardRight;
-			} else if (gb->audioCount + 2 <= sizeof(gb->audio) / sizeof(gb->audio[0])) {
-				gb->audioDacs[gb->audioCount / 2] = dacs;
+		mix[0][0] += apu->partialLeft;
+		mix[0][1] += apu->partialRight;
+		mix[0][2] += apu->partialHeardLeft;
+		mix[0][3] += apu->partialHeardRight;
+		for (uint32_t k = 0; k < complete && gb->audioCount + 2 <= sizeof(gb->audio) / sizeof(gb->audio[0]); ++k) {
+			gb->audioDacs[gb->audioCount / 2] = dacs;
+			if (muted) {
 				// Channel Selection: what's heard, beside the console's own.
-				gb->heard[gb->audioCount] = heardLeft / 2;
-				gb->heard[gb->audioCount + 1] = heardRight / 2;
-				gb->audio[gb->audioCount++] = left / 2;
-				gb->audio[gb->audioCount++] = right / 2;
+				gb->heard[gb->audioCount] = mix[k][2] / 2;
+				gb->heard[gb->audioCount + 1] = mix[k][3] / 2;
 			}
+			gb->audio[gb->audioCount++] = mix[k][0] / 2;
+			gb->audio[gb->audioCount++] = mix[k][1] / 2;
 		}
+		apu->partialLeft = mix[complete][0];
+		apu->partialRight = mix[complete][1];
+		apu->partialHeardLeft = muted ? mix[complete][2] : mix[complete][0];
+		apu->partialHeardRight = muted ? mix[complete][3] : mix[complete][1];
 		apu->sampleStart += complete * SAMPLE_DOTS;
 		apu->lastSync = stop;
 	}
