@@ -297,7 +297,8 @@ int main(int argc, char** argv) {
 		uint32_t started = gb.now;
 		gbRunFrame(&gb);
 		if (getenv("TIMES") && i < atoi(getenv("TIMES"))) {
-			fprintf(stderr, "ours %d: %u dots lcdc %02x frameCount %u double %d pc %04x\n", i, gb.now - started, gb.ppu.lcdc, gb.frameCount, gb.doubleSpeed, gb.cpu.pc);
+			int offAt = gbSince(gb.lcdOffAt, started) >= 0 && gbSince(gb.now, gb.lcdOffAt) >= 0 ? (int) (gb.lcdOffAt - started) : -1;
+			fprintf(stderr, "ours %d: %u dots lcdc %02x frameCount %u double %d pc %04x line %u dot %d off %d\n", i, gb.now - started, gb.ppu.lcdc, gb.frameCount, gb.doubleSpeed, gb.cpu.pc, gb.ppu.line, (int) (gb.now - gb.ppu.lineStart), offAt);
 		}
 		memcpy(ourRam[i], gb.wram, ramBytes);
 		for (int y = 0; y < GB_HEIGHT; ++y) {
@@ -317,14 +318,22 @@ int main(int argc, char** argv) {
 	}
 	// FROM=n: the first unmatched frame is looked for from frame n.
 	int from = getenv("FROM") ? atoi(getenv("FROM")) : 0;
-	int matched = 0, exact = 0, first = -1, unmatched = 0;
+	// The other core's frames can run a frame or two longer around the LCD switching on or off, so
+	// the offset between the two drifts: each match recentres the window on the frame it found.
+	int matched = 0, exact = 0, first = -1, unmatched = 0, drift = 0, maxDrift = 0;
 	for (int i = 0; i < n; ++i) {
 		bool found = false;
-		for (int d = -2; d <= 2 && !found; ++d) {
-			if (i + d >= 0 && i + d < n && hashOurs[i] == hashTheirs[i + d]) {
-				found = true;
+		for (int k = 0; k <= 2 && !found; ++k) {
+			for (int sign = 1; sign >= -1 && !found; sign -= 2) {
+				int j = i + drift + k * sign;
+				// No further than a second either way, so a screen held on one side doesn't draw it off.
+				if (j >= 0 && j < n && abs(drift + k * sign) <= 60 && hashOurs[i] == hashTheirs[j]) {
+					found = true;
+					drift += k * sign;
+				}
 			}
 		}
+		maxDrift = abs(drift) > maxDrift ? abs(drift) : maxDrift;
 		exact += hashOurs[i] == hashTheirs[i];
 		if (found) {
 			++matched;
@@ -405,6 +414,6 @@ int main(int argc, char** argv) {
 	if (getenv("AUDIORMS")) {
 		fprintf(stderr, "audio rms %.1f over %ld samples\n", audioCount ? sqrt(audioSquares / audioCount) : 0.0, audioCount);
 	}
-	printf("type=%02x matched=%d/%d exact=%d first=%d pixels=%d ram=%d@%04X\n", rom[0x147], matched, n, exact, first, differing, ramFirst, ramAt < 0 ? 0 : ramAt);
+	printf("type=%02x matched=%d/%d exact=%d first=%d pixels=%d ram=%d@%04X drift=%d\n", rom[0x147], matched, n, exact, first, differing, ramFirst, ramAt < 0 ? 0 : ramAt, maxDrift);
 	return 0;
 }

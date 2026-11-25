@@ -50,9 +50,15 @@ void gbMapRom(struct GB* gb) {
 	}
 }
 
-// The bus a DMA source or a CPU access is on: the external bus (cartridge and work RAM), or VRAM's.
-static bool onVramBus(uint16_t address) {
-	return address >= 0x8000 && address < 0xA000;
+// The bus a DMA source or a CPU access is on: the external bus (the cartridge, and on the original
+// work RAM too), VRAM's, or on the Color work RAM's own (SameBoy's bus_for_addr).
+enum { BUS_EXTERNAL, BUS_VRAM, BUS_WRAM };
+
+static int busOf(const struct GB* gb, uint16_t address) {
+	if (address >= 0x8000 && address < 0xA000) {
+		return BUS_VRAM;
+	}
+	return address >= 0xC000 && gb->model == GB_MODEL_CGB ? BUS_WRAM : BUS_EXTERNAL;
 }
 
 // A byte for OAM DMA, read without the PPU's locks.
@@ -137,7 +143,7 @@ static bool dmaConflict(struct GB* gb, uint16_t address, uint8_t* value) {
 		*value = 0xFF;
 		return true;
 	}
-	if (address >= 0xFE00 || onVramBus(address) != onVramBus(dma->source)) {
+	if (address >= 0xFE00 || busOf(gb, address) != busOf(gb, dma->source)) {
 		return false;
 	}
 	*value = dmaByte(gb, dma->source + index);
