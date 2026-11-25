@@ -5385,6 +5385,9 @@ void retro_run(void) {
 	frameSkipped = skipThisFrame();
 	// One Frame Late shows the frame before, so its lines are still drawn.
 	videoSetDrawSkipped(frameSkipped && threadedVideo != THREADED_LATE);
+	if (gameBoy) {
+		libretroGbSetDrawn(!frameSkipped && !rerunning());
+	}
 	// A new LCD Scale, which in RetroArch fits the room told (readOptions holds a larger one back).
 	if (gridAnnounce) {
 		gridAnnounce = false;

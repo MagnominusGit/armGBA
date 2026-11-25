@@ -549,6 +549,8 @@ struct GB {
 	// whether it is the laptop, whose system ROM starts with SP at FFFF.
 	uint8_t megaDuck;
 	bool duckLaptop;
+	// Set by the frontend for a frame it won't show: lines aren't drawn.
+	bool noDraw;
 	// A cheat cartridge in front of the game, set by the frontend (and powered on by gbReset).
 	struct GBCheatCart* cheatCart;
 	// Cheat codes, set by the frontend after loading (gbAddCheat).

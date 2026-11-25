@@ -1452,6 +1452,14 @@ void runExactly() {
 
 extern "C" {
 
+void libretroGbSetDrawn(bool drawn) {
+	for (int i = 0; i < MAX_PLAYERS; ++i) {
+		if (consoles[i].gb) {
+			consoles[i].gb->noDraw = !drawn;
+		}
+	}
+}
+
 // Runs one frame: to the start of V-blank, or with the screen off, a frame's time.
 const uint32_t* libretroGbRunFrame(uint16_t keys, const int16_t** out, size_t* frames) {
 	beginFrame(keys);

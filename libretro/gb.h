@@ -154,6 +154,9 @@ uint32_t libretroGbBootCrc(void);
 // Runs a frame with the pressed buttons as KEYINPUT bits. Returns the picture in XRGB8888 and the
 // stereo samples.
 const uint32_t* libretroGbRunFrame(uint16_t keys, const int16_t** samples, size_t* frames);
+// Whether the next frames' pictures will be shown: when not (Frame Skip, a frame run again), they
+// aren't drawn.
+void libretroGbSetDrawn(bool drawn);
 void* libretroGbSaveRam(size_t* size);
 // An MBC3 or HuC3 cartridge's clock, which the frontend keeps as the .rtc file; NULL for other
 // cartridges.

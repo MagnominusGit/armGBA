@@ -414,6 +414,13 @@ static void drawLineCgb(struct GB* gb) {
 }
 
 static void drawLine(struct GB* gb) {
+	// A frame no one will see (Frame Skip, a frame run again): only the window's line count moves.
+	if (gb->noDraw) {
+		if (gb->ppu.line < GB_HEIGHT && !gb->ppu.hiddenFrame && windowOnLine(gb)) {
+			++gb->ppu.windowLine;
+		}
+		return;
+	}
 	if (gbColor(gb)) {
 		drawLineCgb(gb);
 	} else {
