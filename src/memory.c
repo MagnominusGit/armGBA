@@ -253,7 +253,7 @@ static inline void videoChanged(struct GBA* gba, uint8_t* p, uint8_t what) {
 // Lines whose H-blank has come are drawn before what they show changes.
 static inline void drawFirst(struct GBA* gba) {
 	if ((int32_t) (timingCpuTime(gba) - gba->video.drawDue) >= 0) {
-		videoSync(gba);
+		videoDrawFirst(gba);
 	}
 }
 
@@ -261,8 +261,10 @@ static inline void drawFirst(struct GBA* gba) {
 static inline void videoStore16(struct GBA* gba, uint8_t* p, uint16_t value, uint8_t what) {
 	uint16_t old;
 	memcpy(&old, p, 2);
+	// A store that changes nothing still draws what is due, so compiled code goes back to storing
+	// without asking.
+	drawFirst(gba);
 	if (old != value) {
-		drawFirst(gba);
 		memcpy(p, &value, 2);
 		videoChanged(gba, p, what);
 	}
@@ -271,8 +273,10 @@ static inline void videoStore16(struct GBA* gba, uint8_t* p, uint16_t value, uin
 static inline void videoStore32(struct GBA* gba, uint8_t* p, uint32_t value, uint8_t what) {
 	uint32_t old;
 	memcpy(&old, p, 4);
+	// A store that changes nothing still draws what is due, so compiled code goes back to storing
+	// without asking.
+	drawFirst(gba);
 	if (old != value) {
-		drawFirst(gba);
 		memcpy(p, &value, 4);
 		videoChanged(gba, p, what);
 	}

@@ -99,6 +99,7 @@ standalone frontend shows as one page with headers.
 | | Reset Clock (with Allow Clock Reset on) | Both (Game Boy: MBC3) | Off, Reset |
 | Video | Threaded Video | Game Boy Advance | Off, Auto (On where the device has more than one core), On, One Frame Late; Off with HD Affine Backgrounds |
 | | Video Threads (with Threaded Video) | Game Boy Advance | 1, 2 |
+| | Batched Drawing (with Threaded Video off) | Game Boy Advance | Off, On; not with HD Affine Backgrounds or linked consoles |
 | | GBA Color Correction | Game Boy Advance | Off, On |
 | | Game Boy Color Correction | Game Boy | Off, On |
 | | Game Boy Screen | Game Boy | Grayscale, Game Boy, Game Boy Pocket (both measured from real ones), Game Boy Light (Backlit) |

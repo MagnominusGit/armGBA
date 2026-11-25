@@ -84,7 +84,10 @@ static void drawLine(struct GBA* gba) {
 static void planDraw(struct GBA* gba) {
 	struct Video* video = &gba->video;
 	int vcount = video->vcount;
-	if (vcount < VISIBLE_LINES && !video->drawn) {
+	if (gba->renderThread && renderThreadWaiting(gba)) {
+		// Lines wait to be drawn together: the next store to what they show draws them first.
+		video->drawDue = timingCpuTime(gba);
+	} else if (vcount < VISIBLE_LINES && !video->drawn) {
 		video->drawDue = timingCpuAt(gba, video->lineStart + HBLANK_START);
 	} else if (vcount + 1 < VISIBLE_LINES) {
 		video->drawDue = timingCpuAt(gba, video->lineStart + LINE_LENGTH + HBLANK_START);
@@ -156,6 +159,16 @@ void videoSync(struct GBA* gba) {
 		video->stableUntil = timingCpuAt(gba, video->lineStart + HBLANK_START);
 	}
 	planDraw(gba);
+}
+
+// Before a store to VRAM, OAM or the palette: draws the lines due, and any waiting to be drawn
+// together.
+void videoDrawFirst(struct GBA* gba) {
+	videoSync(gba);
+	if (gba->renderThread && renderThreadWaiting(gba)) {
+		renderThreadFlush(gba);
+		planDraw(gba);
+	}
 }
 
 // Returns the line the display is on now.

@@ -236,6 +236,11 @@ static struct retro_core_option_v2_definition optionDefinitions[] = {
 	  "Threads drawing with Threaded Video. Two split the lines: faster in most games, slower in a few, and "
 	  "use another CPU core.",
 	  NULL, "video", { { "1", NULL }, { "2", NULL }, { NULL, NULL } }, "1" },
+	{ "armgba_batched_drawing", "Batched Drawing", NULL,
+	  "With Threaded Video off, draws a frame's lines together instead of one at a time. Faster in "
+	  "demanding scenes on small CPU cores, a little slower in others. The picture is the same. Not with "
+	  "HD Affine Backgrounds or linked consoles.",
+	  NULL, "video", { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
 	{ "armgba_color_correction", "GBA Color Correction", NULL, "Darker, softer colors, as the GBA's screen showed them. Costs a little speed.", NULL, "video",
 	  { { "disabled", "Off" }, { "enabled", "On" }, { NULL, NULL } }, "disabled" },
 	{ "armgba_hd_affine", "HD Affine Backgrounds", NULL,
@@ -619,6 +624,7 @@ bool showOptions(void) {
 		{ "armgba_channel_direct_b", !gameBoy && channels },
 		{ "armgba_fast_flash_saves", !gameBoy },
 		{ "armgba_video_threads", !gameBoy && threadedVideo },
+		{ "armgba_batched_drawing", !gameBoy && !threadedVideo },
 		{ "armgba_lcd_ghosting", effects },
 		{ "armgba_lcd_grid", effects },
 		{ "armgba_lcd_screen", effects && optionIs("armgba_lcd_grid", "fit") },

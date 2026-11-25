@@ -11,6 +11,10 @@
 // for where it ends; or, when started late, the frame before it is handed over there instead, so
 // drawing a frame overlaps the next one's emulation, at the cost of a frame's delay.
 //
+// Without a thread (inlined), the emulation thread plays the log itself where it would wait for the
+// worker, so a frame's lines are drawn together: the renderer's code is brought into the cache once,
+// not again after each line's emulation.
+//
 // With two workers (the New 3DS has two cores to spare), each has a copy and goes through the whole
 // log, one drawing the even lines and the other the odd ones: a line that isn't drawn leaves the
 // renderer as a line that hasn't changed does, so each copy's state stays what one renderer's
@@ -119,7 +123,23 @@ struct RenderThread {
 	uint64_t helperDone;
 	bool helperActive;
 	int idleFrames;
+	// No worker thread: the emulation thread plays the log where it would wait for one. Its lines log
+	// no memory, since none changes while they wait: a store draws them first (renderThreadFlush).
+	bool inlined;
+	struct GBA* gba;
+	bool linesWaiting;
+	// The lines the copy has drawn since the frame was last taken: the rest are as they were.
+	uint32_t drawn[(SCREEN_HEIGHT + 31) / 32];
 };
+
+// While the emulation thread plays the log, where the copy's drawn lines are noted.
+static _Thread_local uint32_t* drawnLines;
+
+void renderThreadDrew(int y) {
+	if (drawnLines) {
+		drawnLines[y >> 5] |= 1u << (y & 31);
+	}
+}
 
 // Waking a sleeping core takes longer than most waits here, so a thread first spins for a while on
 // what it waits for: the worker for something logged, the other thread for the worker to have done
@@ -343,12 +363,11 @@ static uint32_t play(struct GBA* copy, const uint8_t* entry, uint32_t* size) {
 			memcpy(copy->palette, data, SIZE_PALETTE);
 			data += SIZE_PALETTE;
 		}
-		for (int page = 0; page < VRAM_PAGES; ++page) {
-			if (pages & (1ull << page)) {
-				memcpy(&copy->vram[page * VRAM_PAGE], data, VRAM_PAGE);
-				copy->renderer.vramChanged[page] = 1;
-				data += VRAM_PAGE;
-			}
+		for (uint64_t left = pages; left; left &= left - 1) {
+			int const page = __builtin_ctzll(left);
+			memcpy(&copy->vram[page * VRAM_PAGE], data, VRAM_PAGE);
+			copy->renderer.vramChanged[page] = 1;
+			data += VRAM_PAGE;
 		}
 		copy->renderer.memoryChanged |= changed;
 		if (head[0] == LOG_LINE) {
@@ -438,8 +457,58 @@ static void* work(void* context) {
 	}
 }
 
+// Without a thread: the copy takes the memory that changed since lines were last drawn, which is
+// what the lines waiting now show.
+static void syncCopy(struct RenderThread* t) {
+	struct GBA* gba = t->gba;
+	struct GBA* copy = t->workers[0].copy;
+	struct Renderer* renderer = &gba->renderer;
+	uint32_t const changed = renderer->memoryChanged;
+	renderer->memoryChanged = 0;
+	if (changed & RENDER_OAM) {
+		memcpy(copy->oam, gba->oam, SIZE_OAM);
+	}
+	if (changed & RENDER_PALETTE) {
+		memcpy(copy->palette, gba->palette, SIZE_PALETTE);
+	}
+	for (int word = 0; word < VRAM_PAGES / 8; ++word) {
+		uint64_t flags;
+		memcpy(&flags, &renderer->vramChanged[word * 8], 8);
+		if (!flags) {
+			continue;
+		}
+		memset(&renderer->vramChanged[word * 8], 0, 8);
+		for (int i = 0; i < 8; ++i) {
+			if (flags >> (i * 8) & 0xFF) {
+				int const page = word * 8 + i;
+				memcpy(&copy->vram[page * VRAM_PAGE], &gba->vram[page * VRAM_PAGE], VRAM_PAGE);
+				copy->renderer.vramChanged[page] = 1;
+			}
+		}
+	}
+	copy->renderer.memoryChanged |= changed;
+}
+
 // Waits until the worker has done the log up to target: the end of a frame, or everything logged.
 static void await(struct RenderThread* t, uint64_t target) {
+	if (t->inlined) {
+		struct Worker* w = &t->workers[0];
+		uint64_t done = atomic_load_explicit(&w->done, memory_order_relaxed);
+		// Only lines read memory.
+		if (t->linesWaiting) {
+			syncCopy(t);
+		}
+		drawnLines = t->drawn;
+		while (done < target) {
+			uint32_t size;
+			play(w->copy, &t->log[done & (LOG_SIZE - 1)], &size);
+			done += size;
+		}
+		drawnLines = NULL;
+		t->linesWaiting = false;
+		atomic_store_explicit(&w->done, done, memory_order_relaxed);
+		return;
+	}
 #if defined(__3DS__)
 	uint64_t const began = HOST_TICKS();
 	if (spin(t, NULL, target)) {
@@ -467,6 +536,9 @@ static void await(struct RenderThread* t, uint64_t target) {
 // if it sleeps.
 static void publish(struct RenderThread* t, uint32_t size) {
 	t->head += size;
+	if (t->inlined) {
+		return;
+	}
 	atomic_store(&t->written, t->head);
 	if (atomic_load(&t->asleep)) {
 		pthread_mutex_lock(&t->mutex);
@@ -544,6 +616,13 @@ static void logLine(struct GBA* gba, uint32_t kind, int y) {
 	struct RenderThread* t = gba->renderThread;
 	struct Renderer* renderer = &gba->renderer;
 	uint8_t* start = reserve(t);
+	if (t->inlined) {
+		t->linesWaiting = true;
+		uint32_t head[4] = { kind, y, 0, 0 };
+		memcpy(start, head, sizeof(head));
+		publish(t, sizeof(head));
+		return;
+	}
 	uint8_t* data = start + 16;
 	uint32_t changed = renderer->memoryChanged;
 	renderer->memoryChanged = 0;
@@ -556,12 +635,21 @@ static void logLine(struct GBA* gba, uint32_t kind, int y) {
 		data += SIZE_PALETTE;
 	}
 	uint64_t pages = 0;
-	for (int page = 0; page < VRAM_PAGES; ++page) {
-		if (renderer->vramChanged[page]) {
-			renderer->vramChanged[page] = 0;
-			pages |= 1ull << page;
-			memcpy(data, &gba->vram[page * VRAM_PAGE], VRAM_PAGE);
-			data += VRAM_PAGE;
+	// Eight pages' flags at a time: most lines change none.
+	for (int word = 0; word < VRAM_PAGES / 8; ++word) {
+		uint64_t flags;
+		memcpy(&flags, &renderer->vramChanged[word * 8], 8);
+		if (!flags) {
+			continue;
+		}
+		memset(&renderer->vramChanged[word * 8], 0, 8);
+		for (int i = 0; i < 8; ++i) {
+			if (flags >> (i * 8) & 0xFF) {
+				int const page = word * 8 + i;
+				pages |= 1ull << page;
+				memcpy(data, &gba->vram[page * VRAM_PAGE], VRAM_PAGE);
+				data += VRAM_PAGE;
+			}
 		}
 	}
 	uint32_t head[4] = { kind, y | changed << 8, (uint32_t) pages, (uint32_t) (pages >> 32) };
@@ -738,6 +826,20 @@ static void finishShared(struct GBA* gba) {
 	}
 }
 
+// Without a thread: whether lines wait to be drawn, and drawing them, before something they show
+// changes.
+bool renderThreadWaiting(struct GBA* gba) {
+	struct RenderThread* t = gba->renderThread;
+	return t->linesWaiting;
+}
+
+void renderThreadFlush(struct GBA* gba) {
+	struct RenderThread* t = gba->renderThread;
+	if (t->inlined) {
+		await(t, t->head);
+	}
+}
+
 void renderThreadFinishFrame(struct GBA* gba) {
 	struct RenderThread* t = gba->renderThread;
 	if (!t->late) {
@@ -747,8 +849,28 @@ void renderThreadFinishFrame(struct GBA* gba) {
 		}
 		entry(gba, LOG_FINISH, 0, 0, 0);
 		drain(t);
-		for (int i = 0; i < t->count; ++i) {
-			takeLines(&t->workers[i], gba->renderer.frame);
+		if (t->inlined) {
+			// Only the lines drawn: the others are the same in both frames.
+			const struct Renderer* drawn = &t->workers[0].copy->renderer;
+			for (int y = 0; y < SCREEN_HEIGHT; ++y) {
+				if (t->drawn[y >> 5] >> (y & 31) & 1) {
+					memcpy(gba->renderer.frame[y], drawn->frame[y], sizeof(drawn->frame[y]));
+				}
+			}
+			memset(t->drawn, 0, sizeof(t->drawn));
+		} else {
+			for (int i = 0; i < t->count; ++i) {
+				takeLines(&t->workers[i], gba->renderer.frame);
+			}
+		}
+		if (t->inlined) {
+			// All of it is drawn: the next frame's log starts at the ring's start, which is still in
+			// the cache.
+			uint64_t const start = (t->head + LOG_SIZE - 1) & ~(uint64_t) (LOG_SIZE - 1);
+			t->head = start;
+			atomic_store_explicit(&t->written, start, memory_order_relaxed);
+			atomic_store_explicit(&t->workers[0].done, start, memory_order_relaxed);
+			t->roomUntil = start + LOG_SIZE;
 		}
 		renderHooksPublish(gba);
 		shareBegin(gba);
@@ -820,8 +942,9 @@ const struct Renderer* renderThreadRenderer(struct GBA* gba) {
 }
 
 // Starts the worker with a copy of the renderer and of video memory as they are now. With late,
-// each frame is handed over one frame after it was made, so the emulation thread never waits.
-bool renderThreadStart(struct GBA* gba, bool late, bool second) {
+// each frame is handed over one frame after it was made, so the emulation thread never waits. With
+// inlined, there is no thread (and neither late nor second).
+bool renderThreadStart(struct GBA* gba, bool late, bool second, bool inlined) {
 	if (gba->renderThread) {
 		return true;
 	}
@@ -842,11 +965,18 @@ bool renderThreadStart(struct GBA* gba, bool late, bool second) {
 	pthread_cond_init(&t->workers[0].wake, NULL);
 	pthread_cond_init(&t->workers[1].wake, NULL);
 	pthread_cond_init(&t->idle, NULL);
-	t->late = late;
+	t->late = late && !inlined;
 	t->count = 1;
 	for (int i = 0; i < 2; ++i) {
 		t->workers[i].owner = t;
 		t->workers[i].index = i;
+	}
+	if (inlined) {
+		t->inlined = true;
+		t->gba = gba;
+		gba->renderThread = t;
+		renderThreadClone(gba);
+		return true;
 	}
 #if defined(__3DS__)
 	// libctru's pthreads run on the game's own core at the lowest priority, where a renderer can't
@@ -902,7 +1032,7 @@ void renderThreadStop(struct GBA* gba) {
 	pthread_cond_signal(&t->workers[0].wake);
 	pthread_cond_signal(&t->workers[1].wake);
 	pthread_mutex_unlock(&t->mutex);
-	for (int i = 0; i < t->count; ++i) {
+	for (int i = 0; !t->inlined && i < t->count; ++i) {
 		pthread_join(t->workers[i].thread, NULL);
 	}
 	struct Renderer* renderer = &gba->renderer;

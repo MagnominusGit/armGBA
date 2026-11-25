@@ -1038,6 +1038,7 @@ void videoReset(struct GBA*);
 void videoStartAt(struct GBA*, int vcount, int32_t untilHblank);
 // Brings the line, VCOUNT and DISPSTAT up to date.
 void videoSync(struct GBA*);
+void videoDrawFirst(struct GBA*);
 int videoLine(struct GBA*);
 void videoHblankDmaArmed(struct GBA*);
 uint32_t videoNextHblank(struct GBA*, uint32_t from);

@@ -2857,6 +2857,9 @@ static void oneScanlineInner(struct GBA* gba, int y) {
 		return;
 	}
 	CLEAN_SCANLINE(renderer, y);
+	if (renderer->copy == 1) {
+		renderThreadDrew(y);
+	}
 
 	uint16_t* out = renderer->frame[y];
 	if (DISPCNT_FORCED_BLANK(renderer->lineDispcnt)) {
