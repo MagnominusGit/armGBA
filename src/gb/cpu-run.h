@@ -122,7 +122,7 @@ static inline __attribute__((always_inline)) uint16_t CPU(pop)(struct GB* gb) {
 }
 
 // The CB-prefixed rotates, shifts, swap and bit operations.
-static void CPU(prefixed)(struct GB* gb) {
+static inline __attribute__((always_inline)) void CPU(prefixed)(struct GB* gb) {
 	struct GBCpu* cpu = &gb->cpu;
 	uint8_t op = CPU(fetch)(gb);
 	int r = op & 7;
