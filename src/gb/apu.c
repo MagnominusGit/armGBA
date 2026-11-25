@@ -151,7 +151,26 @@ static void render(struct GB* gb, uint32_t end) {
 		// Mixed as they stand now; the sample being built carries over what it has, mixed as it was. A
 		// sample is the mean over its 128 dots, times 64: all four channels at full volume reach 30720.
 		uint8_t muted = gb->channelsMuted;
-		for (uint32_t k = 0; k <= complete; ++k) {
+		bool dacs = apu->square[0].dac || apu->square[1].dac || apu->wave.dac || apu->noise.dac;
+		// Without channels left out, only the console's sound.
+		for (uint32_t k = 0; !muted && k <= complete; ++k) {
+			int32_t left = 0, right = 0;
+			for (int i = 0; i < 4; ++i) {
+				left += nr51 >> (4 + i) & 1 ? sums[i][k] : 0;
+				right += nr51 >> i & 1 ? sums[i][k] : 0;
+			}
+			left = left * leftVolume + (k ? 0 : apu->partialLeft);
+			right = right * rightVolume + (k ? 0 : apu->partialRight);
+			if (k == complete) {
+				apu->partialLeft = apu->partialHeardLeft = left;
+				apu->partialRight = apu->partialHeardRight = right;
+			} else if (gb->audioCount + 2 <= sizeof(gb->audio) / sizeof(gb->audio[0])) {
+				gb->audioDacs[gb->audioCount / 2] = dacs;
+				gb->audio[gb->audioCount++] = left / 2;
+				gb->audio[gb->audioCount++] = right / 2;
+			}
+		}
+		for (uint32_t k = 0; muted && k <= complete; ++k) {
 			int32_t left = 0, right = 0, heardLeft = 0, heardRight = 0;
 			for (int i = 0; i < 4; ++i) {
 				if (nr51 >> (4 + i) & 1) {
@@ -179,12 +198,10 @@ static void render(struct GB* gb, uint32_t end) {
 				apu->partialHeardLeft = heardLeft;
 				apu->partialHeardRight = heardRight;
 			} else if (gb->audioCount + 2 <= sizeof(gb->audio) / sizeof(gb->audio[0])) {
-				gb->audioDacs[gb->audioCount / 2] = apu->square[0].dac || apu->square[1].dac || apu->wave.dac || apu->noise.dac;
+				gb->audioDacs[gb->audioCount / 2] = dacs;
 				// Channel Selection: what's heard, beside the console's own.
-				if (muted) {
-					gb->heard[gb->audioCount] = heardLeft / 2;
-					gb->heard[gb->audioCount + 1] = heardRight / 2;
-				}
+				gb->heard[gb->audioCount] = heardLeft / 2;
+				gb->heard[gb->audioCount + 1] = heardRight / 2;
 				gb->audio[gb->audioCount++] = left / 2;
 				gb->audio[gb->audioCount++] = right / 2;
 			}
@@ -367,10 +384,11 @@ void gbApuSync(struct GB* gb) {
 		if (gbSince(at, gb->now) > 0) {
 			break;
 		}
-		render(gb, at);
+		// The half step changes nothing heard: the sound goes on rendering through it.
 		if (edge >> bit & 1) {
 			sequencerRise(gb);
 		} else {
+			render(gb, at);
 			frameSequencer(gb);
 		}
 		c = edge & 0xFFFF;

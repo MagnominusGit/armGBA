@@ -149,6 +149,8 @@ static void drawLineDmg(struct GB* gb) {
 	initSpread();
 	uint8_t index[GB_WIDTH + 16];
 	uint16_t* out = gb->frame[y];
+	// Taken first: the byte stores below could otherwise be rereading it.
+	bool const hideWindow = gb->layersHidden & GB_LAYER_WINDOW;
 	if (ppu->lcdc & LCDC_BG) {
 		uint8_t row[21 * 8];
 		uint16_t map = (ppu->lcdc & LCDC_BG_MAP ? 0x1C00 : 0x1800) + ((ppu->scy + y) & 0xFF) / 8 * 32;
@@ -170,7 +172,7 @@ static void drawLineDmg(struct GB* gb) {
 			unsigned wfine = ppu->windowLine & 7;
 			int start = ppu->wx - 7;
 			int first = start < 0 ? 0 : start;
-			for (int t = (first - start) / 8; t * 8 + start < GB_WIDTH && !(gb->layersHidden & GB_LAYER_WINDOW); ++t) {
+			for (int t = (first - start) / 8; !hideWindow && t * 8 + start < GB_WIDTH; ++t) {
 				uint64_t pixels = tileRow(gb, tileAddress(ppu, gb->vram[wmap + t]) + wfine * 2);
 				uint8_t tilePixels[8];
 				memcpy(tilePixels, &pixels, 8);
@@ -265,11 +267,12 @@ static inline uint32_t paletteColor(const struct GB* gb, const uint8_t* palettes
 // Eight palettes' colours for a line: a Color game's own, or for an original Game Boy game palette 0
 // (or 0 and 1 for objects) through its BGP, OBP0 and OBP1 shades.
 static void lineColors(const struct GB* gb, const uint8_t* palettes, int count, const uint8_t* shades, uint32_t colors[8][4]) {
+	// With no boot ROM to choose colors, the frontend's shades.
+	bool const own = shades && gb->cgb.compatShades && gb->video;
 	for (int p = 0; p < count; ++p) {
 		for (int i = 0; i < 4; ++i) {
 			unsigned shade = shades ? shades[p] >> (i * 2) & 3 : (unsigned) i;
-			// With no boot ROM to choose colors, the frontend's shades.
-			colors[p][i] = shades && gb->cgb.compatShades && gb->video ? gb->videoColors[shade] : paletteColor(gb, palettes, p * 4 + shade);
+			colors[p][i] = own ? gb->videoColors[shade] : paletteColor(gb, palettes, p * 4 + shade);
 		}
 	}
 }
@@ -291,6 +294,7 @@ static void drawLineCgb(struct GB* gb) {
 	uint32_t bg[8][4];
 	uint8_t const bgShades[1] = { ppu->bgp };
 	lineColors(gb, cgb->bgPalette, color ? 8 : 1, color ? NULL : bgShades, bg);
+	bool const hideBg = gb->layersHidden & GB_LAYER_BG, hideWindow = gb->layersHidden & GB_LAYER_WINDOW;
 	if (color || (ppu->lcdc & LCDC_BG)) {
 		uint16_t map = (ppu->lcdc & LCDC_BG_MAP ? 0x1C00 : 0x1800) + ((ppu->scy + y) & 0xFF) / 8 * 32;
 		unsigned fineY = (ppu->scy + y) & 7;
@@ -305,13 +309,18 @@ static void drawLineCgb(struct GB* gb) {
 			memcpy(indices, &pixels, 8);
 			const uint32_t* colors = bg[a & 7];
 			uint8_t front = a & 0x80 ? 4 : 0;
-			// Layer Selection: a hidden background is colour 0.
-			if (gb->layersHidden & GB_LAYER_BG) {
-				memset(indices, 0, 8);
-			}
 			for (int i = 0; i < 8; ++i) {
 				line[t * 8 + i] = colors[indices[i]];
 				info[t * 8 + i] = indices[i] | front;
+			}
+		}
+		// Layer Selection: a hidden background is colour 0 of each tile's palette, drawn over
+		// afterwards so the loop above stays as it is.
+		for (int t = 0; hideBg && t < 21; ++t) {
+			uint8_t a = color ? gb->vram[0x2000 + map + ((column + t) & 31)] : 0;
+			for (int i = 0; i < 8; ++i) {
+				line[t * 8 + i] = bg[a & 7][0];
+				info[t * 8 + i] = a & 0x80 ? 4 : 0;
 			}
 		}
 		if (windowOnLine(gb)) {
@@ -319,7 +328,7 @@ static void drawLineCgb(struct GB* gb) {
 			unsigned wfine = ppu->windowLine & 7;
 			int start = ppu->wx - 7;
 			int first = start < 0 ? 0 : start;
-			for (int t = (first - start) / 8; t * 8 + start < GB_WIDTH && !(gb->layersHidden & GB_LAYER_WINDOW); ++t) {
+			for (int t = (first - start) / 8; !hideWindow && t * 8 + start < GB_WIDTH; ++t) {
 				uint8_t tile = gb->vram[wmap + t];
 				uint8_t a = color ? gb->vram[0x2000 + wmap + t] : 0;
 				unsigned row = a & 0x40 ? 7 - wfine : wfine;
@@ -863,6 +872,10 @@ static void lcdOn(struct GB* gb) {
 
 static void lcdOff(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
+	// An H-blank DMA waiting outside an H-blank moves a block as the LCD goes off (SameBoy).
+	if (gb->cgb.hdmaHblank && gb->cgb.hdmaBlocks && ppu->mode != 0) {
+		gbHdmaHblank(gb);
+	}
 	// The screen shows nothing while the LCD is off.
 	gbBlankFrame(gb);
 	ppu->oamReadBlocked = false;

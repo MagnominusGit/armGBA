@@ -353,22 +353,27 @@ static uint8_t duckValue(uint8_t reg, uint8_t v, bool toGb) {
 	}
 }
 
-static uint8_t ioRead(struct GB* gb, uint8_t reg) {
-	if (gb->cart.mapper != GB_MEGADUCK) {
-		return gbIoRead(gb, reg);
-	}
+static __attribute__((noinline)) uint8_t duckIoRead(struct GB* gb, uint8_t reg) {
 	int8_t gbReg = duckIo[reg & 0x7F];
 	return gbReg < 0 ? 0xFF : duckValue(gbReg, gbIoRead(gb, gbReg), false);
 }
 
-static void ioWrite(struct GB* gb, uint8_t reg, uint8_t value) {
-	if (gb->cart.mapper != GB_MEGADUCK) {
-		gbIoWrite(gb, reg, value);
-		return;
-	}
+static __attribute__((noinline)) void duckIoWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 	int8_t gbReg = duckIo[reg & 0x7F];
 	if (gbReg >= 0) {
 		gbIoWrite(gb, gbReg, duckValue(gbReg, value, true));
+	}
+}
+
+static inline uint8_t ioRead(struct GB* gb, uint8_t reg) {
+	return gb->cart.mapper == GB_MEGADUCK ? duckIoRead(gb, reg) : gbIoRead(gb, reg);
+}
+
+static inline void ioWrite(struct GB* gb, uint8_t reg, uint8_t value) {
+	if (gb->cart.mapper == GB_MEGADUCK) {
+		duckIoWrite(gb, reg, value);
+	} else {
+		gbIoWrite(gb, reg, value);
 	}
 }
 
