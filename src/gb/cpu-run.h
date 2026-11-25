@@ -17,7 +17,7 @@ static inline __attribute__((always_inline)) void CPU(tick)(struct GB* gb) {
 	}
 }
 
-static inline uint8_t CPU(readNow)(struct GB* gb, uint16_t address) {
+static inline __attribute__((always_inline)) uint8_t CPU(readNow)(struct GB* gb, uint16_t address) {
 	const uint8_t* page = gb->readMap[address >> 12];
 	if (page) {
 		return page[address & 0xFFF];
@@ -29,13 +29,13 @@ static inline uint8_t CPU(readNow)(struct GB* gb, uint16_t address) {
 	return gbRead(gb, address);
 }
 
-static inline uint8_t CPU(read8)(struct GB* gb, uint16_t address) {
+static inline __attribute__((always_inline)) uint8_t CPU(read8)(struct GB* gb, uint16_t address) {
 	uint8_t value = CPU(readNow)(gb, address);
 	CPU(tick)(gb);
 	return value;
 }
 
-static inline void CPU(write8)(struct GB* gb, uint16_t address, uint8_t value) {
+static inline __attribute__((always_inline)) void CPU(write8)(struct GB* gb, uint16_t address, uint8_t value) {
 	uint8_t* page = gb->writeMap[address >> 12];
 	if (page) {
 		page[address & 0xFFF] = value;
@@ -47,12 +47,12 @@ static inline void CPU(write8)(struct GB* gb, uint16_t address, uint8_t value) {
 	CPU(tick)(gb);
 }
 
-static inline uint8_t CPU(fetch)(struct GB* gb) {
+static inline __attribute__((always_inline)) uint8_t CPU(fetch)(struct GB* gb) {
 	struct GBCpu* cpu = &gb->cpu;
 	return CPU(read8)(gb, cpu->pc++);
 }
 
-static inline uint16_t CPU(fetch16)(struct GB* gb) {
+static inline __attribute__((always_inline)) uint16_t CPU(fetch16)(struct GB* gb) {
 	uint8_t lo = CPU(fetch)(gb);
 	return lo | CPU(fetch)(gb) << 8;
 }
@@ -109,13 +109,13 @@ static inline __attribute__((always_inline)) void CPU(setR)(struct GB* gb, int r
 	}
 }
 
-static void CPU(push)(struct GB* gb, uint16_t value) {
+static inline __attribute__((always_inline)) void CPU(push)(struct GB* gb, uint16_t value) {
 	struct GBCpu* cpu = &gb->cpu;
 	CPU(write8)(gb, --cpu->sp, value >> 8);
 	CPU(write8)(gb, --cpu->sp, value);
 }
 
-static uint16_t CPU(pop)(struct GB* gb) {
+static inline __attribute__((always_inline)) uint16_t CPU(pop)(struct GB* gb) {
 	struct GBCpu* cpu = &gb->cpu;
 	uint8_t lo = CPU(read8)(gb, cpu->sp++);
 	return lo | CPU(read8)(gb, cpu->sp++) << 8;

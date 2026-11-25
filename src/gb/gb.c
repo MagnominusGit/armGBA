@@ -10,8 +10,9 @@
 
 static void updateNext(struct GB* gb) {
 	uint32_t best = gb->now + 0x40000000;
-	for (int i = 0; i < GB_EVENTS; ++i) {
-		if ((gb->eventsOn >> i & 1) && gbSince(gb->events[i], best) < 0) {
+	for (uint32_t on = gb->eventsOn; on; on &= on - 1) {
+		int i = __builtin_ctz(on);
+		if (gbSince(gb->events[i], best) < 0) {
 			best = gb->events[i];
 		}
 	}
@@ -37,9 +38,9 @@ void gbUnschedule(struct GB* gb, int event) {
 void gbRunEvents(struct GB* gb) {
 	for (;;) {
 		int due = -1;
-		for (int i = 0; i < GB_EVENTS; ++i) {
-			if ((gb->eventsOn >> i & 1) && gbSince(gb->now, gb->events[i]) >= 0 &&
-			    (due < 0 || gbSince(gb->events[i], gb->events[due]) < 0)) {
+		for (uint32_t on = gb->eventsOn; on; on &= on - 1) {
+			int i = __builtin_ctz(on);
+			if (gbSince(gb->now, gb->events[i]) >= 0 && (due < 0 || gbSince(gb->events[i], gb->events[due]) < 0)) {
 				due = i;
 			}
 		}
