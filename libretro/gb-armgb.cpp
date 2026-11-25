@@ -171,8 +171,7 @@ struct Console {
 	// A dot run past the last whole sample.
 	uint32_t overDot;
 	// Channel Selection: the charge for what's heard, with channels left out, apart from the
-	// console's from when the first is (heardApart; before, it is the console's). Not saved: states
-	// keep the console's.
+	// console's from when the first is (heardApart; before, it is the console's). Saved with it.
 	int32_t heardCapacitor[2];
 	bool heardApart;
 };
@@ -1690,7 +1689,8 @@ bool libretroGbSetCheats(const char* const* codes, size_t count) {
 
 namespace {
 
-// A console's state: a mark, the machine, the output capacitor's charge, then whether the laptop's
+// A console's state: a mark, the machine, the output capacitor's charges (the console's, then what's
+// heard with channels left out, and whether that is apart), then whether the laptop's
 // slot cartridge had taken the system ROM's place and the laptop's controller, the printer (player
 // 1's), and the cheat cartridge, each with room whether or not it's there, so states keep one size.
 // Netplay's states hold no capacitor charge, and loading one keeps this device's.
@@ -1698,7 +1698,7 @@ uint32_t const STATE_MARK = 0x53424761u;
 bool netplayStates;
 
 size_t partsSize(const Console& c) {
-	return sizeof(STATE_MARK) + gbStateSize() + sizeof(c.capacitor) + 1 + duckLaptopStateSize() + sizeof(printer)
+	return sizeof(STATE_MARK) + gbStateSize() + sizeof(c.capacitor) + sizeof(c.heardCapacitor) + 1 + 1 + duckLaptopStateSize() + sizeof(printer)
 	       + (c.cheatOn ? gbCheatCartStateSize(&c.cheat) : 0);
 }
 
@@ -1722,8 +1722,10 @@ bool saveOne(void* data, size_t size) {
 	at += gbStateSize();
 	if (!netplayStates) {
 		std::memcpy(at, s->capacitor, sizeof(s->capacitor));
+		std::memcpy(at + sizeof(s->capacitor), s->heardCapacitor, sizeof(s->heardCapacitor));
+		at[sizeof(s->capacitor) + sizeof(s->heardCapacitor)] = s->heardApart;
 	}
-	at += sizeof(s->capacitor);
+	at += sizeof(s->capacitor) + sizeof(s->heardCapacitor) + 1;
 	*at++ = laptopSlotIn;
 	if (duckLaptopConnected()) {
 		duckLaptopSaveState(at);
@@ -1758,7 +1760,7 @@ bool loadOne(const void* data, size_t size) {
 		gbRtcGet(s->gb, clock);
 	}
 	// The ROM the state ran (the system's or the slot cartridge's) goes in first, for the state's banks.
-	bool const slot = at[gbStateSize() + sizeof(s->capacitor)] & 1;
+	bool const slot = at[gbStateSize() + sizeof(s->capacitor) + sizeof(s->heardCapacitor) + 1] & 1;
 	if (duckLaptopConnected() && !laptopCartridge.empty()) {
 		s->gb->rom = slot ? &laptopCartridge[0] : &s->rom[0];
 		s->gb->romSize = slot ? laptopCartridge.size() : s->rom.size();
@@ -1771,8 +1773,10 @@ bool loadOne(const void* data, size_t size) {
 	at += gbStateSize();
 	if (!netplayStates) {
 		std::memcpy(s->capacitor, at, sizeof(s->capacitor));
+		std::memcpy(s->heardCapacitor, at + sizeof(s->capacitor), sizeof(s->heardCapacitor));
+		s->heardApart = at[sizeof(s->capacitor) + sizeof(s->heardCapacitor)];
 	}
-	at += sizeof(s->capacitor) + 1;
+	at += sizeof(s->capacitor) + sizeof(s->heardCapacitor) + 1 + 1;
 	if (duckLaptopConnected()) {
 		duckLaptopLoadState(at);
 	}
@@ -1784,7 +1788,6 @@ bool loadOne(const void* data, size_t size) {
 	if (s->cheatOn) {
 		gbCheatCartLoadState(&s->cheat, at);
 	}
-	s->heardApart = false;
 	s->overDot = 0;
 	// A state from another model runs as that model until the next restart.
 	if (s->gb->model != was) {
