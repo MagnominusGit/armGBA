@@ -1,5 +1,10 @@
 /* Copyright (c) 2026 Magnominus
- * SPDX-License-Identifier: MIT */
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ * Licensed under the GNU General Public License, version 2 or (at your option) any later version: see LICENSE.
+ *
+ * The access and HALT timing follow SameBoy (Copyright (c) Lior Halphon), under the Expat (MIT) license:
+ * see LICENSES/SameBoy.txt. */
 #include "gb.h"
 
 // The Sharp SM83, one instruction at a time. Every memory access takes an M-cycle and comes at its
