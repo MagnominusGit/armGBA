@@ -614,7 +614,8 @@ static void advance(struct GB* gb) {
 		if (single) {
 			ppu->mode = 0;
 			ppu->modeForInterrupt = 0;
-			ppu->oamReadBlocked = false;
+			// The Color (E) keeps OAM from the CPU's reads a dot longer (SameBoy).
+			ppu->oamReadBlocked = gbColor(gb);
 			ppu->vramReadBlocked = false;
 			ppu->oamWriteBlocked = false;
 			ppu->vramWriteBlocked = false;
