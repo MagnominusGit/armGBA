@@ -47,7 +47,8 @@ static uint64_t objectsPlain(const uint8_t* oam, int line, int height) {
 
 #define AVX2 __attribute__((target("avx2")))
 
-AVX2 static void expandAvx2(uint32_t* line, uint8_t* info, const uint64_t* pixels, const uint32_t* const* colors, const uint8_t* front, int count) {
+// Kept out of line: built for x86-64-v3, inlined into drawLineCgb, the line took a quarter longer.
+AVX2 __attribute__((noinline)) static void expandAvx2(uint32_t* line, uint8_t* info, const uint64_t* pixels, const uint32_t* const* colors, const uint8_t* front, int count) {
 	for (int t = 0; t < count; ++t) {
 		__m256i palette = _mm256_castsi128_si256(_mm_loadu_si128((const __m128i*) colors[t]));
 		__m256i indices = _mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*) &pixels[t]));
