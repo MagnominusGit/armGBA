@@ -581,8 +581,6 @@ struct GB {
 	bool duckLaptop;
 	// Set by the frontend for a frame it won't show: lines aren't drawn.
 	bool noDraw;
-	// IME turned on by EI just before this instruction.
-	bool eiJustTaken;
 	// A Color game's palettes as drawn (through videoTable), built when first needed after palette
 	// RAM, a reset, a loaded state or the frontend's colours change them (which clear colorsBuilt).
 	bool colorsBuilt;

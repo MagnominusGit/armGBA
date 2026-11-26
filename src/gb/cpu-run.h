@@ -404,9 +404,9 @@ static inline __attribute__((always_inline)) void CPU(step)(struct GB* gb, uint8
 			gbRunEvents(gb);
 		}
 		uint8_t pending = gb->ie & gb->ifl & 0x1F;
-		// With an interrupt already pending, HALT doesn't stop: right after EI, the interrupt is taken at
-		// once and returns to the HALT (Pan Docs); with IME off, the halt bug.
-		if (pending && gb->eiJustTaken) {
+		// With an interrupt already pending, HALT doesn't stop: with IME on, the interrupt is taken at
+		// once and returns to the HALT (SameBoy); with IME off, the halt bug.
+		if (pending && cpu->ime) {
 			--cpu->pc;
 		} else if (pending && !cpu->ime) {
 			cpu->haltBug = true;
@@ -629,7 +629,6 @@ static void CPU(run)(struct GB* gb, uint32_t until) {
 			CPU(dispatch)(gb);
 			continue;
 		}
-		gb->eiJustTaken = cpu->imePending;
 		if (cpu->imePending) {
 			cpu->imePending = false;
 			cpu->ime = true;
@@ -649,7 +648,5 @@ static void CPU(run)(struct GB* gb, uint32_t until) {
 			}
 			CPU(step)(gb, op);
 		} while (!gb->attention && gbSince(limit, gb->now) > 0);
-		// Set only with attention raised, so for one instruction.
-		gb->eiJustTaken = false;
 	}
 }
