@@ -899,9 +899,10 @@ static void lcdOn(struct GB* gb) {
 	ppu->hiddenFrame = true;
 	ppu->windowLine = 0;
 	ppu->windowSeen = false;
-	// The first line is 8 dots short, and starts a dot late, except on the Color at double speed (AGE's
-	// stat-mode and ly tests).
-	unsigned late = gbColor(gb) && gb->doubleSpeed ? 0 : 1;
+	// The first line is 8 dots short, and starts a dot late: on the Color at double speed, LCDC's enable
+	// bit lands 2 T-cycles into the write (SameBoy); at single speed, half a dot late reads the same
+	// (AGE's stat-mode and ly tests).
+	unsigned late = 1;
 	ppu->halfDotLate = gbColor(gb) && !gb->doubleSpeed;
 	ppu->lineStart = gb->now + late;
 	ppu->lineEnd = gb->now + late + GB_LINE_DOTS - 8;

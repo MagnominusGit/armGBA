@@ -59,3 +59,4 @@ void sbSweep(int v[8]) {
 	v[6] = gb.apu.channel_1_restart_hold; v[7] = gb.apu.square_sweep_countdown;
 }
 int sbLfDiv(void) { GB_apu_run(&gb, true); return gb.apu.lf_div; }
+int sbWindowTriggered(void) { return gb.wy_triggered; }

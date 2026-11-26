@@ -14,7 +14,7 @@
 #include <string.h>
 void sbLoad(int cgb, const uint8_t* boot, size_t bootSize, const uint8_t* rom, size_t romSize);
 int sbStep(void); uint8_t sbRead(uint16_t); void sbRegs(uint16_t r[6]); int sbHalted(void); uint16_t sbDiv(void); int sbLine(void);
-uint8_t sbIo(int); uint8_t sbIe(void); int sbIme(void); void sbApu(int on[4], int volume[4]); void sbSweep(int v[8]); int sbLfDiv(void);
+uint8_t sbIo(int); uint8_t sbIe(void); int sbIme(void); void sbApu(int on[4], int volume[4]); void sbSweep(int v[8]); int sbLfDiv(void); int sbWindowTriggered(void);
 const uint8_t* sbRam(void); size_t sbRamSize(void); const uint8_t* sbHram(void); const uint8_t* sbOam(void);
 const uint8_t* sbSram(void); size_t sbSramSize(void); int sbDouble(void);
 static struct GB gb;
@@ -136,7 +136,7 @@ int main(int argc, char** argv) {
 			for (int k = 24; k >= 1; --k) printf("  sameboy pc %04x af %04x\n", hist[(i - k + H) % H][5], hist[(i - k + H) % H][0]);
 			printf("  armGB   af %04x bc %04x de %04x hl %04x sp %04x pc %04x  div %04x line %u double %d\n", a[0], a[1], a[2], a[3], a[4], a[5], gb.timer.counter, gb.ppu.line, gb.doubleSpeed);
 			printf("  SameBoy af %04x bc %04x de %04x hl %04x sp %04x pc %04x  div %04x line %d double %d (offset %d now %d)\n", b[0], b[1], b[2], b[3], b[4], b[5], sbDiv(), sbLine(), sbDouble(), divOffset, div);
-			printf("  armGB STAT reg %02x LYC %02x line %u dot %d | SameBoy STAT %02x LYC %02x\n", gb.ppu.stat, gb.ppu.lyc, gb.ppu.line, (int) (gb.now - gb.ppu.lineStart), sbIo(0x41), sbIo(0x45));
+			printf("  armGB STAT reg %02x LYC %02x line %u dot %d window seen %d | SameBoy STAT %02x LYC %02x window triggered %d\n", gb.ppu.stat, gb.ppu.lyc, gb.ppu.line, (int) (gb.now - gb.ppu.lineStart), gb.ppu.windowSeen, sbIo(0x41), sbIo(0x45), sbWindowTriggered());
 			if (getenv("OAM")) {
 				printf("  OAM y,x:");
 				for (int k = 0; k < 40; ++k) if (gb.oam[k * 4] && gb.oam[k * 4] < 160) printf(" %d:%d,%d", k, gb.oam[k * 4], gb.oam[k * 4 + 1]);
