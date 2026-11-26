@@ -191,6 +191,10 @@ static void CPU(dispatch)(struct GB* gb) {
 	CPU(tick)(gb);
 	CPU(tick)(gb);
 	CPU(write8)(gb, --cpu->sp, cpu->pc >> 8);
+	// Interrupts requested up to now count, events due during the pushes included.
+	if (gbSince(gb->now, gb->nextEvent) >= 0) {
+		gbRunEvents(gb);
+	}
 	uint8_t pending = gb->ie & gb->ifl & 0x1F;
 	CPU(write8)(gb, --cpu->sp, cpu->pc);
 	if (!pending) {

@@ -78,6 +78,11 @@ int main(int argc, char** argv) {
 		static bool dmaLag;
 		bool lagging = sbHdmaOn();
 		bool timing = divKnown && div != divOffset && !lagging && !dmaLag;
+		// TIMA=1: the timer's TIMA too.
+		if (getenv("TIMA") && !gb.bootMapped && gb.timer.tima != sbIo(0x05) && !gb.timer.reloading) {
+			printf("  TIMA armGB %02x (TMA %02x TAC %02x) SameBoy %02x (TMA %02x TAC %02x)\n", gb.timer.tima, gb.timer.tma, gb.timer.tac, sbIo(0x05), sbIo(0x06), sbIo(0x07));
+			timing = true;
+		}
 		dmaLag = lagging;
 		// STAT=1: the PPU too, LY and STAT's mode with the LCD on, after each instruction.
 		bool ppu = false;
