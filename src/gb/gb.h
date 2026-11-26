@@ -363,6 +363,8 @@ struct GBCgb {
 	uint16_t hdmaSource, hdmaDest;
 	uint8_t hdmaBlocks;
 	bool hdmaHblank;
+	// An H-blank DMA block due, moved after the CPU's next opcode fetch (SameBoy).
+	bool hdmaDue;
 };
 
 // MBC3's clock: seconds, minutes, hours, the day's low 8 bits and DH (day bit 8, halt, day carry), as
@@ -700,8 +702,9 @@ int gbLinkStatus(struct GB*, int request);
 // cgb.c
 uint8_t gbCgbRead(struct GB*, uint8_t reg);
 void gbCgbWrite(struct GB*, uint8_t reg, uint8_t value);
-void gbHdmaHblank(struct GB*);
+void gbHdmaHblank(struct GB*, uint32_t at);
 void gbHdmaEvent(struct GB*);
+void gbHdmaRun(struct GB*);
 
 // cart.c
 bool gbCartInit(struct GB*);

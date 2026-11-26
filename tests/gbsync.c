@@ -102,6 +102,12 @@ int main(int argc, char** argv) {
 			gbTimerSync(&gb);
 			printf("%ld pc %04x now %u div %04x | SameBoy div %04x double %d halted %d switching %d ie %02x if %02x ime %d events %02x next %d timer %d ppu %d speed %d tac %02x\n", i, a[5], gb.now, gb.timer.counter, sbDiv(), gb.doubleSpeed, gb.cpu.halted, gb.cpu.switching, gb.ie, gb.ifl, gb.cpu.ime, gb.eventsOn, (int) (gb.nextEvent - gb.now), (int) (gb.events[GB_EVENT_TIMER] - gb.now), (int) (gb.events[GB_EVENT_PPU] - gb.now), (int) (gb.events[GB_EVENT_SPEED] - gb.now), gb.timer.tac);
 		}
+		// DMATRACE=n: from instruction n on, armGB's VRAM DMA.
+		if (getenv("DMATRACE") && i >= atol(getenv("DMATRACE"))) {
+			gbPpuSync(&gb);
+			printf("%ld pc %04x a %02x | armGB line %u dot %d mode %d blocks %d hblank %d src %04x dst %04x | SameBoy LY %02x STAT %02x\n", i, a[5], a[0] >> 8, gb.ppu.line,
+			       (int) (gb.now - gb.ppu.lineStart), gb.ppu.mode, gb.cgb.hdmaBlocks, gb.cgb.hdmaHblank, gb.cgb.hdmaSource, gb.cgb.hdmaDest, sbIo(0x44), sbIo(0x41));
+		}
 		// PPUTRACE=n: from instruction n on, LY and STAT on each side and armGB's line and dot.
 		if (getenv("PPUTRACE") && i >= atol(getenv("PPUTRACE"))) {
 			gbPpuSync(&gb);

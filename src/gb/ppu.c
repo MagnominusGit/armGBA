@@ -605,7 +605,7 @@ static void advance(struct GB* gb) {
 		// Mode 3 ends: STAT shows mode 0 now, and its interrupt comes a dot later.
 		drawLine(gb);
 		if (gb->cgb.hdmaHblank) {
-			gbHdmaHblank(gb);
+			gbHdmaHblank(gb, ppu->nextAt + 3);
 		}
 		if (single) {
 			ppu->mode = 0;
@@ -925,7 +925,7 @@ static void lcdOff(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
 	// An H-blank DMA waiting outside an H-blank moves a block as the LCD goes off (SameBoy).
 	if (gb->cgb.hdmaHblank && gb->cgb.hdmaBlocks && ppu->mode != 0) {
-		gbHdmaHblank(gb);
+		gbHdmaHblank(gb, gb->now);
 	}
 	// The screen shows nothing while the LCD is off.
 	gbBlankFrame(gb);

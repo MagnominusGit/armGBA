@@ -634,17 +634,22 @@ static void CPU(run)(struct GB* gb, uint32_t until) {
 			cpu->ime = true;
 			gb->attention = true;
 		}
-		// The halt bug: the first fetch doesn't move PC.
-		bool haltBug = cpu->haltBug;
-		cpu->haltBug = false;
+		// After the first fetch: the halt bug (the fetch doesn't move PC), and an H-blank DMA block due.
+		bool first = cpu->haltBug || gb->cgb.hdmaDue;
 		// Then on without the checks above while nothing needs them and no event is due (an event put
 		// sooner raises attention).
 		uint32_t limit = gbSince(gb->nextEvent, until) < 0 ? gb->nextEvent : until;
 		do {
 			uint8_t op = CPU(fetch)(gb);
-			if (__builtin_expect(haltBug, 0)) {
-				--cpu->pc;
-				haltBug = false;
+			if (__builtin_expect(first, 0)) {
+				first = false;
+				if (cpu->haltBug) {
+					cpu->haltBug = false;
+					--cpu->pc;
+				}
+				if (gb->cgb.hdmaDue) {
+					gbHdmaRun(gb);
+				}
 			}
 			CPU(step)(gb, op);
 		} while (!gb->attention && gbSince(limit, gb->now) > 0);

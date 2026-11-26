@@ -56,14 +56,24 @@ static void copyBlocks(struct GB* gb, unsigned blocks) {
 	}
 }
 
-// An H-blank of a visible line: an H-blank DMA moves a block, once the PPU has caught up.
-void gbHdmaHblank(struct GB* gb) {
-	gbSchedule(gb, GB_EVENT_HDMA, gb->now);
+// An H-blank DMA's block comes due at time at: 3 dots after mode 3 ends, or as the LCD goes off
+// (SameBoy).
+void gbHdmaHblank(struct GB* gb, uint32_t at) {
+	gbSchedule(gb, GB_EVENT_HDMA, at);
 }
 
 void gbHdmaEvent(struct GB* gb) {
 	struct GBCgb* cgb = &gb->cgb;
 	if (cgb->hdmaHblank && cgb->hdmaBlocks && !gb->cpu.halted) {
+		cgb->hdmaDue = true;
+		gb->attention = true;
+	}
+}
+
+void gbHdmaRun(struct GB* gb) {
+	struct GBCgb* cgb = &gb->cgb;
+	cgb->hdmaDue = false;
+	if (cgb->hdmaHblank && cgb->hdmaBlocks) {
 		copyBlocks(gb, 1);
 	}
 }
