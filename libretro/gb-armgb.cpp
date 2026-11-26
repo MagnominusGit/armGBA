@@ -1308,10 +1308,12 @@ long serialLeft(Console& c) {
 	return dots < 0 ? -1 : dots / 2;
 }
 
-// The fewest samples a transfer a Game Boy could start now takes: eight bits at 8192 Hz, or on a
-// Game Boy Color with SC's fast bit, at 262144 Hz.
+// The fewest samples a transfer a Game Boy could start now takes: sixteen falling edges of its clock
+// bit (the divider's bit 7, or bit 2 with the Color's fast bit in SC), the first of which can come at
+// once, at the counter's rate.
 long shortestTransfer(Console& c) {
-	return c.gb->cgbMode && gbLinkStatus(c.gb, GB_LINK_CONTROL) & 0x02 ? 64 : 2048;
+	long const units = 15L * (c.gb->cgbMode && gbLinkStatus(c.gb, GB_LINK_CONTROL) & 0x02 ? 8 : 256);
+	return std::max(1L, units / (c.gb->doubleSpeed ? 2 : 1) / 2);
 }
 
 // Where the consoles next meet: at the frame's end, at the next transfer's end on the cable or the
@@ -1390,7 +1392,8 @@ void runExactlyParts() {
 			}
 			continue;
 		}
-		long count = std::min<long>(FRAME_SAMPLES - done, EXACT_PART);
+		// No longer than a transfer can take, so one starting in the part can't also end in it.
+		long count = std::min<long>({ FRAME_SAMPLES - done, EXACT_PART, shortestTransfer(*s) });
 		count = std::min(count, allowed);
 		count = own > 0 ? std::min(count, own) : count;
 		std::size_t samples = count;

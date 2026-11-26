@@ -103,8 +103,14 @@ int gbLinkStatus(struct GB* gb, int request) {
 		return 0;
 	case GB_LINK_CONTROL:
 		return serial->sc;
-	case GB_LINK_LEFT:
-		return (gb->eventsOn >> GB_EVENT_SERIAL & 1) ? gbSince(gb->events[GB_EVENT_SERIAL], gb->now) : -1;
+	case GB_LINK_LEFT: {
+		if (!(gb->eventsOn >> GB_EVENT_SERIAL & 1)) {
+			return -1;
+		}
+		// A transfer whose end is due but not yet run (a run stops at an instruction's end) has none left.
+		int32_t left = gbSince(gb->events[GB_EVENT_SERIAL], gb->now);
+		return left > 0 ? left : 0;
+	}
 	default:
 		// The other end's byte: the transfer under way ends with it.
 		serial->sb = request;
