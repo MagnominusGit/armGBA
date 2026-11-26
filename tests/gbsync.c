@@ -14,7 +14,7 @@
 #include <string.h>
 void sbLoad(int cgb, const uint8_t* boot, size_t bootSize, const uint8_t* rom, size_t romSize);
 int sbStep(void); uint8_t sbRead(uint16_t); void sbRegs(uint16_t r[6]); int sbHalted(void); uint16_t sbDiv(void); int sbLine(void);
-uint8_t sbIo(int); uint8_t sbIe(void); int sbIme(void); void sbApu(int on[4], int volume[4]); void sbSweep(int v[8]); int sbLfDiv(void); int sbWindowTriggered(void); int sbHdmaOn(void);
+uint8_t sbIo(int); uint8_t sbIe(void); int sbIme(void); void sbApu(int on[4], int volume[4]); void sbSweep(int v[8]); int sbLfDiv(void); int sbWindowTriggered(void); int sbHdmaOn(void); const uint8_t* sbBgPalettes(void); const uint8_t* sbObjPalettes(void);
 const uint8_t* sbRam(void); size_t sbRamSize(void); const uint8_t* sbHram(void); const uint8_t* sbOam(void);
 const uint8_t* sbSram(void); size_t sbSramSize(void); int sbDouble(void);
 static struct GB gb;
@@ -50,6 +50,8 @@ int main(int argc, char** argv) {
 	memcpy(gb.wram, sbRam(), sbRamSize() < sizeof(gb.wram) ? sbRamSize() : sizeof(gb.wram));
 	memcpy(gb.hram, sbHram(), sizeof(gb.hram));
 	memcpy(gb.oam, sbOam(), sizeof(gb.oam));
+	memcpy(gb.cgb.bgPalette, sbBgPalettes(), sizeof(gb.cgb.bgPalette));
+	memcpy(gb.cgb.objPalette, sbObjPalettes(), sizeof(gb.cgb.objPalette));
 	if (sbSram()) memcpy(gb.sram, sbSram(), sbSramSize() < sizeof(gb.sram) ? sbSramSize() : sizeof(gb.sram));
 	enum { H = 64 };
 	uint16_t hist[H][6]; int divOffset = 0; bool divKnown = false;
