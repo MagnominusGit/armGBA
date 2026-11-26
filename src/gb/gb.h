@@ -239,6 +239,8 @@ struct GBPpu {
 	bool windowSeen;
 	// The line being shown just after the LCD is switched on, which has no OAM scan.
 	bool firstLine;
+	// Started by a Color at single speed: half a dot late, which reads as a whole one until double speed.
+	bool halfDotLate;
 	// The frame the LCD was switched on in, which the screen doesn't show.
 	bool hiddenFrame;
 	// When the CPU is locked out of OAM and VRAM, which isn't quite when STAT's mode says.

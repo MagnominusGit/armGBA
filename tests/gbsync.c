@@ -90,6 +90,12 @@ int main(int argc, char** argv) {
 			}
 			last = mine == theirs;
 		}
+		// PPUTRACE=n: from instruction n on, LY and STAT on each side and armGB's line and dot.
+		if (getenv("PPUTRACE") && i >= atol(getenv("PPUTRACE"))) {
+			gbPpuSync(&gb);
+			printf("%ld pc %04x | armGB line %u dot %d LY %02x STAT %02x | SameBoy LY %02x STAT %02x\n", i, a[5], gb.ppu.line,
+			       (int) (gb.now - gb.ppu.lineStart), gbPpuRead(&gb, 0x44), gbPpuRead(&gb, 0x41), sbIo(0x44), sbIo(0x41));
+		}
 		// SWEEP=n: from instruction n on, channel 1's sweep on each side.
 		if (getenv("SWEEP") && i >= atol(getenv("SWEEP"))) {
 			gbApuSync(&gb);

@@ -129,7 +129,13 @@ void gbStop(struct GB* gb) {
 		bool pending = gb->ie & gb->ifl & 0x1F;
 		bool toDouble = !gb->doubleSpeed;
 		gb->io[0x4D] &= 0x80;
-		gbPpuFreeze(gb, pending ? (toDouble ? 1 : 0) : 5);
+		// A PPU half a dot late gives that back going to double speed.
+		uint32_t freeze = pending ? (toDouble ? 1 : 0) : 5;
+		if (toDouble && gb->ppu.halfDotLate) {
+			gb->ppu.halfDotLate = false;
+			freeze -= 1;
+		}
+		gbPpuFreeze(gb, freeze);
 		if (!pending) {
 			cpu->halted = true;
 			cpu->justHalted = true;
