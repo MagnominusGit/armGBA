@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
 		// EVTRACE=n: from instruction n on, armGB's time, divider, speed and events.
 		if (getenv("EVTRACE") && i >= atol(getenv("EVTRACE"))) {
 			gbTimerSync(&gb);
-			printf("%ld pc %04x now %u div %04x | SameBoy div %04x IF %02x double %d halted %d switching %d ie %02x if %02x ime %d events %02x next %d timer %d ppu %d speed %d tac %02x\n", i, a[5], gb.now, gb.timer.counter, sbDiv(), sbIo(0x0F), gb.doubleSpeed, gb.cpu.halted, gb.cpu.switching, gb.ie, gb.ifl, gb.cpu.ime, gb.eventsOn, (int) (gb.nextEvent - gb.now), (int) (gb.events[GB_EVENT_TIMER] - gb.now), (int) (gb.events[GB_EVENT_PPU] - gb.now), (int) (gb.events[GB_EVENT_SPEED] - gb.now), gb.timer.tac);
+			printf("%ld pc %04x now %u div %04x | SameBoy div %04x IF %02x double %d halted %d switching %d ie %02x if %02x ime %d events %02x next %d timer %d ppu %d speed %d tac %02x serial %d end %04x sc %02x\n", i, a[5], gb.now, gb.timer.counter, sbDiv(), sbIo(0x0F), gb.doubleSpeed, gb.cpu.halted, gb.cpu.switching, gb.ie, gb.ifl, gb.cpu.ime, gb.eventsOn, (int) (gb.nextEvent - gb.now), (int) (gb.events[GB_EVENT_TIMER] - gb.now), (int) (gb.events[GB_EVENT_PPU] - gb.now), (int) (gb.events[GB_EVENT_SPEED] - gb.now), gb.timer.tac, gb.eventsOn & 1u << GB_EVENT_SERIAL ? (int) (gb.events[GB_EVENT_SERIAL] - gb.now) : -1, gb.serial.end, gb.serial.sc);
 		}
 		// DMATRACE=n: from instruction n on, armGB's VRAM DMA.
 		if (getenv("DMATRACE") && i >= atol(getenv("DMATRACE"))) {
