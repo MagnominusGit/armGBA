@@ -14,7 +14,7 @@
 #include <string.h>
 void sbLoad(int cgb, const uint8_t* boot, size_t bootSize, const uint8_t* rom, size_t romSize);
 int sbStep(void); uint8_t sbRead(uint16_t); void sbRegs(uint16_t r[6]); int sbHalted(void); uint16_t sbDiv(void); int sbLine(void);
-uint8_t sbIo(int); uint8_t sbIe(void); int sbIme(void); void sbApu(int on[4], int volume[4]); void sbSweep(int v[8]); int sbLfDiv(void); int sbWindowTriggered(void);
+uint8_t sbIo(int); uint8_t sbIe(void); int sbIme(void); void sbApu(int on[4], int volume[4]); void sbSweep(int v[8]); int sbLfDiv(void); int sbWindowTriggered(void); int sbHdmaOn(void);
 const uint8_t* sbRam(void); size_t sbRamSize(void); const uint8_t* sbHram(void); const uint8_t* sbOam(void);
 const uint8_t* sbSram(void); size_t sbSramSize(void); int sbDouble(void);
 static struct GB gb;
@@ -71,7 +71,12 @@ int main(int argc, char** argv) {
 		if (!divKnown && !gb.bootMapped) { divOffset = div; divKnown = true; }
 		memcpy(hist[i % H], b, sizeof(b));
 		bool regs = memcmp(a, b, sizeof(a)) != 0;
-		bool timing = divKnown && div != divOffset;
+		// SameBoy runs a VRAM DMA in the next instruction's fetch, armGB in the write that starts it: the
+		// divider is compared again once both have.
+		static bool dmaLag;
+		bool lagging = sbHdmaOn();
+		bool timing = divKnown && div != divOffset && !lagging && !dmaLag;
+		dmaLag = lagging;
 		// STAT=1: the PPU too, LY and STAT's mode with the LCD on, after each instruction.
 		bool ppu = false;
 		uint8_t lyA = 0, statA = 0;
@@ -89,6 +94,11 @@ int main(int argc, char** argv) {
 				printf("lf_div differs from instruction %ld pc %04x double %d: armGB %d SameBoy %d\n", i, a[5], gb.doubleSpeed, mine, theirs);
 			}
 			last = mine == theirs;
+		}
+		// EVTRACE=n: from instruction n on, armGB's time, divider, speed and events.
+		if (getenv("EVTRACE") && i >= atol(getenv("EVTRACE"))) {
+			gbTimerSync(&gb);
+			printf("%ld pc %04x now %u div %04x | SameBoy div %04x double %d halted %d switching %d ie %02x if %02x ime %d events %02x next %d timer %d ppu %d speed %d tac %02x\n", i, a[5], gb.now, gb.timer.counter, sbDiv(), gb.doubleSpeed, gb.cpu.halted, gb.cpu.switching, gb.ie, gb.ifl, gb.cpu.ime, gb.eventsOn, (int) (gb.nextEvent - gb.now), (int) (gb.events[GB_EVENT_TIMER] - gb.now), (int) (gb.events[GB_EVENT_PPU] - gb.now), (int) (gb.events[GB_EVENT_SPEED] - gb.now), gb.timer.tac);
 		}
 		// PPUTRACE=n: from instruction n on, LY and STAT on each side and armGB's line and dot.
 		if (getenv("PPUTRACE") && i >= atol(getenv("PPUTRACE"))) {
@@ -136,7 +146,10 @@ int main(int argc, char** argv) {
 			for (int k = 24; k >= 1; --k) printf("  sameboy pc %04x af %04x\n", hist[(i - k + H) % H][5], hist[(i - k + H) % H][0]);
 			printf("  armGB   af %04x bc %04x de %04x hl %04x sp %04x pc %04x  div %04x line %u double %d\n", a[0], a[1], a[2], a[3], a[4], a[5], gb.timer.counter, gb.ppu.line, gb.doubleSpeed);
 			printf("  SameBoy af %04x bc %04x de %04x hl %04x sp %04x pc %04x  div %04x line %d double %d (offset %d now %d)\n", b[0], b[1], b[2], b[3], b[4], b[5], sbDiv(), sbLine(), sbDouble(), divOffset, div);
-			printf("  armGB STAT reg %02x LYC %02x line %u dot %d window seen %d | SameBoy STAT %02x LYC %02x window triggered %d\n", gb.ppu.stat, gb.ppu.lyc, gb.ppu.line, (int) (gb.now - gb.ppu.lineStart), gb.ppu.windowSeen, sbIo(0x41), sbIo(0x45), sbWindowTriggered());
+			printf("  armGB STAT reg %02x LYC %02x line %u dot %d window seen %d LCDC %02x | SameBoy STAT %02x LYC %02x window triggered %d LCDC %02x\n", gb.ppu.stat, gb.ppu.lyc, gb.ppu.line, (int) (gb.now - gb.ppu.lineStart), gb.ppu.windowSeen, gb.ppu.lcdc, sbIo(0x41), sbIo(0x45), sbWindowTriggered(), sbIo(0x40));
+			printf("  code at %04x:", (unsigned) (a[5] - 8));
+			for (int k = -8; k < 4; ++k) printf(" %02x", sbRead((uint16_t) (a[5] + k)));
+			printf("\n");
 			if (getenv("OAM")) {
 				printf("  OAM y,x:");
 				for (int k = 0; k < 40; ++k) if (gb.oam[k * 4] && gb.oam[k * 4] < 160) printf(" %d:%d,%d", k, gb.oam[k * 4], gb.oam[k * 4 + 1]);

@@ -60,3 +60,5 @@ void sbSweep(int v[8]) {
 }
 int sbLfDiv(void) { GB_apu_run(&gb, true); return gb.apu.lf_div; }
 int sbWindowTriggered(void) { return gb.wy_triggered; }
+// A general or H-blank DMA SameBoy runs from the next fetch on.
+int sbHdmaOn(void) { return gb.hdma_on; }
