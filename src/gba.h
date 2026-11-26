@@ -1055,6 +1055,7 @@ void videoCaptureArmed(struct GBA*);
 // timer.c
 void timerInit(struct GBA*);
 uint16_t timerReadCounter(struct GBA*, int timer);
+int32_t timerUntilTick(struct GBA*, int timer);
 void timerWriteReload(struct GBA*, int timer, uint16_t reload);
 void timerWriteControl(struct GBA*, int timer, uint16_t control);
 // Runs the quiet overflows due by time, including at it.

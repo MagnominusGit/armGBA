@@ -274,6 +274,8 @@ enum {
 	IDLE_READS = 8,
 	// The instructions a probe follows looking for two times round.
 	IDLE_PROBE_STEPS = 128,
+	// A timer loop learnt again with a new count is forgotten after failing this many times in a row.
+	IDLE_TIMER_MISSES = 4,
 	// Each time round's reads and writes of memory that can change.
 	IDLE_ACCESSES = 32,
 	IDLE_SPANS = 64,
@@ -331,6 +333,10 @@ struct IdleLoop {
 	struct IdleRead read[IDLE_READS];
 	int writes;
 	struct IdleRead write[IDLE_READS];
+	// The timers whose counts it reads, and how many times running it again with another count has
+	// failed in a row.
+	uint8_t timers;
+	uint8_t misses;
 };
 
 // An instruction the exact CPU runs over and over for compiled code, kept decoded.
@@ -375,6 +381,7 @@ struct Jit {
 	int idleAccesses[2];
 	struct IdleAccess idleAccess[2][IDLE_ACCESSES];
 	bool idleBad;
+	uint8_t idleTimers;
 	// Arrivals by a hash of their state. A probe is made only at a state seen before, since an idle
 	// loop comes round again and again; a failed probe puts off the next one at that state.
 	struct {

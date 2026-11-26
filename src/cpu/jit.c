@@ -1913,7 +1913,12 @@ static bool idleReadable(struct GBA* gba, uint32_t address, int size) {
 	case REGION_OAM:
 		return true;
 	case REGION_IO:
-		return size <= 2 && (address & 0xFFFFFE) == REG_KEYINPUT;
+		// The keys, and the count of a timer running on the clock, which a skip stops short of its
+		// next tick.
+		if (size <= 2 && (address & 0xFFFFFE) == REG_KEYINPUT) {
+			return true;
+		}
+		return size == 2 && ((address & 0xFFFFFF) & ~0xCu) == REG_TM0CNT_LO && !gba->cpu.overclock && gba->timers[(address >> 2) & 3].running;
 	case REGION_ROM0 ... REGION_ROM2_EX - 1:
 		// Vast Fame's protection answers reads itself, and the GPIO port can read back through the
 		// ROM.
@@ -1953,6 +1958,9 @@ void jitIdleRead(struct GBA* gba, uint32_t address, int size, uint32_t value) {
 	if (!idleReadable(gba, address, size)) {
 		gba->jit->idleBad = true;
 		return;
+	}
+	if ((address >> 24) == REGION_IO && (address & 0xFFFFFE) != REG_KEYINPUT) {
+		gba->jit->idleTimers |= 1 << ((address >> 2) & 3);
 	}
 	// The cartridge doesn't change.
 	if ((address >> 24) < REGION_ROM0) {
@@ -2051,13 +2059,26 @@ static uint32_t idleHash(const struct IdleState* s) {
 	return h;
 }
 
-// Skips the times round that end before the next event: their writes are made and their cycles
-// counted.
-static void idleSkip(struct GBA* gba, const struct IdleLoop* loop) {
+// Skips the times round that end before the next event, or before a timer it reads next ticks:
+// their writes are made and their cycles counted. Returns whether a tick came first.
+static bool idleSkip(struct GBA* gba, const struct IdleLoop* loop) {
 	struct CPU* cpu = &gba->cpu;
 	int32_t room = cpu->nextEvent - cpu->cycles;
+	bool tick = false;
+	for (int t = 0; t < 4; ++t) {
+		if (loop->timers & (1 << t)) {
+			int32_t until = timerUntilTick(gba, t);
+			if (until < 0) {
+				return false;
+			}
+			if (until < room) {
+				room = until;
+				tick = true;
+			}
+		}
+	}
 	if (room <= loop->period) {
-		return;
+		return tick;
 	}
 	for (int i = 0; i < loop->writes; ++i) {
 		const struct IdleRead* w = &loop->write[i];
@@ -2078,10 +2099,12 @@ static void idleSkip(struct GBA* gba, const struct IdleLoop* loop) {
 	if (cpu->prefetching) {
 		gba->prefetcher.base += add;
 	}
+	return tick;
 }
 
-// Goes round from here twice with the exact CPU; it's a loop if the two times round match.
-static void idleProbe(struct GBA* gba, const struct IdleState* start) {
+// Goes round from here twice with the exact CPU; it's a loop if the two times round match. Returns
+// 1 with the loop learnt, 0 if it isn't one, or -1 if it is but can't be skipped.
+static int idleLearn(struct GBA* gba, const struct IdleState* start, struct IdleLoop* loop) {
 	struct Jit* jit = gba->jit;
 	struct CPU* cpu = &gba->cpu;
 	uint32_t runs = gba->eventRuns;
@@ -2092,6 +2115,7 @@ static void idleProbe(struct GBA* gba, const struct IdleState* start) {
 	jit->idleAccesses[0] = 0;
 	jit->idleAccesses[1] = 0;
 	jit->idleBad = false;
+	jit->idleTimers = 0;
 	gba->idleProbing = true;
 	bool found = false;
 	int indirect = 0;
@@ -2128,8 +2152,8 @@ static void idleProbe(struct GBA* gba, const struct IdleState* start) {
 			continue;
 		}
 		// A loop with no indirect branch costs compiled code little to go round, less than leaving
-		// for the run loop after each event would.
-		found = !jit->idleBad && indirect && cpu->cycles - from == period && jit->idleAccesses[0] == jit->idleAccesses[1];
+		// for the run loop after each event would, unless it reads a timer, which calls out.
+		found = !jit->idleBad && (indirect || jit->idleTimers) && cpu->cycles - from == period && jit->idleAccesses[0] == jit->idleAccesses[1];
 		for (int a = 0; a < jit->idleAccesses[0] && found; ++a) {
 			const struct IdleAccess* x = &jit->idleAccess[0][a];
 			const struct IdleAccess* y = &jit->idleAccess[1][a];
@@ -2139,9 +2163,27 @@ static void idleProbe(struct GBA* gba, const struct IdleState* start) {
 	}
 	gba->idleProbing = false;
 	jit->idleLap = 0;
-	uint32_t hash = idleHash(start);
-	unsigned slot = hash & 255;
 	if (!found) {
+		return 0;
+	}
+	if (!idleSummarize(jit, loop)) {
+		return -1;
+	}
+	loop->valid = true;
+	loop->start = *start;
+	loop->period = period;
+	loop->timers = jit->idleTimers;
+	loop->misses = 0;
+	return 1;
+}
+
+// Learns a loop from here into the next slot; a place where that keeps failing is tried less often.
+static void idleProbe(struct GBA* gba, const struct IdleState* start) {
+	struct Jit* jit = gba->jit;
+	unsigned slot = idleHash(start) & 255;
+	struct IdleLoop learnt;
+	int const got = idleLearn(gba, start, &learnt);
+	if (!got) {
 		if (jit->idleSeen[slot].fails < 6) {
 			++jit->idleSeen[slot].fails;
 		}
@@ -2149,15 +2191,13 @@ static void idleProbe(struct GBA* gba, const struct IdleState* start) {
 		return;
 	}
 	struct IdleLoop* loop = &jit->idleLoops[jit->idleNext];
-	if (!idleSummarize(jit, loop)) {
+	if (got < 0) {
 		loop->valid = false;
 		return;
 	}
+	*loop = learnt;
 	jit->idleSeen[slot].fails = 0;
 	jit->idleNext = (jit->idleNext + 1) % IDLE_LOOPS;
-	loop->valid = true;
-	loop->start = *start;
-	loop->period = period;
 }
 
 bool jitIsIdleHead(const struct Jit* jit, uint32_t key) {
@@ -2201,9 +2241,11 @@ static void idleHeadCount(struct Jit* jit, uint32_t r15, bool probe) {
 	}
 }
 
-// A block ending in a branch back to an earlier cartridge block: a loop that may be idle.
+// A block ending in a branch back to an earlier cartridge block, or a conditional one back to its own
+// start (polling a timer): a loop that may be idle.
 static void idleSpan(struct Jit* jit, const struct Block* block, const struct Inst* last) {
-	if (last->kind != I_B || last->link || last->cond != COND_AL || last->target >= block->pc || !inRom(block->pc) ||
+	bool const self = last->cond != COND_AL && last->target == block->pc;
+	if (last->kind != I_B || last->link || (last->cond != COND_AL && !self) || (last->target >= block->pc && !self) || !inRom(block->pc) ||
 	    last->address - last->target > IDLE_SPAN_BYTES) {
 		return;
 	}
@@ -2264,6 +2306,53 @@ static void idleNote(struct Jit* jit, const struct Block* constBlock) {
 	idleRecompile(jit, span->head);
 }
 
+// A loop that polls a timer, skipped up to the timer's next tick: the exact CPU goes round until a
+// time round has started after the tick, the loop is learnt again there with the new count, and
+// skipped again, until an event is near or it stops being the same loop. Returns whether the CPU
+// moved on.
+static bool idleFollowTimer(struct GBA* gba, struct IdleLoop* loop) {
+	struct CPU* cpu = &gba->cpu;
+	uint32_t const head = cpu->r[15];
+	uint32_t const runs = gba->eventRuns;
+	bool moved = false;
+	for (;;) {
+		int32_t until = INT32_MAX;
+		for (int t = 0; t < 4; ++t) {
+			int32_t const left = loop->timers & (1 << t) ? timerUntilTick(gba, t) : INT32_MAX;
+			until = left >= 0 && left < until ? left : until;
+		}
+		int32_t const tickAt = cpu->cycles + until;
+		int32_t lapStart = cpu->cycles;
+		for (int steps = 0; steps < IDLE_PROBE_STEPS; ++steps) {
+			leanStep(gba);
+			moved = true;
+			if (gba->eventRuns != runs || cpu->halted || gba->dmaRunnable) {
+				return true;
+			}
+			if (cpu->r[15] != head) {
+				continue;
+			}
+			if (lapStart - tickAt >= 0) {
+				break;
+			}
+			lapStart = cpu->cycles;
+		}
+		if (cpu->r[15] != head || lapStart - tickAt < 0 || cpu->nextEvent - cpu->cycles < 256) {
+			return moved;
+		}
+		struct IdleState now;
+		idleCapture(gba, &now);
+		struct IdleLoop learnt;
+		if (idleLearn(gba, &now, &learnt) != 1 || !learnt.timers || gba->eventRuns != runs || cpu->r[15] != head) {
+			return true;
+		}
+		*loop = learnt;
+		if (!idleSkip(gba, loop)) {
+			return true;
+		}
+	}
+}
+
 // Called at a cartridge PC compiled code is about to run from. At a known idle loop's start, skips
 // ahead; at an unknown place, probes, unless probes there keep failing. Returns whether the CPU
 // moved on.
@@ -2276,6 +2365,7 @@ static bool idleCheck(struct GBA* gba) {
 	}
 	struct IdleState now;
 	bool captured = false;
+	struct IdleLoop* timerLoop = NULL;
 	for (int i = 0; i < IDLE_LOOPS; ++i) {
 		const struct IdleLoop* loop = &jit->idleLoops[i];
 		if (!loop->valid || loop->start.r[15] != cpu->r[15]) {
@@ -2286,6 +2376,7 @@ static bool idleCheck(struct GBA* gba) {
 			captured = true;
 		}
 		if (memcmp(&now, &loop->start, sizeof(now))) {
+			timerLoop = loop->timers ? &jit->idleLoops[i] : timerLoop;
 			continue;
 		}
 		bool same = true;
@@ -2293,10 +2384,26 @@ static bool idleCheck(struct GBA* gba) {
 			same = idlePeek(gba, loop->read[r].address, loop->read[r].size) == loop->read[r].value;
 		}
 		if (same) {
-			idleSkip(gba, loop);
+			bool const tick = idleSkip(gba, loop);
 			idleHeadCount(jit, cpu->r[15], false);
-			return false;
+			return tick && idleFollowTimer(gba, &jit->idleLoops[i]);
 		}
+	}
+	// A timer loop here with another count (the timer has ticked since): learnt again at once, or
+	// forgotten after failing a few times in a row.
+	if (timerLoop) {
+		struct IdleLoop learnt;
+		if (idleLearn(gba, &now, &learnt) != 1 || !learnt.timers) {
+			if (++timerLoop->misses == IDLE_TIMER_MISSES) {
+				timerLoop->valid = false;
+			}
+			return true;
+		}
+		*timerLoop = learnt;
+		if (idleSkip(gba, timerLoop)) {
+			idleFollowTimer(gba, timerLoop);
+		}
+		return true;
 	}
 	if (!captured) {
 		idleCapture(gba, &now);

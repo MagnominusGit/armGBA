@@ -297,6 +297,25 @@ uint16_t timerReadCounter(struct GBA* gba, int id) {
 	return counter;
 }
 
+// How long until a timer counting on the clock reads differently: its next tick, an overflow being
+// one too. -1 for a timer that isn't counting on the clock.
+int32_t timerUntilTick(struct GBA* gba, int id) {
+	struct Timer* timer = &gba->timers[id];
+	if (!timer->running) {
+		return -1;
+	}
+	uint32_t now = timingCurrentTime(gba);
+	for (int i = 0; i <= id; ++i) {
+		catchUp(gba, i, now, true);
+	}
+	int32_t elapsed = (int32_t) (now - timer->started);
+	if (elapsed < 0) {
+		return -1;
+	}
+	uint32_t ticks = (uint32_t) elapsed >> timer->prescaleBits;
+	return (int32_t) (((ticks + 1) << timer->prescaleBits) - (uint32_t) elapsed);
+}
+
 // Writes to a timer take effect one cycle later, so they are events.
 void timerWriteReload(struct GBA* gba, int id, uint16_t reload) {
 	struct Timer* timer = &gba->timers[id];
