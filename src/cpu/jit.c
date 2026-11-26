@@ -2102,6 +2102,17 @@ static bool idleSkip(struct GBA* gba, const struct IdleLoop* loop) {
 	return tick;
 }
 
+// Whether what a loop reads without having written it first still reads as it did, so it goes round
+// as it did.
+static bool idleReadsSame(struct GBA* gba, const struct IdleLoop* loop) {
+	for (int r = 0; r < loop->reads; ++r) {
+		if (idlePeek(gba, loop->read[r].address, loop->read[r].size) != loop->read[r].value) {
+			return false;
+		}
+	}
+	return true;
+}
+
 // Goes round from here twice with the exact CPU; it's a loop if the two times round match. Returns
 // 1 with the loop learnt, 0 if it isn't one, or -1 if it is but can't be skipped.
 static int idleLearn(struct GBA* gba, const struct IdleState* start, struct IdleLoop* loop) {
@@ -2347,7 +2358,7 @@ static bool idleFollowTimer(struct GBA* gba, struct IdleLoop* loop) {
 			return true;
 		}
 		*loop = learnt;
-		if (!idleSkip(gba, loop)) {
+		if (!idleReadsSame(gba, loop) || !idleSkip(gba, loop)) {
 			return true;
 		}
 	}
@@ -2379,11 +2390,7 @@ static bool idleCheck(struct GBA* gba) {
 			timerLoop = loop->timers ? &jit->idleLoops[i] : timerLoop;
 			continue;
 		}
-		bool same = true;
-		for (int r = 0; r < loop->reads && same; ++r) {
-			same = idlePeek(gba, loop->read[r].address, loop->read[r].size) == loop->read[r].value;
-		}
-		if (same) {
+		if (idleReadsSame(gba, loop)) {
 			bool const tick = idleSkip(gba, loop);
 			idleHeadCount(jit, cpu->r[15], false);
 			return tick && idleFollowTimer(gba, &jit->idleLoops[i]);
@@ -2400,7 +2407,7 @@ static bool idleCheck(struct GBA* gba) {
 			return true;
 		}
 		*timerLoop = learnt;
-		if (idleSkip(gba, timerLoop)) {
+		if (idleReadsSame(gba, timerLoop) && idleSkip(gba, timerLoop)) {
 			idleFollowTimer(gba, timerLoop);
 		}
 		return true;
