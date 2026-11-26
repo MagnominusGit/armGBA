@@ -360,20 +360,21 @@ static inline __attribute__((always_inline)) void CPU(step)(struct GB* gb, uint8
 		if (gb->cgbMode && (gb->io[0x4D] & 1) && gb->doubleSpeed) {
 			// Back to single speed, the CPU is stopped through the second byte's read, so DIV stands
 			// still through it, and with IME off an M-cycle more (AGE's spsw-div and spsw-mode0).
-			gbTimerWrite(gb, 0x04, 0);
+			gbTimerSwitchReset(gb, true);
 			if (!pending) {
 				CPU(fetch)(gb);
 			}
 			gbTimerHold(gb, cpu->ime ? 0 : 4);
 		} else {
+			bool switching = gb->cgbMode && (gb->io[0x4D] & 1);
 			if (cpu->ime) {
-				gbTimerWrite(gb, 0x04, 0);
+				switching ? gbTimerSwitchReset(gb, false) : gbTimerWrite(gb, 0x04, 0);
 			}
 			if (!pending) {
 				CPU(fetch)(gb);
 			}
 			if (!cpu->ime) {
-				gbTimerWrite(gb, 0x04, 0);
+				switching ? gbTimerSwitchReset(gb, false) : gbTimerWrite(gb, 0x04, 0);
 			}
 		}
 		gbStop(gb);

@@ -141,6 +141,41 @@ static bool timerBit(const struct GBTimer* t, uint8_t tac) {
 	return (tac & 4) && (t->counter >> tacBit[tac & 3] & 1);
 }
 
+static void divReset(struct GB* gb) {
+	struct GBTimer* t = &gb->timer;
+	gbApuDivReset(gb);
+	uint16_t old = t->counter;
+	t->counter = 0;
+	gbSerialDivReset(gb, old);
+}
+
+// A speed switch's DIV reset, as TIMA sees it (AGE's spsw-tima): going back to single speed an M-cycle
+// later than the reset, and at 4 KHz (and on the Color E at 65 and 16 KHz) an M-cycle earlier. Later,
+// the edges up to then count; earlier, the bit counts only if it was high then and still is (had it
+// fallen since, that edge has counted).
+void gbTimerSwitchReset(struct GB* gb, bool toSingle) {
+	struct GBTimer* t = &gb->timer;
+	gbTimerSync(gb);
+	if (t->tac & 4) {
+		unsigned rate = t->tac & 3, bit = tacBit[rate];
+		int shift = (toSingle ? 4 : 0) - (rate == 0 || (gbColor(gb) && rate >= 2) ? 4 : 0);
+		uint32_t c = t->counter;
+		bool high = c >> bit & 1;
+		if (shift > 0) {
+			for (uint32_t edges = ((c + shift) >> (bit + 1)) - (c >> (bit + 1)); edges; --edges) {
+				increment(gb, gb->now);
+			}
+			high = (c + shift) >> bit & 1;
+		} else if (shift < 0) {
+			high = high && ((c + shift) >> bit & 1);
+		}
+		if (high) {
+			increment(gb, gb->now);
+		}
+	}
+	divReset(gb);
+}
+
 void gbTimerWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 	struct GBTimer* t = &gb->timer;
 	gbTimerSync(gb);
@@ -149,10 +184,7 @@ void gbTimerWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 		if (timerBit(t, t->tac)) {
 			increment(gb, gb->now);
 		}
-		gbApuDivReset(gb);
-		uint16_t old = t->counter;
-		t->counter = 0;
-		gbSerialDivReset(gb, old);
+		divReset(gb);
 		break;
 	case 0x05:
 		// Written in the M-cycle TIMA reads 0, the reload is called off; in the one it reloads, the

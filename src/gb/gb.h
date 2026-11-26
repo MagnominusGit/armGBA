@@ -666,6 +666,7 @@ uint8_t gbTimerRead(struct GB*, uint8_t reg);
 void gbTimerWrite(struct GB*, uint8_t reg, uint8_t value);
 void gbTimerEvent(struct GB*);
 void gbTimerHold(struct GB*, uint32_t dots);
+void gbTimerSwitchReset(struct GB*, bool toSingle);
 
 // ppu.c
 void gbPpuReset(struct GB*);
