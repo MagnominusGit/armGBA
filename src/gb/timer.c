@@ -113,6 +113,7 @@ void gbTimerHold(struct GB* gb, uint32_t dots) {
 	t->held = true;
 	t->holdEnd = t->lastSync;
 	plan(gb);
+	gbSerialReplan(gb);
 }
 
 void gbTimerEvent(struct GB* gb) {
@@ -149,7 +150,9 @@ void gbTimerWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 			increment(gb, gb->now);
 		}
 		gbApuDivReset(gb);
+		uint16_t old = t->counter;
 		t->counter = 0;
+		gbSerialDivReset(gb, old);
 		break;
 	case 0x05:
 		// Written in the M-cycle TIMA reads 0, the reload is called off; in the one it reloads, the

@@ -14,6 +14,14 @@ static unsigned clockBit(const struct GB* gb) {
 	return gb->cgbMode && (gb->serial.sc & 2) ? 2 : 7;
 }
 
+// The transfer's end, at the counter's rate from now (or from where a hold ends).
+static void schedule(struct GB* gb) {
+	uint32_t per = gb->doubleSpeed ? 2 : 1;
+	uint32_t from = gbSince(gb->timer.lastSync, gb->now) > 0 ? gb->timer.lastSync : gb->now;
+	uint16_t left = gb->serial.end - gb->timer.counter;
+	gbSchedule(gb, GB_EVENT_SERIAL, from + (left + per - 1) / per);
+}
+
 void gbSerialWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 	struct GBSerial* serial = &gb->serial;
 	if (reg == 0x01) {
@@ -31,12 +39,31 @@ void gbSerialWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 	// The sixteenth falling edge of the clock bit from now.
 	gbTimerSync(gb);
 	unsigned shift = clockBit(gb) + 1;
-	uint32_t c = gb->timer.counter;
-	uint32_t edge = ((c >> shift) + 16) << shift;
-	uint32_t per = gb->doubleSpeed ? 2 : 1;
+	serial->end = ((gb->timer.counter >> shift) + 16) << shift;
 	serial->bits = 8;
-	uint32_t from = gbSince(gb->timer.lastSync, gb->now) > 0 ? gb->timer.lastSync : gb->now;
-	gbSchedule(gb, GB_EVENT_SERIAL, from + (edge - c + per - 1) / per);
+	schedule(gb);
+}
+
+// A speed switch changes the counter's rate, and a hold where it starts.
+void gbSerialReplan(struct GB* gb) {
+	if (gb->eventsOn & 1u << GB_EVENT_SERIAL) {
+		schedule(gb);
+	}
+}
+
+// DIV reset from old: the edges left count from 0, less one if the clock bit falls with it.
+void gbSerialDivReset(struct GB* gb, uint16_t old) {
+	struct GBSerial* serial = &gb->serial;
+	if (!(gb->eventsOn & 1u << GB_EVENT_SERIAL)) {
+		return;
+	}
+	unsigned bit = clockBit(gb), period = 2u << bit;
+	unsigned edges = ((uint16_t) (serial->end - old) + period - 1) / period;
+	if (old >> bit & 1) {
+		--edges;
+	}
+	serial->end = edges * period;
+	schedule(gb);
 }
 
 void gbSerialEvent(struct GB* gb) {

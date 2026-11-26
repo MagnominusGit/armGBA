@@ -254,7 +254,8 @@ struct GBPpu {
 struct GBSerial {
 	uint8_t sb, sc;
 	uint8_t bits;
-	uint32_t nextBit;
+	// A transfer on the console's own clock ends as the divider's counter reaches this.
+	uint32_t end;
 	// On a cable: a transfer on the console's own clock ends with nothing shifted in, for the other
 	// end to give its byte (gbLinkStatus); clocked says one has ended.
 	bool linked;
@@ -694,6 +695,8 @@ void gbApuWrite(struct GB*, uint8_t reg, uint8_t value);
 // serial.c
 void gbSerialWrite(struct GB*, uint8_t reg, uint8_t value);
 void gbSerialEvent(struct GB*);
+void gbSerialReplan(struct GB*);
+void gbSerialDivReset(struct GB*, uint16_t old);
 // The CPU Clock: quarters of the console's own (4 to 16); keepCarry when a state loaded was run at it.
 void gbSetCpuQuarters(struct GB*, unsigned quarters, bool keepCarry);
 // An M-cycle of the CPU's when overclocked.

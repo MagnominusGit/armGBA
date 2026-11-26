@@ -94,8 +94,9 @@ static void setSpeed(struct GB* gb, bool doubleSpeed) {
 	gb->doubleSpeed = doubleSpeed;
 	gb->mcycle = doubleSpeed ? 2 : 4;
 	gb->io[0x4D] = doubleSpeed ? 0x80 : 0;
-	// The timer's next overflow, at the divider's new rate.
+	// The timer's next overflow and the serial transfer's end, at the divider's new rate.
 	gbTimerEvent(gb);
+	gbSerialReplan(gb);
 }
 
 void gbSpeedEvent(struct GB* gb) {
