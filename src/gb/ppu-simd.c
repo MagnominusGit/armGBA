@@ -6,10 +6,23 @@
 
 #include <string.h>
 
-// Pixels for a line. On the Color (gbExpandTiles): each tile's eight colour indices (a byte each,
-// leftmost first) through its palette's four colours, and the indices with the tile's priority bit
-// (4) beside them. On the original (gbShadeLine): a line's colour indices through its four shades.
-// AVX2 on x86-64 where the CPU has it, NEON on ARM, else the plain loops, which they match exactly.
+// The objects on a line (gbFindObjects): a bit for each of the 40 whose rows (height 8 or 16) cover
+// it, from its Y in OAM (every fourth byte, 16 above the screen).
+// Pixels for a line. On the original (gbShadeLine): a line's colour indices through its four shades.
+// On the Color (gbExpandTiles): each tile's eight colour indices (a byte each, leftmost first)
+// through its palette's four colours, and the indices with the tile's priority bit (4) beside them.
+// AVX2 on x86-64 (checked at run time unless the build targets it), NEON on ARM, else the plain
+// loops, which they match exactly.
+
+static uint64_t objectsPlain(const uint8_t* oam, int line, int height) {
+	uint64_t found = 0;
+	for (int i = 0; i < 40; ++i) {
+		if ((uint8_t) (line + 16 - oam[i * 4]) < height) {
+			found |= 1ULL << i;
+		}
+	}
+	return found;
+}
 
 static void shadePlain(uint32_t* out, const uint8_t* index, const uint32_t* lut, int count) {
 	for (int x = 0; x < count; ++x) {
@@ -29,44 +42,10 @@ static void expandPlain(uint32_t* line, uint8_t* info, const uint64_t* pixels, c
 	}
 }
 
-
-// The objects on a line: a bit for each of the 40 whose rows (height 8 or 16) cover it, from its Y
-// in OAM (every fourth byte, 16 above the screen).
-static uint64_t objectsPlain(const uint8_t* oam, int line, int height) {
-	uint64_t found = 0;
-	for (int i = 0; i < 40; ++i) {
-		if ((uint8_t) (line + 16 - oam[i * 4]) < height) {
-			found |= 1ULL << i;
-		}
-	}
-	return found;
-}
-
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
 
 #define AVX2 __attribute__((target("avx2")))
-
-// Kept out of line: built for x86-64-v3, inlined into drawLineCgb, the line took a quarter longer.
-AVX2 __attribute__((noinline)) static void expandAvx2(uint32_t* line, uint8_t* info, const uint64_t* pixels, const uint32_t* const* colors, const uint8_t* front, int count) {
-	for (int t = 0; t < count; ++t) {
-		__m256i palette = _mm256_castsi128_si256(_mm_loadu_si128((const __m128i*) colors[t]));
-		__m256i indices = _mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*) &pixels[t]));
-		_mm256_storeu_si256((__m256i*) &line[t * 8], _mm256_permutevar8x32_epi32(palette, indices));
-		uint64_t withFront = pixels[t] | 0x0101010101010101ULL * front[t];
-		memcpy(&info[t * 8], &withFront, 8);
-	}
-}
-
-AVX2 static void shadeAvx2(uint32_t* out, const uint8_t* index, const uint32_t* lut, int count) {
-	__m256i palette = _mm256_castsi128_si256(_mm_loadu_si128((const __m128i*) lut));
-	int x = 0;
-	for (; x + 8 <= count; x += 8) {
-		__m256i indices = _mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*) &index[x]));
-		_mm256_storeu_si256((__m256i*) &out[x], _mm256_permutevar8x32_epi32(palette, indices));
-	}
-	shadePlain(out + x, index + x, lut, count - x);
-}
 
 static bool hasAvx2(void) {
 #ifdef __AVX2__
@@ -81,23 +60,6 @@ static bool hasAvx2(void) {
 #endif
 }
 
-void gbShadeLine(uint32_t* out, const uint8_t* index, const uint32_t* lut, int count) {
-	if (hasAvx2()) {
-		shadeAvx2(out, index, lut, count);
-	} else {
-		shadePlain(out, index, lut, count);
-	}
-}
-
-void gbExpandTiles(uint32_t* line, uint8_t* info, const uint64_t* pixels, const uint32_t* const* colors, const uint8_t* front, int count) {
-	if (hasAvx2()) {
-		expandAvx2(line, info, pixels, colors, front, count);
-	} else {
-		expandPlain(line, info, pixels, colors, front, count);
-	}
-}
-
-
 // SSE2 (every x86-64): four objects a load, their Y in each 32-bit lane's low byte.
 uint64_t gbFindObjects(const uint8_t* oam, int line, int height) {
 	__m128i top = _mm_set1_epi32(line + 16), mask = _mm_set1_epi32(0xFF), below = _mm_set1_epi32(-1), limit = _mm_set1_epi32(height);
@@ -109,6 +71,43 @@ uint64_t gbFindObjects(const uint8_t* oam, int line, int height) {
 		found |= (uint64_t) _mm_movemask_ps(_mm_castsi128_ps(in)) << i;
 	}
 	return found;
+}
+
+AVX2 static void shadeAvx2(uint32_t* out, const uint8_t* index, const uint32_t* lut, int count) {
+	__m256i palette = _mm256_castsi128_si256(_mm_loadu_si128((const __m128i*) lut));
+	int x = 0;
+	for (; x + 8 <= count; x += 8) {
+		__m256i indices = _mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*) &index[x]));
+		_mm256_storeu_si256((__m256i*) &out[x], _mm256_permutevar8x32_epi32(palette, indices));
+	}
+	shadePlain(out + x, index + x, lut, count - x);
+}
+
+void gbShadeLine(uint32_t* out, const uint8_t* index, const uint32_t* lut, int count) {
+	if (hasAvx2()) {
+		shadeAvx2(out, index, lut, count);
+	} else {
+		shadePlain(out, index, lut, count);
+	}
+}
+
+// Out of line: x86-64-v3 builds inline it into drawLineCgb, and the line runs a quarter slower.
+AVX2 __attribute__((noinline)) static void expandAvx2(uint32_t* line, uint8_t* info, const uint64_t* pixels, const uint32_t* const* colors, const uint8_t* front, int count) {
+	for (int t = 0; t < count; ++t) {
+		__m256i palette = _mm256_castsi128_si256(_mm_loadu_si128((const __m128i*) colors[t]));
+		__m256i indices = _mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*) &pixels[t]));
+		_mm256_storeu_si256((__m256i*) &line[t * 8], _mm256_permutevar8x32_epi32(palette, indices));
+		uint64_t withFront = pixels[t] | 0x0101010101010101ULL * front[t];
+		memcpy(&info[t * 8], &withFront, 8);
+	}
+}
+
+void gbExpandTiles(uint32_t* line, uint8_t* info, const uint64_t* pixels, const uint32_t* const* colors, const uint8_t* front, int count) {
+	if (hasAvx2()) {
+		expandAvx2(line, info, pixels, colors, front, count);
+	} else {
+		expandPlain(line, info, pixels, colors, front, count);
+	}
 }
 
 #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
@@ -204,7 +203,6 @@ uint64_t gbFindObjectsPlain(const uint8_t* oam, int line, int height) {
 void gbShadeLinePlain(uint32_t* out, const uint8_t* index, const uint32_t* lut, int count) {
 	shadePlain(out, index, lut, count);
 }
-
 
 void gbExpandTilesPlain(uint32_t* line, uint8_t* info, const uint64_t* pixels, const uint32_t* const* colors, const uint8_t* front, int count) {
 	expandPlain(line, info, pixels, colors, front, count);
