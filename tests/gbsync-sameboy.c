@@ -65,3 +65,5 @@ int sbHdmaOn(void) { return gb.hdma_on; }
 // Palette RAM as SameBoy powered it on.
 const uint8_t* sbBgPalettes(void) { return gb.background_palettes_data; }
 const uint8_t* sbObjPalettes(void) { return gb.object_palettes_data; }
+// The objects SameBoy's OAM scan found for this line: count, then their X.
+int sbObjects(uint8_t* x) { memcpy(x, gb.objects_x, gb.orig_n_visible_objs); return gb.orig_n_visible_objs; }

@@ -14,7 +14,7 @@
 #include <string.h>
 void sbLoad(int cgb, const uint8_t* boot, size_t bootSize, const uint8_t* rom, size_t romSize);
 int sbStep(void); uint8_t sbRead(uint16_t); void sbRegs(uint16_t r[6]); int sbHalted(void); uint16_t sbDiv(void); int sbLine(void);
-uint8_t sbIo(int); uint8_t sbIe(void); int sbIme(void); void sbApu(int on[4], int volume[4]); void sbSweep(int v[8]); int sbLfDiv(void); int sbWindowTriggered(void); int sbHdmaOn(void); const uint8_t* sbBgPalettes(void); const uint8_t* sbObjPalettes(void);
+uint8_t sbIo(int); uint8_t sbIe(void); int sbIme(void); void sbApu(int on[4], int volume[4]); void sbSweep(int v[8]); int sbLfDiv(void); int sbWindowTriggered(void); int sbObjects(uint8_t* x); int sbHdmaOn(void); const uint8_t* sbBgPalettes(void); const uint8_t* sbObjPalettes(void);
 const uint8_t* sbRam(void); size_t sbRamSize(void); const uint8_t* sbHram(void); const uint8_t* sbOam(void);
 const uint8_t* sbSram(void); size_t sbSramSize(void); int sbDouble(void);
 static struct GB gb;
@@ -105,19 +105,19 @@ int main(int argc, char** argv) {
 		// EVTRACE=n: from instruction n on, armGB's time, divider, speed and events.
 		if (getenv("EVTRACE") && i >= atol(getenv("EVTRACE"))) {
 			gbTimerSync(&gb);
-			printf("%ld pc %04x now %u div %04x | SameBoy div %04x double %d halted %d switching %d ie %02x if %02x ime %d events %02x next %d timer %d ppu %d speed %d tac %02x\n", i, a[5], gb.now, gb.timer.counter, sbDiv(), gb.doubleSpeed, gb.cpu.halted, gb.cpu.switching, gb.ie, gb.ifl, gb.cpu.ime, gb.eventsOn, (int) (gb.nextEvent - gb.now), (int) (gb.events[GB_EVENT_TIMER] - gb.now), (int) (gb.events[GB_EVENT_PPU] - gb.now), (int) (gb.events[GB_EVENT_SPEED] - gb.now), gb.timer.tac);
+			printf("%ld pc %04x now %u div %04x | SameBoy div %04x IF %02x double %d halted %d switching %d ie %02x if %02x ime %d events %02x next %d timer %d ppu %d speed %d tac %02x\n", i, a[5], gb.now, gb.timer.counter, sbDiv(), sbIo(0x0F), gb.doubleSpeed, gb.cpu.halted, gb.cpu.switching, gb.ie, gb.ifl, gb.cpu.ime, gb.eventsOn, (int) (gb.nextEvent - gb.now), (int) (gb.events[GB_EVENT_TIMER] - gb.now), (int) (gb.events[GB_EVENT_PPU] - gb.now), (int) (gb.events[GB_EVENT_SPEED] - gb.now), gb.timer.tac);
 		}
 		// DMATRACE=n: from instruction n on, armGB's VRAM DMA.
 		if (getenv("DMATRACE") && i >= atol(getenv("DMATRACE"))) {
 			gbPpuSync(&gb);
-			printf("%ld pc %04x a %02x | armGB line %u dot %d mode %d blocks %d hblank %d src %04x dst %04x | SameBoy LY %02x STAT %02x\n", i, a[5], a[0] >> 8, gb.ppu.line,
-			       (int) (gb.now - gb.ppu.lineStart), gb.ppu.mode, gb.cgb.hdmaBlocks, gb.cgb.hdmaHblank, gb.cgb.hdmaSource, gb.cgb.hdmaDest, sbIo(0x44), sbIo(0x41));
+			printf("%ld pc %04x a %02x | armGB line %u dot %d mode %d blocks %d hblank %d due %d ev %d/%d src %04x dst %04x | SameBoy LY %02x STAT %02x\n", i, a[5], a[0] >> 8, gb.ppu.line,
+			       (int) (gb.now - gb.ppu.lineStart), gb.ppu.mode, gb.cgb.hdmaBlocks, gb.cgb.hdmaHblank, gb.cgb.hdmaDue, !!(gb.eventsOn & 1u << GB_EVENT_HDMA), (int) (gb.events[GB_EVENT_HDMA] - gb.now), gb.cgb.hdmaSource, gb.cgb.hdmaDest, sbIo(0x44), sbIo(0x41));
 		}
 		// PPUTRACE=n: from instruction n on, LY and STAT on each side and armGB's line and dot.
 		if (getenv("PPUTRACE") && i >= atol(getenv("PPUTRACE"))) {
 			gbPpuSync(&gb);
-			printf("%ld pc %04x | armGB line %u dot %d LY %02x STAT %02x | SameBoy LY %02x STAT %02x\n", i, a[5], gb.ppu.line,
-			       (int) (gb.now - gb.ppu.lineStart), gbPpuRead(&gb, 0x44), gbPpuRead(&gb, 0x41), sbIo(0x44), sbIo(0x41));
+			printf("%ld pc %04x | armGB line %u dot %d dma %d/%d LY %02x STAT %02x | SameBoy LY %02x STAT %02x\n", i, a[5], gb.ppu.line,
+			       (int) (gb.now - gb.ppu.lineStart), gb.dma.active, gb.dma.done, gbPpuRead(&gb, 0x44), gbPpuRead(&gb, 0x41), sbIo(0x44), sbIo(0x41));
 		}
 		// SWEEP=n: from instruction n on, channel 1's sweep on each side.
 		if (getenv("SWEEP") && i >= atol(getenv("SWEEP"))) {
@@ -167,6 +167,10 @@ int main(int argc, char** argv) {
 				printf("  OAM y,x:");
 				for (int k = 0; k < 40; ++k) if (gb.oam[k * 4] && gb.oam[k * 4] < 160) printf(" %d:%d,%d", k, gb.oam[k * 4], gb.oam[k * 4 + 1]);
 				printf("  SCX %d LCDC %02x WX %d WY %d\n", gb.ppu.scx, gb.ppu.lcdc, gb.ppu.wx, gb.ppu.wy);
+				uint8_t sx[10]; int sn = sbObjects(sx);
+				printf("  objects armGB:"); for (int k = 0; k < gb.ppu.objectCount; ++k) printf(" %d", gb.oam[gb.ppu.objects[k] * 4 + 1]);
+				printf(" | SameBoy:"); for (int k = 0; k < sn; ++k) printf(" %d", sx[k]); printf("\n");
+				for (int k = 0; k < 160; ++k) if (gb.oam[k] != sbOam()[k]) printf("  OAM %d: armGB %02x SameBoy %02x\n", k, gb.oam[k], sbOam()[k]);
 			}
 			printf("  armGB ie %02x if %02x ime %d | SameBoy ie %02x if %02x ime %d\n", gb.ie, gb.ifl, gb.cpu.ime, sbIe(), sbIo(0x0F), sbIme());
 			return 1;
