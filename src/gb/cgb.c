@@ -192,11 +192,12 @@ void gbCgbWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 		}
 		cgb->hdmaBlocks = (value & 0x7F) + 1;
 		if (value & 0x80) {
+			// The PPU's steps up to now ran without it.
+			gbPpuSync(gb);
 			cgb->hdmaHblank = true;
 			gbPpuReplan(gb);
 			// Started in an H-blank, or with the LCD off, a block moves at once.
-			gbPpuSync(gb);
-			if (!(gb->ppu.lcdc & LCDC_ON) || (gb->ppu.mode == 0 && gb->ppu.line < GB_HEIGHT)) {
+			if (!(gb->ppu.lcdc & LCDC_ON) || gbPpuInHblank(gb)) {
 				copyBlocks(gb, 1);
 			}
 		} else {

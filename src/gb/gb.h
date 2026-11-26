@@ -673,6 +673,7 @@ uint8_t gbPpuRead(struct GB*, uint8_t reg);
 void gbPpuWrite(struct GB*, uint8_t reg, uint8_t value);
 void gbPpuEvent(struct GB*);
 void gbPpuReplan(struct GB*);
+bool gbPpuInHblank(struct GB*);
 void gbPpuFreeze(struct GB*, uint32_t dots);
 // ppu-simd.c: a line's tiles through their palettes (see there).
 void gbExpandTiles(uint32_t* line, uint8_t* info, const uint64_t* pixels, const uint32_t* const* colors, const uint8_t* front, int count);

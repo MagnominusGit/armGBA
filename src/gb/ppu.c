@@ -901,6 +901,13 @@ void gbPpuFreeze(struct GB* gb, uint32_t dots) {
 	plan(gb);
 }
 
+// Whether the PPU is in an H-blank for a DMA started now: mode 0 on a visible line, though not in the
+// dot before mode 2 shows (SameBoy's display state 7).
+bool gbPpuInHblank(struct GB* gb) {
+	const struct GBPpu* ppu = &gb->ppu;
+	return ppu->mode == 0 && ppu->line < GB_HEIGHT && ppu->step != STEP_OAM;
+}
+
 void gbPpuReplan(struct GB* gb) {
 	catchUp(gb);
 	plan(gb);
