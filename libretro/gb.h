@@ -6,7 +6,7 @@
 #ifndef ARMGBA_LIBRETRO_GB_H
 #define ARMGBA_LIBRETRO_GB_H
 
-// The libretro core's Game Boy and Game Boy Color side (gb-armgb.cpp).
+// The libretro core's Game Boy and Game Boy Color side (gb-armgb.c).
 
 #include <stdbool.h>
 #include <stddef.h>

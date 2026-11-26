@@ -322,8 +322,7 @@ device such as the Miyoo Mini, cross-compile with that device's own toolchain fi
 `CMAKE_SYSTEM_PROCESSOR` to `arm`, and the ARMv7 flags:
 
     cmake -S . -B build-armv7 -G Ninja -DCMAKE_TOOLCHAIN_FILE=<toolchain file> \
-        -DCMAKE_C_FLAGS="-march=armv7-a -mfpu=neon -mfloat-abi=hard" \
-        -DCMAKE_CXX_FLAGS="-march=armv7-a -mfpu=neon -mfloat-abi=hard"
+        -DCMAKE_C_FLAGS="-march=armv7-a -mfpu=neon -mfloat-abi=hard"
     ninja -C build-armv7
 
 On any other CPU, or with `-DARMGBA_JIT=OFF`, the exact CPU runs everything.
@@ -1163,5 +1162,5 @@ Distributed under the GNU General Public License, version 2 or later (`LICENSE`)
 | `libretro/deps/` | MIT and public domain, as each file states |
 | `app/`, `app.cmake`, `shaders/`, `bios/`, `gbboot/` | Mozilla Public License 2.0 |
 | `armulators/` | its own notices: GNU GPL, version 2 or later, with the fonts under the SIL Open Font License 1.1 and its `deps/` MIT and public domain |
-| The Game Boy palettes (other than Grayscale) and color curves in `libretro/gb-armgb.cpp` | MIT, from SameBoy (Lior Halphon) |
+| The Game Boy palettes (other than Grayscale) and color curves in `libretro/gb-armgb.c` | MIT, from SameBoy (Lior Halphon) |
 | `libretro/megaduck/megaduck_laptop*` | Expat, from Super Junior SameDuck (`libretro/megaduck/LICENSE`) |
