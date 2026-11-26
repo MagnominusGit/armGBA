@@ -35,7 +35,8 @@ void gbSerialWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 	uint32_t edge = ((c >> shift) + 16) << shift;
 	uint32_t per = gb->doubleSpeed ? 2 : 1;
 	serial->bits = 8;
-	gbSchedule(gb, GB_EVENT_SERIAL, gb->now + (edge - c + per - 1) / per);
+	uint32_t from = gbSince(gb->timer.lastSync, gb->now) > 0 ? gb->timer.lastSync : gb->now;
+	gbSchedule(gb, GB_EVENT_SERIAL, from + (edge - c + per - 1) / per);
 }
 
 void gbSerialEvent(struct GB* gb) {

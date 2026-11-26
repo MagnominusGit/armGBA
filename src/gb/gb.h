@@ -198,9 +198,13 @@ struct GBCpu {
 };
 
 struct GBTimer {
-	// The 16-bit counter DIV is the top of, in CPU T-cycles, as of lastSync.
+	// The 16-bit counter DIV is the top of, in CPU T-cycles, as of lastSync; while it's held (a speed
+	// switch's STOP), lastSync is ahead of now and the counter waits for it.
 	uint16_t counter;
 	uint32_t lastSync;
+	// A hold not yet seen by the sound, which counts the divider's edges: it ends at holdEnd.
+	bool held;
+	uint32_t holdEnd;
 	uint8_t tima, tma, tac;
 	// TIMA overflowed: it reads 0 until reloadAt, when it takes TMA and the interrupt is requested.
 	bool reloading;
@@ -660,6 +664,7 @@ void gbTimerSync(struct GB*);
 uint8_t gbTimerRead(struct GB*, uint8_t reg);
 void gbTimerWrite(struct GB*, uint8_t reg, uint8_t value);
 void gbTimerEvent(struct GB*);
+void gbTimerHold(struct GB*, uint32_t dots);
 
 // ppu.c
 void gbPpuReset(struct GB*);

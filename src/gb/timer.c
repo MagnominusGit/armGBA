@@ -105,6 +105,16 @@ void gbTimerSync(struct GB* gb) {
 	t->lastSync = gb->now;
 }
 
+// DIV, just reset, stands still from now until dots on.
+void gbTimerHold(struct GB* gb, uint32_t dots) {
+	struct GBTimer* t = &gb->timer;
+	t->counter = 0;
+	t->lastSync = gb->now + dots;
+	t->held = true;
+	t->holdEnd = t->lastSync;
+	plan(gb);
+}
+
 void gbTimerEvent(struct GB* gb) {
 	gbTimerSync(gb);
 	plan(gb);

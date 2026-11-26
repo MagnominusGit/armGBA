@@ -634,8 +634,23 @@ void gbApuSync(struct GB* gb) {
 	// The divider's counter at the last sync, from its value now.
 	gbTimerSync(gb);
 	uint32_t per = gb->doubleSpeed ? 2 : 1;
-	uint32_t c = (uint16_t) (gb->timer.counter - (uint32_t) dots * per);
 	uint32_t from = apu->lastSync;
+	uint32_t c = (uint16_t) (gb->timer.counter - (uint32_t) dots * per);
+	struct GBTimer* t = &gb->timer;
+	if (t->held) {
+		// DIV was held (a speed switch's STOP) since the last sync: its edges start from where it ran
+		// again, at 0.
+		if (gbSince(t->holdEnd, gb->now) > 0) {
+			from = t->holdEnd;
+			c = 0;
+		} else {
+			t->held = false;
+			if (gbSince(t->holdEnd, from) > 0) {
+				from = t->holdEnd;
+				c = (uint16_t) (t->counter - (uint32_t) gbSince(gb->now, from) * per);
+			}
+		}
+	}
 	// Each edge of the sequencer's bit: falling, a step; rising, the envelopes' reload. Between them,
 	// the delayed envelope step and the original's delayed noise start.
 	unsigned bit = sequencerBit(gb);

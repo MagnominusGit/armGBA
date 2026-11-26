@@ -144,10 +144,12 @@ void gbStop(struct GB* gb) {
 			cpu->switching = 1;
 			gbSchedule(gb, GB_EVENT_SPEED, gb->now + SWITCH_TO_DOUBLE);
 		} else {
+			// Back at single speed the PPU is half a dot late again.
+			gb->ppu.halfDotLate = gb->ppu.lcdc & 0x80;
 			setSpeed(gb, false);
 			if (!pending) {
 				cpu->switching = 2;
-				gbSchedule(gb, GB_EVENT_SPEED, gb->now + SWITCH_CYCLES - 4);
+				gbSchedule(gb, GB_EVENT_SPEED, gb->now + SWITCH_CYCLES);
 			}
 		}
 		return;
