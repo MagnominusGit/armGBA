@@ -75,10 +75,10 @@ static void fillClockOffsets(struct retro_core_option_v2_definition* definitions
 // Older frontends take each option as "Label; value|value", the default first, made here from the
 // definitions.
 static void setVariables(retro_environment_t callback, const struct retro_core_option_v2_definition* definitions) {
-	static struct retro_variable variables[96];
-	static char text[96][1024];
+	static struct retro_variable variables[128];
+	static char text[128][1024];
 	int n = 0;
-	for (; definitions->key && n < 95; ++definitions, ++n) {
+	for (; definitions->key && n < 127; ++definitions, ++n) {
 		size_t at = snprintf(text[n], sizeof(text[n]), "%s; %s", definitions->desc, definitions->default_value);
 		for (int i = 0; definitions->values[i].value && at < sizeof(text[n]); ++i) {
 			if (strcmp(definitions->values[i].value, definitions->default_value)) {
