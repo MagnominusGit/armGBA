@@ -115,20 +115,24 @@ static unsigned drawLength(struct GB* gb) {
 		}
 		xs[j] = x;
 	}
-	bool tileSeen[32] = { false }, leftSeen = false;
+	// Background tiles 0-31, the window's from 32.
+	bool tileSeen[64] = { false }, leftSeen = false;
 	for (int i = 0; i < count; ++i) {
 		int x = xs[i];
 		if (x >= 168) {
 			continue;
 		}
-		// Wholly off the left edge: the first waits 5 dots for the fetch, as if at its tile's start.
+		// Wholly off the left edge: the first waits 5 dots for the fetch, as if at its tile's start,
+		// which then has no wait for the objects after it.
 		if (x == 0) {
 			length += leftSeen ? 6 : 11;
 			leftSeen = true;
+			tileSeen[((ppu->scx - 8) >> 3) & 31] = true;
 			continue;
 		}
-		int pixel = x - 8 + (window && x - 1 >= ppu->wx ? 0 : ppu->scx);
-		int tile = (pixel >> 3) & 31;
+		bool inWindow = window && x - 1 >= ppu->wx;
+		int pixel = inWindow ? x - 1 - ppu->wx : x - 8 + ppu->scx;
+		int tile = inWindow ? 32 + (pixel >> 3) : (pixel >> 3) & 31;
 		if (!tileSeen[tile]) {
 			tileSeen[tile] = true;
 			int right = 7 - (pixel & 7) - 2;
