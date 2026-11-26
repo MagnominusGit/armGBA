@@ -183,29 +183,37 @@ static inline __attribute__((always_inline)) void CPU(prefixed)(struct GB* gb) {
 	}
 }
 
-// Runs the interrupt with the lowest flag set and enabled. Pushing PC's high byte can write IE, and
-// the vector is chosen after it: if that leaves nothing pending, PC becomes 0.
+// Runs the interrupt with the lowest flag set and enabled: three M-cycles, then PC's high byte pushed
+// in the fourth and its low byte in the fifth (SameBoy). IE is taken after the high byte (which can
+// write it), IF as the low byte is written (its old value, if that write is to IF); if that leaves
+// nothing pending, PC becomes 0. The flag is cleared half an M-cycle later, so the same interrupt
+// requested again by then is taken with it.
 static void CPU(dispatch)(struct GB* gb) {
 	struct GBCpu* cpu = &gb->cpu;
 	cpu->ime = false;
 	CPU(tick)(gb);
 	CPU(tick)(gb);
+	CPU(tick)(gb);
 	CPU(write8)(gb, --cpu->sp, cpu->pc >> 8);
-	// Interrupts requested up to now count, events due during the pushes included.
+	uint8_t enabled = gb->ie;
 	if (gbSince(gb->now, gb->nextEvent) >= 0) {
 		gbRunEvents(gb);
 	}
-	uint8_t pending = gb->ie & gb->ifl & 0x1F;
+	uint8_t pending = enabled & gb->ifl & 0x1F;
 	CPU(write8)(gb, --cpu->sp, cpu->pc);
 	if (!pending) {
 		cpu->pc = 0;
-		CPU(tick)(gb);
 		return;
 	}
 	int n = __builtin_ctz(pending);
+	unsigned half = gb->mcycle / 2;
+	gb->now -= half;
+	if (gbSince(gb->now, gb->nextEvent) >= 0) {
+		gbRunEvents(gb);
+	}
+	gb->now += half;
 	gb->ifl &= ~(1 << n);
 	cpu->pc = 0x40 + n * 8;
-	CPU(tick)(gb);
 }
 
 static inline __attribute__((always_inline)) void CPU(step)(struct GB* gb, uint8_t op) {
