@@ -78,9 +78,15 @@ static unsigned drawLength(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
 	findObjects(gb);
 	unsigned length = 172 + (ppu->scx & 7);
-	bool window = windowOnLine(gb);
+	// The window is fetched, and takes its 6 dots, even where it isn't shown (the original's background
+	// off): up to WX 165 on the original, 166 on the Color; a dot more at WX 0 with a fine scroll (AGE's
+	// stat-mode-window tests).
+	bool window = (ppu->lcdc & LCDC_WINDOW) && ppu->windowSeen && ppu->wx <= (gbColor(gb) ? 166 : 165);
 	if (window) {
 		length += 6;
+		if (!ppu->wx && (ppu->scx & 7)) {
+			++length;
+		}
 	}
 	if (!(ppu->lcdc & LCDC_OBJ) && !gb->cgbMode) {
 		return length;
