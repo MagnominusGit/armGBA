@@ -147,7 +147,7 @@ void gbStop(struct GB* gb) {
 			setSpeed(gb, false);
 			if (!pending) {
 				cpu->switching = 2;
-				gbSchedule(gb, GB_EVENT_SPEED, gb->now + SWITCH_CYCLES);
+				gbSchedule(gb, GB_EVENT_SPEED, gb->now + SWITCH_CYCLES - 4);
 			}
 		}
 		return;
