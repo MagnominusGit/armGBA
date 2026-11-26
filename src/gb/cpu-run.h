@@ -389,6 +389,10 @@ static inline __attribute__((always_inline)) void CPU(step)(struct GB* gb, uint8
 		break;
 	case 0x76: { // HALT
 		gb->attention = true;
+		// Interrupts requested up to now, events due during the fetch included.
+		if (gbSince(gb->now, gb->nextEvent) >= 0) {
+			gbRunEvents(gb);
+		}
 		uint8_t pending = gb->ie & gb->ifl & 0x1F;
 		// With an interrupt already pending, HALT doesn't stop: right after EI, the interrupt is taken at
 		// once and returns to the HALT (Pan Docs); with IME off, the halt bug.
