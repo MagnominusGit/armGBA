@@ -9,6 +9,10 @@
 
 #include <string.h>
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#endif
+
 // The sound (Pan Docs, "Audio" and "Audio Registers"), timed as SameBoy has it. Two square channels (the
 // first with a sweep), a wave channel and a noise channel, run on a 2 MHz clock (2 dots a cycle) counted
 // from power-on. The channels are brought up to date only when something needs them: a register access,
@@ -62,12 +66,16 @@ struct Spans {
 
 static inline void addWeighted(struct Spans* spans, int32_t amount) {
 	int32_t* sums = spans->sums[spans->bucket];
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+	vst1q_s32(sums, vmlaq_n_s32(vld1q_s32(sums), vld1q_s32(spans->weight), amount));
+#else
 	sums[0] += amount * spans->weight[0];
 	sums[1] += amount * spans->weight[1];
 	if (spans->outputs > 2) {
 		sums[2] += amount * spans->weight[2];
 		sums[3] += amount * spans->weight[3];
 	}
+#endif
 }
 
 // Adds v over the dots from t to end.
