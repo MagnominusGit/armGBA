@@ -67,6 +67,19 @@ static void findObjects(struct GB* gb) {
 	ppu->objectCount = count;
 }
 
+// The window shows from the line where WY matches LY with the window on, for the rest of the frame
+// (SameBoy's wy_check): checked as each line's OAM scan starts, and when WY or LCDC is written.
+static void checkWindow(struct GB* gb) {
+	struct GBPpu* ppu = &gb->ppu;
+	if (!(ppu->lcdc & LCDC_ON) || !(ppu->lcdc & LCDC_WINDOW)) {
+		return;
+	}
+	int line = (!gbColor(gb) || gb->doubleSpeed) && ppu->lyCompare >= 0 ? ppu->lyCompare : ppu->line;
+	if (ppu->wy == line) {
+		ppu->windowSeen = true;
+	}
+}
+
 static bool windowOnLine(const struct GB* gb) {
 	const struct GBPpu* ppu = &gb->ppu;
 	return (ppu->lcdc & LCDC_WINDOW) && (gb->cgbMode || (ppu->lcdc & LCDC_BG)) && ppu->windowSeen && ppu->wx <= 166;
@@ -562,9 +575,7 @@ static void advance(struct GB* gb) {
 		ppu->mode = 2;
 		ppu->modeForInterrupt = 2;
 		ppu->lyCompare = ppu->line;
-		if (ppu->ly == ppu->wy) {
-			ppu->windowSeen = true;
-		}
+		checkWindow(gb);
 		updateStat(gb);
 		ppu->modeForInterrupt = -1;
 		updateStat(gb);
@@ -987,6 +998,8 @@ void gbPpuWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 			lcdOff(gb);
 		} else if (!(old & LCDC_ON) && (value & LCDC_ON)) {
 			lcdOn(gb);
+		} else {
+			checkWindow(gb);
 		}
 		break;
 	}
@@ -1023,6 +1036,7 @@ void gbPpuWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 		break;
 	case 0x4A:
 		ppu->wy = value;
+		checkWindow(gb);
 		break;
 	default:
 		ppu->wx = value;
