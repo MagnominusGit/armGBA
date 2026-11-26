@@ -200,6 +200,9 @@ static bool dmaConflict(struct GB* gb, uint16_t address, uint8_t* value) {
 }
 
 static uint8_t joypad(const struct GB* gb) {
+	if (gb->sgbJoypad) {
+		return 0xC0 | gb->joypadSelect | (gb->sgbJoypad(gb->user, gb->joypadSelect, false) & 0xF);
+	}
 	uint8_t value = 0xCF | gb->joypadSelect;
 	if (!(gb->joypadSelect & 0x10)) {
 		value &= ~(gb->keys >> 4 & 0xF);
@@ -264,6 +267,9 @@ void gbIoWrite(struct GB* gb, uint8_t reg, uint8_t value) {
 	switch (reg) {
 	case 0x00:
 		gb->joypadSelect = value & 0x30;
+		if (gb->sgbJoypad) {
+			gb->sgbJoypad(gb->user, gb->joypadSelect, true);
+		}
 		break;
 	case 0x01:
 	case 0x02:

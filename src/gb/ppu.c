@@ -176,7 +176,9 @@ static inline uint64_t tileRow(const struct GB* gb, uint16_t address) {
 static void drawLineDmg(struct GB* gb) {
 	struct GBPpu* ppu = &gb->ppu;
 	int y = ppu->line;
-	if (y >= GB_HEIGHT || ppu->hiddenFrame) {
+	// A Super Game Boy takes the lines of the first frame after the LCD is switched on, which the LCD
+	// doesn't show.
+	if (y >= GB_HEIGHT || (ppu->hiddenFrame && !gb->sgbLine)) {
 		return;
 	}
 	initSpread();
@@ -608,6 +610,9 @@ static void advance(struct GB* gb) {
 	case STEP_MODE0:
 		// Mode 3 ends: STAT shows mode 0 now, and its interrupt comes a dot later.
 		drawLine(gb);
+		if (gb->sgbLine && ppu->line < GB_HEIGHT) {
+			gb->sgbLine(gb->user, ppu->line, gb->frame[ppu->line]);
+		}
 		if (gb->cgb.hdmaHblank) {
 			gbHdmaHblank(gb, ppu->nextAt + 3);
 		}
@@ -746,10 +751,10 @@ static bool interrupting(const struct GB* gb, int step, int line) {
 	case STEP_DRAW:
 	case STEP_FIRST_VRAM:
 		// Where mode 3 ends is worked out here.
-		return (ppu->stat & 0x08) || gb->cgb.hdmaHblank;
+		return (ppu->stat & 0x08) || gb->cgb.hdmaHblank || gb->sgbLine;
 	case STEP_MODE0:
-		// An H-blank DMA moves a block then.
-		return gb->cgb.hdmaHblank;
+		// An H-blank DMA moves a block then, and a Super Game Boy takes the line.
+		return gb->cgb.hdmaHblank || gb->sgbLine;
 	case STEP_HBLANK_INT:
 		return ppu->stat & 0x08;
 	case STEP_FIRST:

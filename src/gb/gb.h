@@ -559,6 +559,10 @@ struct GB {
 	// Serial bytes shifted out with no partner, for the test runner.
 	void (*serialOut)(void* user, uint8_t byte);
 	void* user;
+	// A Super Game Boy's ICD2, set by a frontend that has one: JOYP's select bits as written (write)
+	// or read, giving back the four input bits; and each line's shades once it is drawn.
+	uint8_t (*sgbJoypad)(void* user, uint8_t select, bool write);
+	void (*sgbLine)(void* user, int line, const uint16_t* shades);
 	// The CPU Clock, in quarters of the console's own (4), set by the frontend.
 	uint8_t cpuQuarters;
 	// Called when a transfer on the console's own clock ends on a cable, for the other end's byte.
